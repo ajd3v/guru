@@ -113,6 +113,26 @@ def split_oversized(label, text):
     return pieces
 
 
+# Verse and chapter markers as these books actually write them: "1.", "23.", "Ch. 4.",
+# "CHAPTER XII". Off by default: measured on 151 cases over 14 books it changed nothing
+# (recall@20 42% -> 43%, recall@5 23% -> 23%). Kept because the pattern never matched
+# Meditations at all, so it is a partial test rather than a settled one.
+SECTION_RE = re.compile(r"^\s*(\d{1,3}\.|Ch\.\s*\d+|CHAPTER\b|Chapter\b)")
+SECTION_SPLIT = os.environ.get("GURU_SECTION_SPLIT") == "1"
+
+
+def mark_sections(units):
+    """Mark verse starts as soft boundaries: a chunk may begin there, but need not end there.
+
+    Flushing at every verse gives ~190-char chunks, and small chunks measurably cost recall.
+    A soft boundary only ends the current chunk once it is already worth keeping.
+    """
+    return [
+        (label, text, boundary or ("soft" if SECTION_RE.match(text) else False))
+        for label, text, boundary in units
+    ]
+
+
 def chunk(units):
     """Pack whole units up to CHUNK_CHARS; a heading always starts a new chunk.
 
@@ -136,7 +156,9 @@ def chunk(units):
         size = len(tail[1]) if tail else 0
 
     for label, text, boundary in units:
-        if boundary:
+        if boundary is True:
+            flush(overlap=False)
+        elif boundary == "soft" and size >= CHUNK_CHARS // 2:
             flush(overlap=False)
         parts = [(label, text)] if len(text) <= CHUNK_CHARS else split_oversized(label, text)
         for part in parts:
@@ -152,6 +174,8 @@ def ingest(path, page_offset=0):
     reader = read_epub if path.lower().endswith(".epub") else read_pdf
     title, author, units = reader(path, page_offset)
     units = strip_boilerplate(units)
+    if SECTION_SPLIT:
+        units = mark_sections(units)
     if not units:
         raise SystemExit(f"no extractable text in {path} (scanned? OCR not supported yet)")
     return {"title": title, "author": author, "source": os.path.basename(path),

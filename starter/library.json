@@ -1,8 +1,17 @@
 [
-  { "gutenberg": 216,  "author": "Laozi",            "title": "Tao Teh King" },
-  { "gutenberg": 2388, "author": "Edwin Arnold",     "title": "The Song Celestial (Bhagavad Gita)" },
-  { "gutenberg": 2017, "author": "Max Muller",       "title": "The Dhammapada" },
-  { "gutenberg": 621,  "author": "William James",    "title": "The Varieties of Religious Experience" },
-  { "gutenberg": 1653, "author": "Thomas a Kempis",  "title": "The Imitation of Christ" },
-  { "gutenberg": 2680, "author": "Marcus Aurelius",  "title": "Meditations" }
+  { "gutenberg": 216,   "author": "Laozi",             "title": "Tao Teh King" },
+  { "gutenberg": 2388,  "author": "Edwin Arnold",      "title": "The Song Celestial (Bhagavad Gita)" },
+  { "gutenberg": 2017,  "author": "Max Muller",        "title": "The Dhammapada" },
+  { "gutenberg": 621,   "author": "William James",     "title": "The Varieties of Religious Experience" },
+  { "gutenberg": 1653,  "author": "Thomas a Kempis",   "title": "The Imitation of Christ" },
+  { "gutenberg": 2680,  "author": "Marcus Aurelius",   "title": "Meditations" },
+
+  { "gutenberg": 45109, "author": "Epictetus",         "title": "The Enchiridion" },
+  { "gutenberg": 14328, "author": "Boethius",          "title": "The Consolation of Philosophy" },
+  { "gutenberg": 16643, "author": "Ralph Waldo Emerson", "title": "Essays" },
+  { "gutenberg": 205,   "author": "Henry David Thoreau", "title": "Walden" },
+  { "gutenberg": 1322,  "author": "Walt Whitman",      "title": "Leaves of Grass" },
+  { "gutenberg": 1998,  "author": "Friedrich Nietzsche", "title": "Thus Spake Zarathustra" },
+  { "gutenberg": 58585, "author": "Kahlil Gibran",     "title": "The Prophet" },
+  { "gutenberg": 4507,  "author": "James Allen",       "title": "As a Man Thinketh" }
 ]

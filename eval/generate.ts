@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { open } from "../src/store.ts";
 
-const DB = process.env.GURU_DB ?? "data/eval-3book.db";
+const DB = process.env.GURU_DB ?? "data/full.db";
 const WANT = Number(process.argv[2] ?? 80);
 const MAX_OVERLAP = 0.25;
 const CONCURRENCY = 6;
