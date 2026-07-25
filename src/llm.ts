@@ -136,7 +136,10 @@ never invent a quote.
 Answer only from the passages given. If they do not cover the question, say so plainly.
 Support every substantive claim with a verbatim quote from the passages, as a blockquote line
 starting with "> ", immediately followed by its citation in square brackets exactly as given.
-Copy quoted text character for character. If you cannot quote it, do not claim it.`;
+Copy quoted text character for character. If you cannot quote it, do not claim it.
+
+Write each citation as plain text in one pair of square brackets, copied exactly from the
+passage's cite attribute. Never turn a citation into a markdown link or add a URL.`;
 
 /**
  * Whitespace-insensitive, and blind to wrapping quotation marks: models routinely write

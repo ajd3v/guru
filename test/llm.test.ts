@@ -34,7 +34,7 @@ await new Promise<void>((r) => server.listen(0, r));
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as any).port}`;
 process.env.ANTHROPIC_API_KEY = "stub";
 
-const { ask, contextualize, rerank } = await import("../src/llm.ts");
+const { ask, contextualize, expandQuery, rerank } = await import("../src/llm.ts");
 
 const hit = (id: number, text: string): Hit => ({
   id, chunk_id: id, text, page_start: "1", page_end: "1",
@@ -52,6 +52,14 @@ assert.equal(contexts[0], "Chapter one, on the unnameable Tao.\n\nThe Tao that c
 assert.equal(seen[0].system[0].cache_control.type, "ephemeral");
 assert(seen[0].system[0].text.includes("All in the world know"), "full book must be cached");
 assert.equal(seen.length, 2, "one call per chunk");
+
+// --- HyDE: the hypothetical answer is searched alongside the question, not instead of it,
+// so exact phrasings still match on BM25.
+seen.length = 0;
+replies = ["The Tao that can be trodden is not the enduring Tao."];
+const expanded = await expandQuery("can the eternal way be put into words?");
+assert(expanded.includes("can the eternal way be put into words?"), "must keep the question");
+assert(expanded.includes("trodden"), "must include the hypothetical answer");
 
 // --- rerank: reorders by the returned indices, capped at k
 seen.length = 0;
