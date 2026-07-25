@@ -1,0 +1,30 @@
+{
+  "name": "guru",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node src/cli.ts selfcheck && node test/llm.test.ts && .venv/bin/python ingest/ingest.py --selfcheck"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ajd3v/guru.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/ajd3v/guru/issues"
+  },
+  "homepage": "https://github.com/ajd3v/guru#readme",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
+    "@huggingface/transformers": "^4.2.0",
+    "better-sqlite3": "^13.0.1",
+    "sqlite-vec": "^0.1.9"
+  },
+  "bin": {
+    "guru": "src/cli.ts"
+  }
+}
