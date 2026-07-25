@@ -1,0 +1,482 @@
+[
+ {
+  "query": "How did ancient philosophers differ from powerful rulers and conquerors?",
+  "expect": "These penetrated into the true nature of things; into all causes, and all subjects: and upon these did they exercise their power and authority.",
+  "book": "Meditations",
+  "overlap": 0
+ },
+ {
+  "query": "What should someone do to cleanse themselves of wrongdoing and avoid being reborn?",
+  "expect": "Make thyself an island, work hard, be wise! When thy impurities are blown away, and thou art free from guilt, thou wilt not enter again into birth and decay.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0
+ },
+ {
+  "query": "What did scientists discover about hidden layers of the human mind that changed our understanding of people?",
+  "expect": "I cannot but think that the most important step forward that has occurred in psychology since I have been a student of that science is the discovery, first made in 1886, that, in certain subjects at least, there is not only the consciousness of the ordinary field, with its usual centre and margin, but an addition thereto in the shape of a set of memories, thoughts, and feelings which are extra-marginal and outside of the primary consciousness altogether, but yet must be classed as conscious facts of some sort, able to reveal their presence by unmistakable signs.",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0
+ },
+ {
+  "query": "What happens to someone who cheats with a married person?",
+  "expect": "Four things does a wreckless man gain who covets his neighbour's wife,—a bad reputation, an uncomfortable bed, thirdly, punishment, and lastly, hell.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0
+ },
+ {
+  "query": "What is the greatest mistake a person can make in wanting more than they have?",
+  "expect": "There is no guilt greater than to sanction ambition; no calamity greater than to be discontented with one's lot; no fault greater than the wish to be getting.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0
+ },
+ {
+  "query": "How did this person feel about telling the truth throughout their life?",
+  "expect": "I have scrupulously spoken the truth, and have been glad to hear it spoken to me.",
+  "book": "Meditations",
+  "overlap": 0.14
+ },
+ {
+  "query": "What is a baby like compared to someone who fully embodies the way?",
+  "expect": "He who has in himself abundantly the attributes (of the Tao) is like an infant.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0.14
+ },
+ {
+  "query": "What happens to society when people stop following the natural way of things?",
+  "expect": "When the Great Tao (Way or Method) ceased to be observed, benevolence and righteousness came into vogue.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0.13
+ },
+ {
+  "query": "How does the author describe the internal struggle between spiritual desires and physical temptations?",
+  "expect": "So, wretched man that I am, I fight with myself, and am made grievous even unto myself, while the spirit seeketh to be above and the flesh to be beneath.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "does the way someone gets saved (gradually or all at once) say anything meaningful about how spiritual they are?",
+  "expect": "The forms which regenerative change effects have, then, no general spiritual significance, but only a psychological significance.",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0.09
+ },
+ {
+  "query": "What happens to saints who reach the highest levels of heaven — do they become prideful?",
+  "expect": "All the Saints, the higher they are exalted in glory, the humbler are they in themselves, and the nearer and dearer are they unto Me.",
+  "book": "The Imitation of Christ",
+  "overlap": 0.13
+ },
+ {
+  "query": "What should you do when you feel spiritually dry or disconnected?",
+  "expect": "God ofttimes giveth in one short moment what He hath long time denied; He sometimes giveth at the end what at the beginning of prayer He hath deferred to give.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "What was every living thing made for, and is pleasure or enjoyment a valid purpose?",
+  "expect": "What then were then made for? to disport and delight thyself? See how even common sense and reason cannot brook it.",
+  "book": "Meditations",
+  "overlap": 0.13
+ },
+ {
+  "query": "Why does caring too much about yourself hold you back spiritually?",
+  "expect": "Know thou that the love of thyself is more hurtful to thee than anything in the world.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "What happens to brave people who choose to break the law versus those who choose not to?",
+  "expect": "He whose boldness appears in his daring (to do wrong, in defiance of the laws) is put to death; he whose boldness appears in his not daring (to do so) lives on.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0
+ },
+ {
+  "query": "what does a wise person want that ordinary people don't care about?",
+  "expect": "Therefore the sage desires what (other men) do not desire, and does not prize things difficult to get; he learns what (other men) do not learn, and turns back to what the multitude of men have passed by.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0
+ },
+ {
+  "query": "How should you feel about the people and circumstances that life has given you?",
+  "expect": "Fit and accommodate thyself to that estate and to those occurrences, which by the destinies have been annexed unto thee; and love those men whom thy fate it is to live with; but love them truly.",
+  "book": "Meditations",
+  "overlap": 0
+ },
+ {
+  "query": "Why did the author keep putting off changing his ways even though he knew it was the right thing to do?",
+  "expect": "For I was afraid thou wouldst hear me too soon, and heal me at once of my disease of lust, which I wished to satiate rather than to see extinguished.",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0
+ },
+ {
+  "query": "Why do people stay spiritually lazy even when they know about the consequences of a sinful life?",
+  "expect": "But because these things reach not the heart, and we still love pleasant things, therefore we remain cold and miserably indifferent.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "What's the difference between people who only need one spiritual transformation versus those who need two?",
+  "expect": "The result is two different conceptions of the universe of our experience.",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0.09
+ },
+ {
+  "query": "Why does someone who wants less end up with more, while someone who wants a lot ends up lost?",
+  "expect": "He whose (desires) are few gets them; he whose (desires) are many goes astray.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0
+ },
+ {
+  "query": "Is it better to give up worldly duties and do nothing, or to actually do your work?",
+  "expect": "Work is more excellent than idleness;",
+  "book": "The Song Celestial; Or, Bhagavad-Gîtâ (f",
+  "overlap": 0.13
+ },
+ {
+  "query": "why is going through hardship better for you than feeling comforted?",
+  "expect": "For our worthiness and growth in grace lieth not in many delights and consolations, but rather in bearing many troubles and adversities.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "What happens to crime when a government makes more laws?",
+  "expect": "the more display there is of legislation, the more thieves and robbers there are.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0
+ },
+ {
+  "query": "What does a wise person do with their wealth and resources?",
+  "expect": "The more that he expends for others, the more does he possess of his own; the more that he gives to others, the more does he have himself.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0
+ },
+ {
+  "query": "What can we learn from the way bees gather food without harming plants?",
+  "expect": "As the bee collects nectar and departs without injuring the flower, or its colour or scent, so let a sage dwell in his village.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0.11
+ },
+ {
+  "query": "why do people not fear death when they are overworked trying to survive?",
+  "expect": "The people make light of dying because of the greatness of their labours in seeking for the means of living.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0.17
+ },
+ {
+  "query": "What happens to the soul after death according to Marcus Aurelius?",
+  "expect": "If all life and sense shall cease, then shalt thou cease also to be subject to either pains or pleasures; and to serve and tend this vile cottage; so much the viler, by how much that which ministers unto it doth excel; the one being a rational substance, and a spirit, the other nothing but earth and blood.",
+  "book": "Meditations",
+  "overlap": 0
+ },
+ {
+  "query": "What's the benefit of not acting purely out of self-interest?",
+  "expect": "Is it not because he has no personal and private ends, that therefore such ends are realised?",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0
+ },
+ {
+  "query": "What should you do when you're unsure if you'll stay committed to living a good life?",
+  "expect": "And if thou didst know it, what wouldst thou do? Do now what thou wouldst do then, and thou shalt be v",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "Why did ancient people value this way of living so highly?",
+  "expect": "Why was it that the ancients prized this Tao so much? Was it not because it could be got by seeking for it, and the guilty could escape (from the stain of their guilt) by it?",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0
+ },
+ {
+  "query": "What quality helps us resist pleasure and self-indulgence?",
+  "expect": "But one whereby pleasure and voluptuousness may be resisted and opposed, I see: continence.",
+  "book": "Meditations",
+  "overlap": 0.17
+ },
+ {
+  "query": "Why do different people seem to get different things out of the same religious texts?",
+  "expect": "The voice of books is one, but it informeth not all alike; because I inwardly am the Teacher of truth, the Searcher of the heart, the Discerner of the thoughts, the Mover of actions, distributing to each man, as I judge meet.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "What qualities define someone who has achieved true spiritual discipline as a monk?",
+  "expect": "He who controls his hand, he who controls his feet, he who controls his speech, he who is well controlled, he who delights inwardly, who is collected, who is solitary and content, him they call Bhikshu.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0
+ },
+ {
+  "query": "What actually makes someone a truly holy or enlightened person according to Buddhist teaching?",
+  "expect": "in whom there is truth and righteousness, he is blessed, he is a Brahmana.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0
+ },
+ {
+  "query": "what happens to people who truly live according to Buddhist teachings?",
+  "expect": "But those who, when the law has been well preached to them, follow the law, will pass across the dominion of death, however difficult to overcome.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0
+ },
+ {
+  "query": "How should a person mentally handle bad things that happen to them?",
+  "expect": "Oh, wretched I, to whom this mischance is happened! nay, happy I, to whom this thing being happened, I can continue without grief; neither wounded by that which is present, nor in fear of that which is to come.",
+  "book": "Meditations",
+  "overlap": 0
+ },
+ {
+  "query": "What does Marcus Aurelius say about the true nature of expensive and admired materials like precious metals and fine clothing?",
+  "expect": "gold and silver, what are they, but as the more gross faeces of the earth?",
+  "book": "Meditations",
+  "overlap": 0
+ },
+ {
+  "query": "What does religious conversion feel like to people who go through it?",
+  "expect": "Moreover the sense of renovation, safety, cleanness, rightness, can be so marvelous and jubilant as well to warrant one's belief in a radically new substantial nature.",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0
+ },
+ {
+  "query": "What kind of person was Fronto despite his reputation as a great writer?",
+  "expect": "It would be hard to conceive of anything more vapid than the style and conception of these letters; clearly the man was a pedant without imagination or taste.",
+  "book": "Meditations",
+  "overlap": 0
+ },
+ {
+  "query": "What are the sacred Hindu scriptures that the divine being claims to embody?",
+  "expect": "I am Rig-Veda, Sama-Veda, Yajur-Ved;",
+  "book": "The Song Celestial; Or, Bhagavad-Gîtâ (f",
+  "overlap": 0
+ },
+ {
+  "query": "What is William James willing to call personal faith if someone objects to using the word \"religion\"?",
+  "expect": "Call it conscience or morality, if you yourselves prefer, and not religion—under either name it will",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0.18
+ },
+ {
+  "query": "What happens to a person who doesn't gain wisdom as they get older?",
+  "expect": "A man who has learnt little, grows old like an ox; his flesh grows, but his knowledge does not grow.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0
+ },
+ {
+  "query": "How can someone actually come to enjoy suffering instead of avoiding it?",
+  "expect": "This is not the virtue of man, but the grace of Christ which hath such power and energy in the weak flesh, that what it naturally hateth and fleeth from, this it draweth to and loveth through fervour of spirit.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "Who came up with the term pragmatism and what does it mean?",
+  "expect": "He calls it the principle of pragmatism, and he defends it somewhat as follows:295—",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0.25
+ },
+ {
+  "query": "What does it mean to live each day as though it might be your last?",
+  "expect": "Then hath a man attained to the estate of perfection in his life and conversation, when he so spends every day, as if it were his last day: never hot and vehement in his affections, nor yet so cold and stupid as one that had no sense; and free from all manner of dissimulation.",
+  "book": "Meditations",
+  "overlap": 0.25
+ },
+ {
+  "query": "what does buddhism say about hanging out with someone smarter than you when traveling alone?",
+  "expect": "If a traveller does not meet with one who is his better, or his equal, let him firmly keep to his solitary journey; there is no companionship with a fool.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0
+ },
+ {
+  "query": "How did Epicurus maintain mental peace while dealing with physical illness?",
+  "expect": "how my mind, by a natural and unavoidable sympathy partaking in some sort with the present indisposition of my body, might nevertheless keep herself free from trouble, and in present possession of her own proper happiness.",
+  "book": "Meditations",
+  "overlap": 0
+ },
+ {
+  "query": "What happens to society's values when people lose touch with the ultimate way of living?",
+  "expect": "Thus it was that when the Tao was lost, its attributes appeared; when its attributes were lost, benevolence appeared; when benevolence was lost, righteousness appeared; and when righteousness was lost, the proprieties appeared.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0
+ },
+ {
+  "query": "What makes someone worthy of being called a holy person or spiritual seeker in Buddhist teaching?",
+  "expect": "Because a man is rid of evil, therefore he is called Brahmana; because he walks quietly, therefore he is called Samana; because he has sent away his own impurities, therefore he is called Pravragita (Pabbagita, a pilgrim).",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0.09
+ },
+ {
+  "query": "Does the design argument actually prove that God exists?",
+  "expect": "It will be convincing only to those who on other grounds believe in him already.",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0
+ },
+ {
+  "query": "How does Marcus Aurelius compare bad things that happen to people to a doctor's orders?",
+  "expect": "For as there, when we say of a physician, that he hath prescribed anything, our meaning is, that he hath appointed this for that, as subordinate and conducing to health: so here, whatsoever doth happen unto any, is ordained unto him as a thing subordinate unto the fates, and therefore do we say of such things, that they do συμβαίνειν, that is, happen, or fall together;",
+  "book": "Meditations",
+  "overlap": 0.22
+ },
+ {
+  "query": "How can you tell the difference between things that are truly valuable versus things that just seem valuable?",
+  "expect": "But as for those which by the vulgar are esteemed good, if he shall hear them mentioned as good, he doth hearken for more.",
+  "book": "Meditations",
+  "overlap": 0
+ },
+ {
+  "query": "what does buddhism say about controlling yourself before trying to change others?",
+  "expect": "If a man make himself as he teaches others to be, then, being himself well subdued, he may subdue (others); one's own self is indeed difficult to subdue.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0.11
+ },
+ {
+  "query": "What qualities does real devotion between people require?",
+  "expect": "Love is swift, sincere, pious, pleasant, gentle, strong, patient, faithful, prudent, long-suffering, manly, and never seeking her own; for wheresoever a man seeketh his own, there he falleth from love.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "How does reducing religious figures' experiences to physical or mental illness affect their spiritual credibility?",
+  "expect": "And medical materialism then thinks that the spiritual authority of all such personages is successfully undermined.",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0.1
+ },
+ {
+  "query": "Why does judging religion only by its real-world results feel incomplete?",
+  "expect": "It is its truth, not its utility, you insist, upon which our verdict ought to depend.",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0
+ },
+ {
+  "query": "What would it look like if a god revealed their true form all at once?",
+  "expect": "If there should rise Suddenly within the skies Sunburst of a thousand suns Flooding earth with beams undeemed-of, Then might be that Holy One's Majesty and radiance dreamed of!",
+  "book": "The Song Celestial; Or, Bhagavad-Gîtâ (f",
+  "overlap": 0
+ },
+ {
+  "query": "How does someone describe the feeling of God being constantly with them no matter what the day brings?",
+  "expect": "My days succeed each other; yesterday a blue sky; to-day a clouded sun; a night filled with strange dreams; but as soon as the eyes open, and I regain consciousness and seem to begin life again, it is always the same figure before me, always the same presence filling my heart.",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0.11
+ },
+ {
+  "query": "What happens to the people or society where a truly enlightened being is born?",
+  "expect": "Wherever such a sage is born, that race prospers.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0.14
+ },
+ {
+  "query": "Can you ever reach a point in life where you're completely safe from spiritual attacks?",
+  "expect": "Thou dwellest among foes, and art attacked on the right hand and on the left.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "How do we figure out whether an old religious text is actually worth following as a guide?",
+  "expect": "To answer this other question we must have already in our mind some sort of a general theory as to what the peculiarities in a thing should be which give it value for purposes of revelation; and this theory itself would be what I just called a spiritual judgment.",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0
+ },
+ {
+  "query": "What feeling does someone get when they return to normal awareness after this kind of overwhelming spiritual moment?",
+  "expect": "The subject resumes his normal consciousness only to partially and fitfully remember its occurrence, and to try to formulate its baffling import,—with only this consolatory afterthought: that he has known the oldest truth, and that he has done with human theories as to the origin, meaning, or destiny of the race.",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0.09
+ },
+ {
+  "query": "How do we achieve inner happiness when dealing with things outside our control?",
+  "expect": "To live happily is an inward power of the soul, when she is affected with indifferency, towards those things that are by their nature indifferent.",
+  "book": "Meditations",
+  "overlap": 0.13
+ },
+ {
+  "query": "What do spiritually lost people believe about the nature of the universe and existence?",
+  "expect": "This world Hath not a Law, nor Order, nor a Lord,\" So say they: \"nor hath risen up by Cause Following on Cause, in perfect purposing, But is none other than a House of Lust.",
+  "book": "The Song Celestial; Or, Bhagavad-Gîtâ (f",
+  "overlap": 0
+ },
+ {
+  "query": "What does it mean that empty space is what makes things actually useful?",
+  "expect": "Therefore, what has a (positive) existence serves for profitable adaptation, and what has not that for (actual) usefulness.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0
+ },
+ {
+  "query": "What is the source of sadness and worry according to Buddhist teaching?",
+  "expect": "From pleasure comes grief, from pleasure comes fear; he who is free from pleasure knows neither grief nor fear.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0
+ },
+ {
+  "query": "Is a short life lived with wisdom and awareness worth more than a long life lived in ignorance?",
+  "expect": "And he who lives a hundred years, ignorant and unrestrained, a life of one day is better if a man is wise and reflecting.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0.13
+ },
+ {
+  "query": "Why does a wise leader not brag about their accomplishments?",
+  "expect": "he achieves his merit and does not rest (arrogantly) in it:—he does not wish to display his superiority.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0
+ },
+ {
+  "query": "What does Buddhism say is the greatest gift you can have in life?",
+  "expect": "Health is the greatest of gifts, contentedness the best riches; trust is the best of relationships, Nirvana the highest happiness.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0.17
+ },
+ {
+  "query": "How do you find lasting inner calm according to this spiritual teaching?",
+  "expect": "If thou be so brave and long-suffering in hope that when inward comfort is taken from thee, thou even prepare thy heart for the more endurance, and justify not thyself, as though thou oughtest not to suffer these heavy things, but dost justify Me in all things that I appoint, and dost bless My Holy Name, then dost thou walk in the true and right way of peace, and shalt have a sure hope that thou shalt again behold My face with joy.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "What happens to people who don't try to show off or act like they know everything?",
+  "expect": "It is through their not being full of themselves that they can afford to seem worn and not appear new and complete.",
+  "book": "The Tao Teh King, or the Tao and its Cha",
+  "overlap": 0
+ },
+ {
+  "query": "Is having a lot of learning actually good for you spiritually?",
+  "expect": "Many things there are to know which profiteth little or nothing to the soul.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "What kinds of things can actually damage or get in the way of your rational mind?",
+  "expect": "For in those things that properly belong unto the mind, she cannot be hindered by any man.",
+  "book": "Meditations",
+  "overlap": 0.2
+ },
+ {
+  "query": "Why does the author feel like even tiny problems can totally derail their spiritual resolve?",
+  "expect": "Wonderfully small sometimes is the matter whence a grievous temptation cometh, and whilst I imagine myself safe for a little space; when I am not considering, I find myself often almost overcome by a little puff of wind.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "How did the young nun's spiritual absorption affect her ability to do practical work in the convent?",
+  "expect": "The admirable humility with which she made amends for her clumsiness could not prevent this from being prejudicial to the order and regularity which must always reign in a community.",
+  "book": "The Varieties of Religious Experience: A",
+  "overlap": 0
+ },
+ {
+  "query": "What is the spiritual state of someone who has completely freed themselves from desire and attachment in Buddhism?",
+  "expect": "His thought is quiet, quiet are his word and deed, when he has obtained freedom by true knowledge, when he has thus become a quiet man.",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0
+ },
+ {
+  "query": "how do I stop being upset when people talk badly about me?",
+  "expect": "Let not thy peace depend upon the word of men; for whether they judge well or ill of thee, thou art not therefore any other man than thyself.",
+  "book": "The Imitation of Christ",
+  "overlap": 0
+ },
+ {
+  "query": "how do you deal with someone who gets angry easily?",
+  "expect": "Let a man overcome anger by love, let him overcome evil by good; let him overcome the greedy by liberality, the liar by truth!",
+  "book": "Dhammapada, a Collection of Verses; Bein",
+  "overlap": 0
+ },
+ {
+  "query": "How does divine goodness treat people who oppose it compared to how human nature treats its supporters?",
+  "expect": "Nature rejoiceth in many friends and kinsfolk, she boasteth of noble place and noble birth, she smileth on the powerful, flattereth the rich, applaudeth those who are like herself; but Grace loveth even her enemies, and is not lifted up by the multitude of friends, setteth no store upon high place or high birth, unless there be greater virtue therewith; favoureth the poor man more than the rich, hath more sympathy with the innocent than with the powerful; rejoiceth with the truthful, not with the liar; always exhorteth the good to strive after better gifts of grace, and to become by holiness like unto the Son of God.",
+  "book": "The Imitation of Christ",
+  "overlap": 0.1
+ }
+]

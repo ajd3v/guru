@@ -11,10 +11,23 @@ import { expandQuery, rerank } from "../src/llm.ts";
 const DB = process.env.GURU_DB ?? "data/eval.db";
 const useRerank = process.argv.includes("--rerank");
 const useHyde = process.argv.includes("--hyde");
-const cases = JSON.parse(readFileSync("eval/cases.json", "utf8")) as {
-  query: string;
-  expect: string;
-}[];
+type Case = { query: string; expect: string; source?: string };
+
+// Hand-written cases are the trusted reference; generated ones give the sample size needed
+// to separate configurations. They are scored separately so drift between them is visible —
+// if generated cases score much higher, they leaked vocabulary and the set is not measuring
+// what it claims to.
+const load = (f: string, source: string): Case[] => {
+  try {
+    return (JSON.parse(readFileSync(f, "utf8")) as Case[]).map((c) => ({ ...c, source }));
+  } catch {
+    return [];
+  }
+};
+const cases = [
+  ...load("eval/cases.json", "hand"),
+  ...(process.argv.includes("--hand-only") ? [] : load("eval/cases.generated.json", "gen")),
+];
 
 const flat = (s: string) => s.replace(/\s+/g, " ");
 const rankOf = (hits: Hit[], expect: string) =>
@@ -26,6 +39,7 @@ let fusedHits = 0;
 let topHits = 0;
 let mrr = 0;
 let scored = 0;
+const bySource: Record<string, { n: number; top: number }> = {};
 
 for (const c of cases) {
   // Skip cases whose book isn't in this corpus, so the same case file works on a subset.
@@ -33,6 +47,9 @@ for (const c of cases) {
     .get(`%${c.expect.split(/\s+/).slice(0, 4).join("%")}%`)) as unknown;
   if (!present) continue;
   scored++;
+  const src = c.source ?? "hand";
+  bySource[src] ??= { n: 0, top: 0 };
+  bySource[src].n++;
 
   const fused = await search(db, useHyde ? await expandQuery(c.query) : c.query);
   const inFused = rankOf(fused, c.expect);
@@ -42,6 +59,7 @@ for (const c of cases) {
   if (inFused !== -1) fusedHits++;
   if (inTop !== -1) {
     topHits++;
+    bySource[src].top++;
     mrr += 1 / (inTop + 1);
   }
   rows.push(
@@ -52,13 +70,17 @@ for (const c of cases) {
 }
 
 const pct = (n: number) => `${((n / scored) * 100).toFixed(0)}%`;
-console.log(rows.join("\n"));
+if (scored <= 15 || process.argv.includes("--verbose")) console.log(rows.join("\n"));
 console.log(
   `\n${scored}/${cases.length} cases in corpus · ${process.env.GURU_EMBED ?? "bge-base"}` +
     ` · ${useHyde ? "hyde + " : ""}${useRerank ? "search + rerank" : "search only"}` +
     `\nrecall@20 (fused)  ${fusedHits}/${scored}  ${pct(fusedHits)}` +
     `\nrecall@5  (final)  ${topHits}/${scored}  ${pct(topHits)}` +
-    `\nMRR@5              ${(mrr / scored).toFixed(3)}`,
+    `\nMRR@5              ${(mrr / scored).toFixed(3)}` +
+    `\n` +
+    Object.entries(bySource)
+      .map(([k, v]) => `  ${k.padEnd(5)} recall@5 ${v.top}/${v.n}  ${((v.top / v.n) * 100).toFixed(0)}%`)
+      .join("\n"),
 );
 
 // recall@20 is the ceiling: rerank can only reorder what search already found.
