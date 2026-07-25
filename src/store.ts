@@ -87,6 +87,9 @@ function ftsQuery(q: string) {
 /** Hybrid BM25 + vector, fused with reciprocal rank. */
 export async function search(db: Database.Database, query: string, k = 20): Promise<Hit[]> {
   const RRF_K = 60;
+  // Fuse from deeper lists than we return. RRF ranks an item that is mediocre in both
+  // halves above one that is first in a single half, so a shallow fetch loses exact hits.
+  const depth = k * 3;
   const scores = new Map<number, number>();
   const fuse = (ids: number[]) =>
     ids.forEach((id, rank) => scores.set(id, (scores.get(id) ?? 0) + 1 / (RRF_K + rank + 1)));
@@ -95,15 +98,15 @@ export async function search(db: Database.Database, query: string, k = 20): Prom
   if (match) {
     fuse(
       db.prepare("select rowid as id from chunks_fts where chunks_fts match ? order by rank limit ?")
-        .all(match, k)
+        .all(match, depth)
         .map((r: any) => r.id),
     );
   }
 
-  const [vector] = await embed([query]);
+  const [vector] = await embed([query], "query");
   fuse(
     db.prepare("select rowid as id from chunks_vec where embedding match ? and k = ?")
-      .all(Buffer.from(vector.buffer), BigInt(k))
+      .all(Buffer.from(vector.buffer), BigInt(depth))
       .map((r: any) => r.id),
   );
 

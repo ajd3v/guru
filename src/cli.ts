@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert";
@@ -31,6 +31,34 @@ async function add(path: string, pageOffset: number, withContext: boolean) {
     `added: ${book.title} — ${book.author} (${book.chunks.length} chunks` +
       `${withContext ? ", contextualized" : ""})`,
   );
+}
+
+/** The public-domain corpus every user gets on day one, and the eval corpus. */
+export const STARTER_DIR = "data/starter";
+
+export async function fetchStarter() {
+  const books = JSON.parse(readFileSync("starter/library.json", "utf8")) as {
+    gutenberg: number;
+    author: string;
+    title: string;
+  }[];
+  mkdirSync(STARTER_DIR, { recursive: true });
+  const paths: string[] = [];
+  for (const b of books) {
+    const path = join(STARTER_DIR, `${b.author} - ${b.title}.epub`);
+    if (!existsSync(path)) {
+      const res = await fetch(`https://www.gutenberg.org/ebooks/${b.gutenberg}.epub3.images`);
+      if (!res.ok) throw new Error(`gutenberg ${b.gutenberg}: ${res.status}`);
+      writeFileSync(path, Buffer.from(await res.arrayBuffer()));
+      console.error(`fetched ${b.title}`);
+    }
+    paths.push(path);
+  }
+  return paths;
+}
+
+async function starter(withContext: boolean) {
+  for (const path of await fetchStarter()) await add(path, 0, withContext);
 }
 
 async function find(query: string) {
@@ -92,10 +120,11 @@ const arg = rest
   .join(" ");
 
 if (cmd === "add") await add(arg, pageOffset, withContext);
+else if (cmd === "starter") await starter(withContext);
 else if (cmd === "find") await find(arg);
 else if (cmd === "ask") await ask(arg);
 else if (cmd === "selfcheck") await selfcheck();
 else
   console.log(
-    "usage: guru add BOOK.pdf [--page-offset N] [--context] | find QUERY | ask QUESTION | selfcheck",
+    "usage: guru add BOOK.pdf [--page-offset N] [--context] | starter [--context] | find QUERY | ask QUESTION | selfcheck",
   );

@@ -1,13 +1,42 @@
 import { pipeline } from "@huggingface/transformers";
 
-export const DIM = 384;
+// ponytail: local embedders, no API key and no per-chunk cost. Selectable so the eval can
+// compare them on identical data — MiniLM measurably ranked known passages 60th-150th on a
+// 1400-chunk corpus, which is how BGE became the default.
+const MODELS = {
+  // BGE is trained asymmetrically: queries get an instruction, passages get none.
+  // Embedding a query as if it were a passage costs real recall.
+  "bge-base": {
+    id: "Xenova/bge-base-en-v1.5",
+    dim: 768,
+    pooling: "cls",
+    queryPrefix: "Represent this sentence for searching relevant passages: ",
+  },
+  "minilm": { id: "Xenova/all-MiniLM-L6-v2", dim: 384, pooling: "mean", queryPrefix: "" },
+} as const;
 
-// ponytail: local MiniLM. No API key, no per-chunk cost, and hybrid search leans on BM25
-// for exact-quote lookup anyway. Swap this one function for Voyage if recall data demands it.
+const MODEL = MODELS[(process.env.GURU_EMBED ?? "bge-base") as keyof typeof MODELS];
+if (!MODEL) throw new Error(`GURU_EMBED must be one of: ${Object.keys(MODELS).join(", ")}`);
+
+export const DIM = MODEL.dim;
+
+// ponytail: fixed batch. Embedding a whole book in one call is what the caller wants to
+// write, and it gets the process OOM-killed somewhere north of a few hundred chunks.
+const BATCH = 32;
+
 let extractor: any;
 
-export async function embed(texts: string[]): Promise<Float32Array[]> {
-  extractor ??= await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
-  const out = await extractor(texts, { pooling: "mean", normalize: true });
-  return out.tolist().map((a: number[]) => new Float32Array(a));
+export async function embed(texts: string[], kind: "passage" | "query" = "passage") {
+  extractor ??= await pipeline("feature-extraction", MODEL.id);
+  const input = kind === "query" ? texts.map((t) => MODEL.queryPrefix + t) : texts;
+
+  const vectors: Float32Array[] = [];
+  for (let i = 0; i < input.length; i += BATCH) {
+    const out = await extractor(input.slice(i, i + BATCH), {
+      pooling: MODEL.pooling,
+      normalize: true,
+    });
+    vectors.push(...out.tolist().map((a: number[]) => new Float32Array(a)));
+  }
+  return vectors;
 }

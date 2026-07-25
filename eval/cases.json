@@ -1,0 +1,12 @@
+[
+  { "query": "can the eternal way be put into words?",              "expect": "The Tao that can be trodden" },
+  { "query": "does the soul ever come into being or perish?",        "expect": "Never the spirit was born" },
+  { "query": "how do our thoughts shape who we become?",             "expect": "result of what we have thought" },
+  { "query": "how is religion defined here?",                        "expect": "feelings, acts, and experiences of individual men in their solitude" },
+  { "query": "is it better to feel sorrow for sin than to define it?", "expect": "rather feel contrition" },
+  { "query": "does living longer let you witness anything new?",     "expect": "ten thousand years together" },
+  { "query": "which path is the noblest to walk?",                   "expect": "best of ways is the eightfold" },
+  { "query": "what is empty without the love of God?",               "expect": "Vanity of vanities" },
+  { "query": "why should I not fear death in battle?",               "expect": "Life is not slain" },
+  { "query": "what is the humblest place, and why is it strong?",    "expect": "excellence of water" }
+]
