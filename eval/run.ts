@@ -6,10 +6,11 @@
 //   node eval/run.ts --rerank          # adds the LLM rerank stage (needs the API/router)
 import { readFileSync } from "node:fs";
 import { open, search, cite, type Hit } from "../src/store.ts";
-import { rerank } from "../src/llm.ts";
+import { expandQuery, rerank } from "../src/llm.ts";
 
 const DB = process.env.GURU_DB ?? "data/eval.db";
 const useRerank = process.argv.includes("--rerank");
+const useHyde = process.argv.includes("--hyde");
 const cases = JSON.parse(readFileSync("eval/cases.json", "utf8")) as {
   query: string;
   expect: string;
@@ -33,7 +34,7 @@ for (const c of cases) {
   if (!present) continue;
   scored++;
 
-  const fused = await search(db, c.query);
+  const fused = await search(db, useHyde ? await expandQuery(c.query) : c.query);
   const inFused = rankOf(fused, c.expect);
   const final = useRerank ? await rerank(c.query, fused) : fused.slice(0, 5);
   const inTop = rankOf(final, c.expect);
@@ -54,7 +55,7 @@ const pct = (n: number) => `${((n / scored) * 100).toFixed(0)}%`;
 console.log(rows.join("\n"));
 console.log(
   `\n${scored}/${cases.length} cases in corpus · ${process.env.GURU_EMBED ?? "bge-base"}` +
-    ` · ${useRerank ? "search + rerank" : "search only"}` +
+    ` · ${useHyde ? "hyde + " : ""}${useRerank ? "search + rerank" : "search only"}` +
     `\nrecall@20 (fused)  ${fusedHits}/${scored}  ${pct(fusedHits)}` +
     `\nrecall@5  (final)  ${topHits}/${scored}  ${pct(topHits)}` +
     `\nMRR@5              ${(mrr / scored).toFixed(3)}`,

@@ -8,8 +8,10 @@ Stdout is JSON only; diagnostics go to stderr.
 """
 import json, os, re, sys
 
-CHUNK_CHARS = 2000       # ponytail: ~500 tokens at 4 chars/token. Real tokenizer if drift ever matters.
-OVERLAP_CHARS = 200
+# ~4 chars/token. Overridable because chunk size is the single biggest retrieval lever
+# and the right value is an eval result, not a guess. See eval/.
+CHUNK_CHARS = int(os.environ.get("GURU_CHUNK_CHARS", 2000))
+OVERLAP_CHARS = CHUNK_CHARS // 10
 
 
 def parse_args(argv):

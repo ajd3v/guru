@@ -69,6 +69,33 @@ export async function contextualize(book: { title: string; author: string }, chu
   });
 }
 
+/**
+ * HyDE: search with a hypothetical answer instead of the bare question.
+ *
+ * A question and the passage that answers it often share almost no vocabulary — "can the
+ * eternal way be put into words?" against "The Tao that can be trodden is not the enduring
+ * and unchanging Tao." No embedder or chunk size fixed that; writing the answer in the
+ * source's own register is what closes the gap. The question is kept alongside so exact
+ * phrasings still match on BM25.
+ */
+export async function expandQuery(query: string) {
+  const hypothetical = await complete({
+    model: PIPELINE,
+    max_tokens: 200,
+    messages: [
+      {
+        role: "user",
+        content:
+          `Write two or three sentences as they might appear in a classic work of ` +
+          `philosophy or scripture, answering: ${query}\n\n` +
+          `Use the vocabulary and register such a text would use, not modern paraphrase. ` +
+          `Do not hedge or explain. Output only the passage.`,
+      },
+    ],
+  });
+  return `${query}\n${hypothetical}`;
+}
+
 /** Step 2 of the retrieval stack: an LLM reorders the fused candidates. */
 export async function rerank(query: string, hits: Hit[], k = 5): Promise<Hit[]> {
   if (hits.length <= 1) return hits;
