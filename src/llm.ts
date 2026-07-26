@@ -105,6 +105,14 @@ export async function expandQuery(query: string) {
  */
 const RERANK_BATCH = 20;
 
+/**
+ * A rerank that returns nothing parseable degrades to the unranked order, which is correct
+ * behaviour but indistinguishable from a reranker that simply ranked badly. A rate-limited
+ * or truncating model therefore looks like a quality result. Count it so the eval can say
+ * whether a number reflects the pipeline or a dead upstream.
+ */
+export const stats = { rerankCalls: 0, rerankFallbacks: 0 };
+
 /** Step 2 of the retrieval stack: an LLM reorders the fused candidates. */
 export async function rerank(query: string, hits: Hit[], k = 5): Promise<Hit[]> {
   if (hits.length <= 1) return hits;
@@ -146,12 +154,14 @@ async function rerankOne(query: string, hits: Hit[], k: number): Promise<Hit[]> 
     ],
   });
 
+  stats.rerankCalls++;
   const seen = new Set<number>();
   const picked = [...reply.matchAll(/\d+/g)]
     .map((m) => Number(m[0]))
     .filter((i) => hits[i] && !seen.has(i) && seen.add(i))
     .slice(0, k)
     .map((i) => hits[i]);
+  if (!picked.length) stats.rerankFallbacks++; // upstream said nothing usable
   return picked.length ? picked : hits.slice(0, k); // a useless rerank must not empty the results
 }
 

@@ -6,7 +6,7 @@
 //   node eval/run.ts --rerank          # adds the LLM rerank stage (needs the API/router)
 import { readFileSync } from "node:fs";
 import { open, search, cite, type Hit } from "../src/store.ts";
-import { expandQuery, rerank } from "../src/llm.ts";
+import { expandQuery, rerank, stats } from "../src/llm.ts";
 
 const DB = process.env.GURU_DB ?? "data/eval.db";
 const useRerank = process.argv.includes("--rerank");
@@ -91,6 +91,12 @@ console.log(
       .map(([k, v]) => `  ${k.padEnd(5)} recall@5 ${v.top}/${v.n}  ${((v.top / v.n) * 100).toFixed(0)}%`)
       .join("\n"),
 );
+
+if (stats.rerankCalls) {
+  const pct = ((stats.rerankFallbacks / stats.rerankCalls) * 100).toFixed(0);
+  const warn = stats.rerankFallbacks / stats.rerankCalls > 0.02 ? "  <-- RESULTS NOT TRUSTWORTHY" : "";
+  console.log(`\nrerank fallbacks   ${stats.rerankFallbacks}/${stats.rerankCalls}  ${pct}%${warn}`);
+}
 
 // recall@20 is the ceiling: rerank can only reorder what search already found.
 if (topHits < scored) {
