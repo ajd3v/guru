@@ -41,10 +41,14 @@ let mrr = 0;
 let scored = 0;
 const bySource: Record<string, { n: number; top: number }> = {};
 
+// Flattened corpus, so "is this case scoreable here?" is decided exactly the way a hit is
+// judged. A LIKE pattern of the first few words matches them in order with anything in
+// between, which counted 68 cases as present in a corpus that really held 41 and silently
+// inflated every denominator measured on a subset.
+const corpus = (db.prepare("select text from chunks").all() as any[]).map((r) => flat(r.text));
+
 for (const c of cases) {
-  // Skip cases whose book isn't in this corpus, so the same case file works on a subset.
-  const present = (db.prepare("select 1 from chunks where text like ? limit 1")
-    .get(`%${c.expect.split(/\s+/).slice(0, 4).join("%")}%`)) as unknown;
+  const present = corpus.some((t) => t.includes(flat(c.expect)));
   if (!present) continue;
   scored++;
   const src = c.source ?? "hand";

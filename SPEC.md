@@ -25,7 +25,7 @@ question → hypothetical answer (HyDE) → hybrid retrieval → rerank → teac
 
 - PDFs/EPUBs. **Page fidelity is the whole game**: pymupdf per-page extraction; EPUBs have no real pages → cite chapter + paragraph and say so honestly.
 - Chunks ~500 tokens with overlap, metadata `{title, author, page_start, page_end, chunk_id}`. Title/author from metadata, `Author - Title.pdf` convention, or one LLM pass over first pages.
-- **Contextual retrieval** (Anthropic-style): at ingest, an LLM (Haiku-tier, prompt-cached against the full doc) prepends situating context to each chunk before embedding. One-time cost ≈ $1–3 per 400-page book with caching. **Deferred, not at launch.** Measured on 68 cases it moved recall@20 43%→44% and recall@5 18%→21%, a 2-case difference that is inside noise, while HyDE gave +22 points for no ingest cost. It is not harmful, it is unproven, and it is the most expensive thing in the pipeline. Revisit with a Haiku contextualizer and real prompt caching, judged on the eval.
+- **Contextual retrieval** (Anthropic-style): at ingest, an LLM (Haiku-tier, prompt-cached against the full doc) prepends situating context to each chunk before embedding. One-time cost ≈ $1–3 per 400-page book with caching. **Deferred, not at launch.** Measured on a matched 3-book A/B (41 cases) it moved recall@20 71%→73% and recall@5 29%→34%, one and two cases respectively, inside noise, while HyDE gave +22 points for no ingest cost. It is not harmful, it is unproven, and it is the most expensive thing in the pipeline. Revisit with a Haiku contextualizer and real prompt caching, judged on the eval.
 - Ingest runs in a **sandboxed worker** (PDF parsers are an RCE surface), size-capped, virus-scanned.
 
 ## Retrieval (launch stack — SOTA where it pays)
