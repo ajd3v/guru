@@ -96,11 +96,36 @@ export async function expandQuery(query: string) {
   return `${query}\n${hypothetical}`;
 }
 
+/**
+ * How many candidates one rerank call may judge. Measured on 60 cases: at 20 candidates
+ * the reranker lost 3 of what search found, at 60 it lost 13, and the extra recall from
+ * depth cancelled out exactly. Snippet length was not the cause (700 chars scored the same
+ * as 350). The limit is the reranker's discrimination, so deep candidate sets are judged in
+ * batches of this size and the survivors ranked against each other.
+ */
+const RERANK_BATCH = 20;
+
 /** Step 2 of the retrieval stack: an LLM reorders the fused candidates. */
 export async function rerank(query: string, hits: Hit[], k = 5): Promise<Hit[]> {
   if (hits.length <= 1) return hits;
+
+  if (hits.length > RERANK_BATCH) {
+    const batches: Hit[][] = [];
+    for (let i = 0; i < hits.length; i += RERANK_BATCH) {
+      batches.push(hits.slice(i, i + RERANK_BATCH));
+    }
+    const survivors = (await Promise.all(batches.map((b) => rerankOne(query, b, k)))).flat();
+    return survivors.length > k ? rerankOne(query, survivors, k) : survivors;
+  }
+  return rerankOne(query, hits, k);
+}
+
+async function rerankOne(query: string, hits: Hit[], k: number): Promise<Hit[]> {
+  if (hits.length <= 1) return hits;
+  // Snippet length trades against candidate count for a fixed prompt budget.
+  const snippet = Number(process.env.GURU_SNIPPET ?? 700);
   const candidates = hits
-    .map((h, i) => `[${i}] ${cite(h)}\n${h.text.slice(0, 700)}`)
+    .map((h, i) => `[${i}] ${cite(h)}\n${h.text.slice(0, snippet)}`)
     .join("\n\n---\n\n");
 
   // ponytail: numbers scraped from prose, not a JSON schema — structured outputs don't

@@ -11,6 +11,10 @@ import { expandQuery, rerank } from "../src/llm.ts";
 const DB = process.env.GURU_DB ?? "data/eval.db";
 const useRerank = process.argv.includes("--rerank");
 const useHyde = process.argv.includes("--hyde");
+// Deep-candidate runs are slow; --limit N scores a prefix so two configurations can be
+// compared on the same cases within one sitting.
+const limitAt = process.argv.indexOf("--limit");
+const LIMIT = limitAt === -1 ? Infinity : Number(process.argv[limitAt + 1]);
 type Case = { query: string; expect: string; source?: string };
 
 // Hand-written cases are the trusted reference; generated ones give the sample size needed
@@ -48,6 +52,7 @@ const bySource: Record<string, { n: number; top: number }> = {};
 const corpus = (db.prepare("select text from chunks").all() as any[]).map((r) => flat(r.text));
 
 for (const c of cases) {
+  if (scored >= LIMIT) break;
   const present = corpus.some((t) => t.includes(flat(c.expect)));
   if (!present) continue;
   scored++;

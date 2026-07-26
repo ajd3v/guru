@@ -84,8 +84,15 @@ function ftsQuery(q: string) {
   return tokens.map((t) => `"${t}"`).join(" OR ");
 }
 
+/**
+ * How many candidates reach the reranker. Measured on 151 cases, the correct chunk is
+ * within depth 20 for 41% of questions but within depth 100 for 63%, and the reranker
+ * promotes nearly everything it is shown. Depth is therefore the cheapest recall there is.
+ */
+export const CANDIDATES = Number(process.env.GURU_CANDIDATES ?? 60);
+
 /** Hybrid BM25 + vector, fused with reciprocal rank. */
-export async function search(db: Database.Database, query: string, k = 20): Promise<Hit[]> {
+export async function search(db: Database.Database, query: string, k = CANDIDATES): Promise<Hit[]> {
   const RRF_K = 60;
   // Fuse from deeper lists than we return. RRF ranks an item that is mediocre in both
   // halves above one that is first in a single half, so a shallow fetch loses exact hits.
