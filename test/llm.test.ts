@@ -98,6 +98,33 @@ assert.deepEqual(
   "citations are not scanned as quotations",
 );
 
+// A claim whose every citation was invented must go with them. Deleting the ids alone
+// left a confident assertion with nothing behind it.
+seen.length = 0;
+replies = ["Supported claim. [P0S0]\n\nUnsupported claim. [P9S9]"];
+const partial = await ask("q", [passage]);
+assert(partial.answer.includes("Supported claim"), "supported claim survives");
+assert(!partial.answer.includes("Unsupported claim"), "claim with only invented ids is dropped");
+
+// If nothing at all survives, say so rather than shipping unsourced prose.
+seen.length = 0;
+replies = ["Confident but unsupported prose with no ids anywhere. [P9S9]"];
+const nothing = await ask("q", [passage]);
+assert(/could not ground/.test(nothing.answer), "unsupported answer is replaced, not shipped");
+
+// The same shape with no ids at all: nothing is dropped, so a dropped-count gate missed it.
+seen.length = 0;
+replies = ["Confident prose that cites nothing whatsoever."];
+const noIds = await ask("q", [passage]);
+assert(/could not ground/.test(noIds.answer), "unsourced prose is caught even when nothing was dropped");
+
+// An explicit decline is quote-free on purpose and must survive, with the marker stripped.
+seen.length = 0;
+replies = ["NOT COVERED: these sentences discuss water, not the question asked."];
+const declined = await ask("q", [passage]);
+assert(/discuss water/.test(declined.answer), "decline text survives");
+assert(!/NOT COVERED/.test(declined.answer), "marker is stripped");
+
 // An invented id cannot become a quotation: it is dropped and counted.
 seen.length = 0;
 replies = ["Confident nonsense. [P9S9]"];

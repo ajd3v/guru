@@ -389,8 +389,9 @@ NEVER type a quotation yourself, and never use quotation marks around source wor
 passage runs across sentences.
 
 Write your own prose in short paragraphs. After each claim, put the ids supporting it.
-If the sentences do not answer the question, say so plainly. A claim with no id is not
-allowed, so drop it rather than assert it.`;
+If the sentences do not answer the question, begin your reply with NOT COVERED: and say
+briefly what they do discuss. A claim with no id is not allowed, so drop it rather than
+assert it.`;
 
 export async function ask(query: string, hits: Hit[]) {
   const { byId, text } = catalogue(hits);
@@ -405,16 +406,26 @@ export async function ask(query: string, hits: Hit[]) {
     messages: [{ role: "user", content: `${text}\n\nQuestion: ${query}` }],
   });
 
+  // Drop the CLAIM, not just the dangling id. Deleting an unresolvable id on its own
+  // leaves the sentence it supported standing as a bare assertion, which is exactly the
+  // "no citation, no claim" rule inverted: every bad answer in a hand-read sample of 20
+  // was a paragraph whose every id had been dropped.
   let dropped = 0;
   const answer = draft
-    .replace(/\[?\b(P\d+S\d+)\b\]?/g, (_m, id: string) => {
-      const found = byId.get(id);
-      if (!found) {
-        dropped++; // hallucinated id: silently drop rather than show a broken marker
-        return "";
-      }
-      return `\n\n> ${found.text} ${cite(found.hit)}\n`;
+    .split(/\n\s*\n/)
+    .map((block) => {
+      const ids = [...block.matchAll(/\b(P\d+S\d+)\b/g)].map((m) => m[1]);
+      const valid = ids.filter((id) => byId.has(id));
+      dropped += ids.length - valid.length;
+      // Cited support, none of it real: the claim goes with it.
+      if (ids.length > 0 && valid.length === 0) return "";
+      return block.replace(/\[?\b(P\d+S\d+)\b\]?/g, (_m, id: string) => {
+        const found = byId.get(id);
+        return found ? `\n\n> ${found.text} ${cite(found.hit)}\n` : "";
+      });
     })
+    .filter(Boolean)
+    .join("\n\n")
     .replace(/\n{3,}/g, "\n\n")
     // An id often sits mid-sentence, so splicing a block quote in strands the sentence's
     // closing punctuation on a line of its own.
@@ -423,12 +434,37 @@ export async function ask(query: string, hits: Hit[]) {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  const unverified = unverifiedQuotes(answer, hits);
-  if (unverified.length) {
-    // Should be unreachable: spliced text comes from the passages verbatim.
-    return { answer: dropUnverified(answer, unverified), regenerated: true, dropped: dropped + unverified.length };
+  // An explicit decline is quote-free on purpose. It is stated by the model rather than
+  // sniffed for, because gating on the dropped count missed the case where no ids are
+  // cited at all: nothing dropped, nothing quoted, confident unsourced prose shipped.
+  if (/^\s*NOT COVERED:/i.test(draft)) {
+    return { answer: draft.replace(/^\s*NOT COVERED:\s*/i, "").trim(), regenerated: false, dropped };
   }
-  return { answer, regenerated: false, dropped };
+
+  // Verify AFTER splicing, then decide once, at the end. Checking for surviving quotes
+  // before dropUnverified let an answer pass the check and then lose its only quote to it,
+  // shipping the bare claim that was left.
+  let final = answer;
+  const unverified = unverifiedQuotes(final, hits);
+  if (unverified.length) {
+    // Should be rare: spliced text comes from the passages verbatim.
+    final = dropUnverified(final, unverified);
+  }
+
+  if (!/^\s*>/m.test(final)) {
+    return {
+      answer:
+        "Your library has passages near this, but I could not ground an answer in them. " +
+        "Try `find` to read what came back.",
+      regenerated: true,
+      dropped: dropped + unverified.length,
+    };
+  }
+  return {
+    answer: final,
+    regenerated: unverified.length > 0,
+    dropped: dropped + unverified.length,
+  };
 }
 
 /** Remove the blocks that rest on a quote we could not verify, keep the rest. */
