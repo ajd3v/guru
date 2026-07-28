@@ -34,7 +34,7 @@ await new Promise<void>((r) => server.listen(0, r));
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as any).port}`;
 process.env.ANTHROPIC_API_KEY = "stub";
 
-const { ask, contextualize, expandQuery, rerank } = await import("../src/llm.ts");
+const { ask, contextualize, expandQuery, rerank, unverifiedQuotes } = await import("../src/llm.ts");
 
 const hit = (id: number, text: string): Hit => ({
   id, chunk_id: id, text, page_start: "1", page_end: "1",
