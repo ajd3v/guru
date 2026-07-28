@@ -94,10 +94,51 @@ seen.length = 0;
 replies = ['> "The Tao that can be trodden is not the enduring and unchanging Tao." [x]'];
 assert.equal((await ask("q", [passage])).regenerated, false, "wrapped quotes are not fabrications");
 
+// An answer that quotes inline instead of as a blockquote must still be checked.
+// Otherwise "no blockquotes" reads as "nothing to verify" and anything passes.
+seen.length = 0;
+replies = [
+  'The text says "a fabricated line that is definitely not in any passage here" so there.',
+  '> The Tao that can be trodden is not the enduring and unchanging Tao. [x]',
+];
+assert.equal((await ask("q", [passage])).regenerated, true, "inline quotes must be verified");
+
+// A verbatim quote followed by its citation, and an honestly elided one, must both pass.
+// Capturing the citation as part of the quote made real quotes look fabricated.
+seen.length = 0;
+replies = ['> "The Tao that can be trodden is not the enduring and unchanging Tao." [[Tao, Laozi, p. 1]]'];
+assert.equal((await ask("q", [passage])).regenerated, false, "citation is not part of the quote");
+
+seen.length = 0;
+replies = ['He wrote "The Tao that can be trodden ... the enduring and unchanging Tao." [x]'];
+assert.equal((await ask("q", [passage])).regenerated, false, "elision is honest quoting");
+
+// Text BETWEEN two quotations is not itself a quotation. Matching a closing curly quote
+// to the next opening one reported ordinary prose as fabricated.
+seen.length = 0;
+replies = [
+  "He said \u201CThe Tao that can be trodden is not the enduring and unchanging Tao.\u201D " +
+    "and then wrote at considerable length about other matters entirely before adding " +
+    "\u201CThe Tao that can be trodden is not the enduring and unchanging Tao.\u201D again.",
+];
+assert.equal((await ask("q", [passage])).regenerated, false, "prose between quotes is not a quote");
+
 // Two clean drafts in a row would be a false rejection.
 seen.length = 0;
 replies = ["> The Tao that can be trodden is not the enduring and unchanging Tao. [x]"];
 assert.equal((await ask("q", [passage])).regenerated, false);
+
+// A model that will not quote accurately must not take the whole answer down with it.
+// The unverifiable block is dropped; the verifiable one survives.
+seen.length = 0;
+replies = Array(3).fill(
+  "Real part.\n\n> The Tao that can be trodden is not the enduring and unchanging Tao. [x]\n\n" +
+    "Invented part.\n\n> Be water, my friend, and flow around every obstacle. [y]",
+);
+const degraded = await ask("q", [passage]);
+assert(degraded.dropped > 0, "should report dropped claims");
+assert(degraded.answer.includes("enduring and unchanging"), "verified quote survives");
+assert(!degraded.answer.includes("Be water"), "unverified quote is gone");
 
 server.close();
 console.error("llm stub tests ok");

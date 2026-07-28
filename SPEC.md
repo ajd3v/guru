@@ -35,28 +35,25 @@ question → hypothetical answer (HyDE) → hybrid retrieval → rerank → teac
 2. Cross-encoder / LLM rerank → top ~5
 3. **Verbatim-quote verifier**: every blockquote in the answer must be a substring of a retrieved chunk; failures are dropped and the answer regenerated. ~10 lines; it is the brand.
 
-**Measured, 151 cases over 14 books** (`npm run eval`, see `eval/`). Representative strided
-sample, n=50, rerank fallback rate under 2%:
+**Measured, all 151 cases, DeepSeek-V4-Flash via DeepInfra, rerank fallback rate 0%:**
 
-| stage | recall@5 | MRR |
-|---|---|---|
-| hybrid search alone | 23% | — |
-| + rerank, 20 candidates, one call | 34% | 0.320 |
-| + 60 candidates reranked in batches of 20 | **44%** | 0.372 |
-| + HyDE on top | 44% | 0.410 |
+| stage | recall@20 | recall@5 | MRR |
+|---|---|---|---|
+| hybrid search alone | 42% | 23% | 0.156 |
+| + 60 candidates reranked in batches of 20 | 56% | 45% | 0.375 |
+| + HyDE | **73%** | **60%** | **0.505** |
 
-Two things are settled. Reranking is the bottleneck, not search: the right chunk is within
-the first 500 results for 76 of 89 failing cases, so this is a ranking problem. And one
-rerank call can only discriminate among roughly twenty candidates, so more depth must be
-judged in batches; a single call over sixty scores no better than one over twenty.
+Three things are settled. Reranking is the bottleneck, not search: the right chunk is
+within the first 500 results for 76 of 89 failing cases. One rerank call can only
+discriminate among roughly twenty candidates, so depth must be judged in batches; a single
+call over sixty scores no better than one over twenty. And HyDE is worth fifteen points of
+recall@5 even on top of batching, so it stays.
 
-HyDE is unresolved at this depth. It was worth +22 points of recall@20 at depth 20, but at
-depth 60 it shows no recall gain and only a small MRR gain, and it costs a model call per
-question. Settle it on the full set before removing it.
-
-**Retrieval, not citation, is what stands between this and launch**: over half of questions
-still miss, and when that happens the answer is built on the wrong passages or the user is
-told their library doesn't cover something it does.
+**Retrieval is no longer the only thing between this and launch.** 40% of questions still
+miss, but the answer model now matters as much: a budget model reliably fails to copy
+archaic English character for character, and the verifier correctly refuses it. On one
+Stoic/devotional question DeepSeek-V3.2 produced eleven unverifiable quotes and one good
+one. Model choice for the answer step is a quality decision, not a cost decision.
 
 **The eval is part of the stack, not a nice-to-have.** Chunk size, embedder, fusion depth, and contextual retrieval are all knobs whose right setting is a measurement. A 10-case eval measured HyDE as noise and nearly got it discarded; at 90 cases it was the single biggest win. Cases are generated from the corpus and rejected when query and answer share more than a quarter of their content words, so they test meaning rather than word overlap.
 

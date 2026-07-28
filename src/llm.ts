@@ -293,6 +293,22 @@ const flat = (s: string) =>
 /** The brand: a blockquote that is not a substring of a retrieved passage did not come from the library. */
 export function unverifiedQuotes(answer: string, hits: Hit[]) {
   const corpus = hits.map((h) => flat(h.text));
+
+  // Citations trail the quote and are not part of it. Both [x] and [[x]] appear in the
+  // wild; capturing them made verbatim quotes look fabricated.
+  const stripCite = (q: string) => q.replace(/\s*\[\[?[^\]]*\]\]?[\s.]*$/, "").trim();
+
+  /**
+   * An elided quote ("A ... B") is honest; verify each side, not the joined string.
+   * The length floor applies only to the fragments of an elided quote, never to a whole
+   * one: applying it to both let any fabrication under fifteen characters through.
+   */
+  const verified = (q: string) => {
+    const parts = q.split(/\s*(?:\.\.\.|…)\s*/).map(flat).filter(Boolean);
+    const checked = parts.length > 1 ? parts.filter((p) => p.length >= 15) : parts;
+    return checked.every((p) => corpus.some((c) => c.includes(p)));
+  };
+
   const quotes: string[] = [];
   let open = false;
   for (const line of answer.split("\n")) {
@@ -303,18 +319,37 @@ export function unverifiedQuotes(answer: string, hits: Hit[]) {
     }
     // Consecutive "> " lines are one quote: checking them separately would let a
     // fabrication through whenever each fragment happens to appear on its own.
-    const part = line.replace(/^\s*>\s?/, "").replace(/\[[^\]]*\]\s*$/, "");
+    const part = stripCite(line.replace(/^\s*>\s?/, ""));
     quotes[open ? quotes.length - 1 : quotes.length] = open
       ? `${quotes[quotes.length - 1]} ${part}`
       : part;
     open = true;
   }
+
+  // Inline quotations count too. A model that writes its quotes in prose, in quotation
+  // marks, rather than as blockquote lines would otherwise pass with nothing checked at
+  // all: no blockquotes means no findings means "verified". DeepSeek-V3.2 does exactly
+  // this. The length floor keeps ordinary quoted words (a title, a single term) out of it.
+  // Orientation matters: a character class of quote marks also matches from a CLOSING
+  // curly quote to the next OPENING one, capturing the prose between two quotations and
+  // reporting that as a fabricated quote.
+  for (const m of answer.matchAll(/“([^”]{40,})”|"([^"]{40,})"/g)) {
+    quotes.push(stripCite(m[1] ?? m[2]));
+  }
+
+  const seen = new Set<string>();
   return quotes
     .map(flat)
-    .filter((q) => q.length > 0 && !corpus.some((c) => c.includes(q)));
+    .filter((q) => q.length > 0 && !seen.has(q) && seen.add(q))
+    .filter((q) => !verified(q));
 }
 
-/** Ask, verify, and regenerate once with the failures named. Returns the verified answer. */
+/**
+ * Ask, verify, and regenerate. A quote that cannot be found in a retrieved passage is
+ * never shown, but failing to verify is not fatal: the paragraphs leaning on an
+ * unverifiable quote are dropped and the rest of the answer stands. "No citation, no
+ * claim" is a promise about what gets published, not a reason to publish nothing.
+ */
 export async function ask(query: string, hits: Hit[]) {
   const passages = hits
     .map((h) => `<passage cite="${cite(h)}">\n${h.text}\n</passage>`)
@@ -324,10 +359,12 @@ export async function ask(query: string, hits: Hit[]) {
     { role: "user", content: `<passages>\n${passages}\n</passages>\n\nQuestion: ${query}` },
   ];
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const answer = await complete({ model: config().answer, max_tokens: 2000, system: SYSTEM, messages });
-    const bad = unverifiedQuotes(answer, hits);
-    if (!bad.length) return { answer, regenerated: attempt > 0 };
+  let answer = "";
+  let bad: string[] = [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    answer = await complete({ model: config().answer, max_tokens: 2000, system: SYSTEM, messages });
+    bad = unverifiedQuotes(answer, hits);
+    if (!bad.length) return { answer, regenerated: attempt > 0, dropped: 0 };
 
     messages = [
       ...messages,
@@ -337,9 +374,33 @@ export async function ask(query: string, hits: Hit[]) {
         content:
           `These quotes do not appear verbatim in the passages:\n` +
           bad.map((q) => `- "${q}"`).join("\n") +
-          `\n\nRewrite the answer. Quote only text you can copy exactly from a passage, or drop the claim.`,
+          `\n\nRewrite the answer. Every quoted span must be copied character for character ` +
+          `from a passage, including its archaic spelling and punctuation. If you cannot ` +
+          `copy it exactly, drop the claim instead of rewording the quote.`,
       },
     ];
   }
-  throw new Error("could not produce an answer with verifiable quotes");
+
+  const kept = dropUnverified(answer, bad);
+  return {
+    answer:
+      kept ||
+      "Your library has passages on this, but I could not quote them accurately enough to answer. " +
+        "Try `find` to read them directly.",
+    regenerated: true,
+    dropped: bad.length,
+  };
+}
+
+/** Remove the blocks that rest on a quote we could not verify, keep the rest. */
+function dropUnverified(answer: string, bad: string[]) {
+  const flatBad = bad.map(flat).filter(Boolean);
+  return answer
+    .split(/\n\s*\n/)
+    .filter((block) => {
+      const f = flat(block);
+      return !flatBad.some((q) => f.includes(q.slice(0, 40)));
+    })
+    .join("\n\n")
+    .trim();
 }

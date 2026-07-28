@@ -90,9 +90,10 @@ async function find(query: string) {
 async function ask(query: string) {
   const hits = await retrieve(query);
   if (!hits.length) return console.log("your library doesn't cover this.");
-  const { answer, regenerated } = await askClaude(query, hits);
+  const { answer, regenerated, dropped } = await askClaude(query, hits);
   console.log(answer);
-  if (regenerated) console.error("\n(verifier rejected the first draft; regenerated)");
+  if (dropped) console.error(`\n(${dropped} claim(s) dropped: quotes could not be verified)`);
+  else if (regenerated) console.error("\n(verifier rejected the first draft; regenerated)");
 }
 
 async function selfcheck() {
