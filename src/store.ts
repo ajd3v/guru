@@ -131,8 +131,10 @@ export async function search(db: Database.Database, query: string, k = CANDIDATE
 
 /** How guru cites: [Title, Author, p. N] — or chapter/paragraph when the source has no pages. */
 export function cite(h: Hit) {
+  // No quote marks in a locator: a citation is embedded in prose that gets scanned for
+  // quotations, and a stray mark there pairs with the next one and corrupts the scan.
   const where = h.paginated
     ? `p. ${h.page_start}${h.page_end !== h.page_start ? `-${h.page_end}` : ""}`
-    : h.page_start;
+    : String(h.page_start).replace(/["“”]/g, "");
   return `[${h.title}, ${h.author}, ${where}]`;
 }

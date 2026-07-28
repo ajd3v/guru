@@ -333,7 +333,11 @@ export function unverifiedQuotes(answer: string, hits: Hit[]) {
   // Orientation matters: a character class of quote marks also matches from a CLOSING
   // curly quote to the next OPENING one, capturing the prose between two quotations and
   // reporting that as a fabricated quote.
-  for (const m of answer.matchAll(/“([^”]{40,})”|"([^"]{40,})"/g)) {
+  // Mask citations first. They are bracketed spans that may themselves contain quote
+  // marks, so scanning around them pairs a mark from one citation with a mark from the
+  // next and swallows the prose in between.
+  const prose = answer.replace(/\[\[?[^\]]*\]\]?/g, " ");
+  for (const m of prose.matchAll(/“([^”]{40,})”|"([^"]{40,})"/g)) {
     quotes.push(stripCite(m[1] ?? m[2]));
   }
 
@@ -345,51 +349,86 @@ export function unverifiedQuotes(answer: string, hits: Hit[]) {
 }
 
 /**
- * Ask, verify, and regenerate. A quote that cannot be found in a retrieved passage is
- * never shown, but failing to verify is not fatal: the paragraphs leaning on an
- * unverifiable quote are dropped and the rest of the answer stands. "No citation, no
- * claim" is a promise about what gets published, not a reason to publish nothing.
+ * Quote by reference, never by transcription.
+ *
+ * Asked to copy a quotation, every DeepSeek model reworded archaic English roughly half
+ * the time (V4-Flash 43% accurate, V4-Pro 50%, V3.2 45%), and the verifier correctly threw
+ * the results away. So the model no longer types quotations at all: it is given numbered
+ * source sentences and cites ids, and the exact text is spliced in afterwards. Misquoting
+ * stops being something to detect and becomes something that cannot be expressed.
+ *
+ * The verifier still runs behind this as a backstop. It should never fire; if it does, the
+ * splicing is wrong.
  */
+function catalogue(hits: Hit[]) {
+  const byId = new Map<string, { text: string; hit: Hit }>();
+  const lines: string[] = [];
+  hits.forEach((hit, hi) => {
+    // Number sequentially over the sentences actually offered. Numbering by split index
+    // and then skipping short ones leaves gaps (S0, S2, S5), and a model that assumes
+    // contiguity cites ids that were never offered.
+    let si = -1;
+    hit.text.split(/(?<=[.?!])\s+/).forEach((raw) => {
+      // Passages open with their section marker ("I", "XIV", "3."), which is not part of
+      // the sentence and reads as a typo once quoted.
+      const text = flat(raw).replace(/^(?:[IVXLC]{1,6}|\d{1,3})[.)]?\s+(?=[A-Z“"])/, "");
+      if (text.length < 40) return; // fragments and stray numbering aren't quotable
+      const id = `P${hi}S${++si}`;
+      byId.set(id, { text, hit });
+      lines.push(`[${id}] ${text}`);
+    });
+  });
+  return { byId, text: lines.join("\n") };
+}
+
+const SELECT_SYSTEM = `You are a scholar-teacher for the reader's own library. You are warm and direct.
+
+You are given numbered sentences from the reader's own books. Answer only from them.
+NEVER type a quotation yourself, and never use quotation marks around source wording. To quote, cite the sentence id in square brackets, like
+[P2S4], and the exact wording will be inserted for you. Cite several ids together when a
+passage runs across sentences.
+
+Write your own prose in short paragraphs. After each claim, put the ids supporting it.
+If the sentences do not answer the question, say so plainly. A claim with no id is not
+allowed, so drop it rather than assert it.`;
+
 export async function ask(query: string, hits: Hit[]) {
-  const passages = hits
-    .map((h) => `<passage cite="${cite(h)}">\n${h.text}\n</passage>`)
-    .join("\n\n");
-
-  let messages: Anthropic.MessageParam[] = [
-    { role: "user", content: `<passages>\n${passages}\n</passages>\n\nQuestion: ${query}` },
-  ];
-
-  let answer = "";
-  let bad: string[] = [];
-  for (let attempt = 0; attempt < 3; attempt++) {
-    answer = await complete({ model: config().answer, max_tokens: 2000, system: SYSTEM, messages });
-    bad = unverifiedQuotes(answer, hits);
-    if (!bad.length) return { answer, regenerated: attempt > 0, dropped: 0 };
-
-    messages = [
-      ...messages,
-      { role: "assistant", content: answer },
-      {
-        role: "user",
-        content:
-          `These quotes do not appear verbatim in the passages:\n` +
-          bad.map((q) => `- "${q}"`).join("\n") +
-          `\n\nRewrite the answer. Every quoted span must be copied character for character ` +
-          `from a passage, including its archaic spelling and punctuation. If you cannot ` +
-          `copy it exactly, drop the claim instead of rewording the quote.`,
-      },
-    ];
+  const { byId, text } = catalogue(hits);
+  if (!byId.size) {
+    return { answer: "Your library doesn't cover this.", regenerated: false, dropped: 0 };
   }
 
-  const kept = dropUnverified(answer, bad);
-  return {
-    answer:
-      kept ||
-      "Your library has passages on this, but I could not quote them accurately enough to answer. " +
-        "Try `find` to read them directly.",
-    regenerated: true,
-    dropped: bad.length,
-  };
+  const draft = await complete({
+    model: config().answer,
+    max_tokens: 2000,
+    system: SELECT_SYSTEM,
+    messages: [{ role: "user", content: `${text}\n\nQuestion: ${query}` }],
+  });
+
+  let dropped = 0;
+  const answer = draft
+    .replace(/\[?\b(P\d+S\d+)\b\]?/g, (_m, id: string) => {
+      const found = byId.get(id);
+      if (!found) {
+        dropped++; // hallucinated id: silently drop rather than show a broken marker
+        return "";
+      }
+      return `\n\n> ${found.text} ${cite(found.hit)}\n`;
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    // An id often sits mid-sentence, so splicing a block quote in strands the sentence's
+    // closing punctuation on a line of its own.
+    .replace(/^[ \t]*[.,;:]+[ \t]*$/gm, "")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  const unverified = unverifiedQuotes(answer, hits);
+  if (unverified.length) {
+    // Should be unreachable: spliced text comes from the passages verbatim.
+    return { answer: dropUnverified(answer, unverified), regenerated: true, dropped: dropped + unverified.length };
+  }
+  return { answer, regenerated: false, dropped };
 }
 
 /** Remove the blocks that rest on a quote we could not verify, keep the rest. */

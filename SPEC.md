@@ -33,7 +33,8 @@ question → hypothetical answer (HyDE) → hybrid retrieval → rerank → teac
 0. **HyDE**: a cheap model writes the answer the question is looking for, in the register the sources use, and that text is searched alongside the question. A reader asks "can the eternal way be put into words?"; the book says "The Tao that can be trodden is not the enduring and unchanging Tao." Almost no shared vocabulary, and this is what closes the gap.
 1. Hybrid: BM25 (SQLite FTS5) + vector (sqlite-vec, local BGE-base embeddings), reciprocal-rank fusion. Fuse from ~3x depth: RRF ranks an item mediocre in both halves above one that is first in a single half, so a shallow fetch loses exact hits.
 2. Cross-encoder / LLM rerank → top ~5
-3. **Verbatim-quote verifier**: every blockquote in the answer must be a substring of a retrieved chunk; failures are dropped and the answer regenerated. ~10 lines; it is the brand.
+3. **Quotation by reference, not transcription**: the answer model is given numbered source sentences and cites ids; the exact wording is spliced in afterwards. Asked to copy quotations instead, every DeepSeek tier reworded archaic English roughly half the time (V4-Flash 43% accurate, V4-Pro 50%, V3.2 45%). Selecting ids, the cheapest tier renders 42 quotes across four questions with **zero** unverifiable. Misquoting stops being something to detect and becomes something that cannot be expressed.
+4. **Verbatim-quote verifier**: a backstop behind the above. Every quoted span, blockquote or inline, must be a substring of a retrieved chunk; blocks resting on one that isn't are dropped and reported. It is the brand, and it should now never fire.
 
 **Measured, all 151 cases, DeepSeek-V4-Flash via DeepInfra, rerank fallback rate 0%:**
 

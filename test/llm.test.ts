@@ -72,73 +72,38 @@ assert.equal(seen[0].stream, true, "must stream: routers return OpenAI JSON othe
 replies = ["none of them are relevant"];
 assert.equal((await rerank("q", hits, 5)).length, 3);
 
-// --- ask: a fabricated quote is caught, named back to the model, and the retry wins
+// --- ask: the model cites sentence ids and never types quotations. The exact wording is
+// spliced in from the passage, so a misquote is not expressible rather than merely detected.
 seen.length = 0;
-const passage = hit(1, "The Tao that can be trodden is not the enduring and unchanging Tao.");
-replies = [
-  "The Tao resists naming.\n\n> Be water, my friend. [Tao Te Ching, Laozi, p. 1]",
-  "The Tao resists naming.\n\n> The Tao that can be trodden\n> is not the enduring and unchanging Tao. [Tao Te Ching, Laozi, p. 1]",
-];
-const { answer, regenerated } = await ask("what is the Tao?", [passage]);
-assert(regenerated, "should have regenerated");
-assert(answer.includes("enduring and unchanging"));
-assert.equal(seen.length, 2);
+const passage = hit(1, "The Tao that can be trodden is not the enduring and unchanging Tao. The name that can be named is not the enduring and unchanging name.");
+replies = ["Naming has limits. [P0S0]"];
+const sel = await ask("what is the Tao?", [passage]);
+assert(sel.answer.includes("The Tao that can be trodden"), "verbatim text is spliced in");
+assert(sel.answer.includes("[Tao Te Ching, Laozi, p. 1]"), "citation follows the quote");
+assert.equal(sel.dropped, 0);
 assert(
-  JSON.stringify(seen[1].messages).includes("Be water, my friend."),
-  "the retry must name the rejected quote",
+  JSON.stringify(seen[0].messages).includes("[P0S0]"),
+  "the model must be offered numbered sentences",
 );
 
-// A faithful quote the model wrapped in quotation marks must NOT be rejected:
-// models write `> "..."` constantly, and those marks are not in the source text.
-seen.length = 0;
-replies = ['> "The Tao that can be trodden is not the enduring and unchanging Tao." [x]'];
-assert.equal((await ask("q", [passage])).regenerated, false, "wrapped quotes are not fabrications");
-
-// An answer that quotes inline instead of as a blockquote must still be checked.
-// Otherwise "no blockquotes" reads as "nothing to verify" and anything passes.
-seen.length = 0;
-replies = [
-  'The text says "a fabricated line that is definitely not in any passage here" so there.',
-  '> The Tao that can be trodden is not the enduring and unchanging Tao. [x]',
-];
-assert.equal((await ask("q", [passage])).regenerated, true, "inline quotes must be verified");
-
-// A verbatim quote followed by its citation, and an honestly elided one, must both pass.
-// Capturing the citation as part of the quote made real quotes look fabricated.
-seen.length = 0;
-replies = ['> "The Tao that can be trodden is not the enduring and unchanging Tao." [[Tao, Laozi, p. 1]]'];
-assert.equal((await ask("q", [passage])).regenerated, false, "citation is not part of the quote");
-
-seen.length = 0;
-replies = ['He wrote "The Tao that can be trodden ... the enduring and unchanging Tao." [x]'];
-assert.equal((await ask("q", [passage])).regenerated, false, "elision is honest quoting");
-
-// Text BETWEEN two quotations is not itself a quotation. Matching a closing curly quote
-// to the next opening one reported ordinary prose as fabricated.
-seen.length = 0;
-replies = [
-  "He said \u201CThe Tao that can be trodden is not the enduring and unchanging Tao.\u201D " +
-    "and then wrote at considerable length about other matters entirely before adding " +
-    "\u201CThe Tao that can be trodden is not the enduring and unchanging Tao.\u201D again.",
-];
-assert.equal((await ask("q", [passage])).regenerated, false, "prose between quotes is not a quote");
-
-// Two clean drafts in a row would be a false rejection.
-seen.length = 0;
-replies = ["> The Tao that can be trodden is not the enduring and unchanging Tao. [x]"];
-assert.equal((await ask("q", [passage])).regenerated, false);
-
-// A model that will not quote accurately must not take the whole answer down with it.
-// The unverifiable block is dropped; the verifiable one survives.
-seen.length = 0;
-replies = Array(3).fill(
-  "Real part.\n\n> The Tao that can be trodden is not the enduring and unchanging Tao. [x]\n\n" +
-    "Invented part.\n\n> Be water, my friend, and flow around every obstacle. [y]",
+// A citation may contain quote marks (EPUB locators did). Scanning prose around them
+// paired a mark from one citation with a mark from the next and swallowed everything
+// between, reporting the answer's own body as a fabricated quotation.
+assert.deepEqual(
+  unverifiedQuotes(
+    'Text. [Book, Author, "CHAPTER I", para. 1] More text. [Book, Author, "CHAPTER II", para. 2]',
+    [passage],
+  ),
+  [],
+  "citations are not scanned as quotations",
 );
-const degraded = await ask("q", [passage]);
-assert(degraded.dropped > 0, "should report dropped claims");
-assert(degraded.answer.includes("enduring and unchanging"), "verified quote survives");
-assert(!degraded.answer.includes("Be water"), "unverified quote is gone");
+
+// An invented id cannot become a quotation: it is dropped and counted.
+seen.length = 0;
+replies = ["Confident nonsense. [P9S9]"];
+const bogus = await ask("q", [passage]);
+assert.equal(bogus.dropped, 1, "unknown id is dropped");
+assert(!bogus.answer.includes("P9S9"), "no broken marker is shown");
 
 server.close();
 console.error("llm stub tests ok");
