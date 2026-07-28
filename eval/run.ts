@@ -11,8 +11,9 @@ import { expandQuery, rerank, stats } from "../src/llm.ts";
 const DB = process.env.GURU_DB ?? "data/eval.db";
 const useRerank = process.argv.includes("--rerank");
 const useHyde = process.argv.includes("--hyde");
-// Deep-candidate runs are slow; --limit N scores a prefix so two configurations can be
-// compared on the same cases within one sitting.
+// Deep-candidate runs are slow, so --limit N scores a subset. It strides through the file
+// rather than taking a prefix: the first 60 cases measured 65% where the first 120 measured
+// 48%, so a prefix is not a sample of this set, it is a different and easier set.
 const limitAt = process.argv.indexOf("--limit");
 const LIMIT = limitAt === -1 ? Infinity : Number(process.argv[limitAt + 1]);
 type Case = { query: string; expect: string; source?: string };
@@ -28,10 +29,12 @@ const load = (f: string, source: string): Case[] => {
     return [];
   }
 };
-const cases = [
+const allCases = [
   ...load("eval/cases.json", "hand"),
   ...(process.argv.includes("--hand-only") ? [] : load("eval/cases.generated.json", "gen")),
 ];
+const stride = Number.isFinite(LIMIT) ? Math.max(1, Math.floor(allCases.length / LIMIT)) : 1;
+const cases = stride > 1 ? allCases.filter((_, i) => i % stride === 0) : allCases;
 
 const flat = (s: string) => s.replace(/\s+/g, " ");
 const rankOf = (hits: Hit[], expect: string) =>
