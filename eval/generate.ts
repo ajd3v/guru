@@ -6,6 +6,15 @@
 // The whole risk here is vocabulary leakage. A generated query that reuses the passage's
 // wording tests BM25 echo, not retrieval, so anything above MAX_OVERLAP is thrown away and
 // the rejection rate is reported — if it is low, the filter is not doing its job.
+// Entry point, so it loads .env like the CLI does. Without this the eval would
+// silently fall back to the Anthropic provider and measure a different backend
+// than the one under test.
+try {
+  process.loadEnvFile();
+} catch {
+  // no .env; env vars may still be set externally
+}
+
 import { readFileSync } from "node:fs";
 import { open } from "../src/store.ts";
 

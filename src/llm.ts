@@ -2,22 +2,129 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Chunk, Hit } from "./store.ts";
 import { cite } from "./store.ts";
 
-// Overridable so the pipeline can run against a local Anthropic-compatible router
-// (ANTHROPIC_BASE_URL) whose upstreams aren't Anthropic and don't answer to claude-* ids.
-const PIPELINE = process.env.GURU_PIPELINE_MODEL ?? "claude-haiku-4-5"; // contextualize, rerank
-const ANSWER = process.env.GURU_ANSWER_MODEL ?? "claude-sonnet-5";
+/**
+ * Two wire protocols, one call site.
+ *
+ * The pipeline is written against Anthropic's Messages shape. Plenty of useful
+ * endpoints (DeepInfra, Together, vLLM, LM Studio, OpenRouter) only speak OpenAI
+ * chat/completions, so `complete()` translates on the way out rather than making
+ * every caller care. Selection is by env: set GURU_PROVIDER, or just set a base
+ * URL and the right protocol is inferred.
+ */
+export type Provider = "anthropic" | "openai";
+
+export function resolveProvider(env = process.env): Provider {
+  const explicit = env.GURU_PROVIDER?.toLowerCase();
+  if (explicit === "openai" || explicit === "anthropic") return explicit;
+  // Inferred: an OpenAI-compatible base URL is the only reason to set one.
+  if (env.OPENAI_BASE_URL || env.DEEPINFRA_BASE_URL) return "openai";
+  return "anthropic";
+}
+
+// Model ids are protocol-specific: an OpenAI-compatible endpoint will not answer
+// to claude-* ids, so the defaults differ. Override either with GURU_*_MODEL.
+const DEFAULTS = {
+  anthropic: { pipeline: "claude-haiku-4-5", answer: "claude-sonnet-5" },
+  openai: { pipeline: "deepseek-ai/DeepSeek-V4-Flash", answer: "deepseek-ai/DeepSeek-V4-Flash" },
+} as const;
+
+/**
+ * Resolved on FIRST USE, not at module scope. ESM hoists imports, so anything
+ * that loads a .env from an entry point runs after this module is evaluated;
+ * reading env at module scope would silently miss it and pick the wrong provider.
+ */
+let cfg: { provider: Provider; pipeline: string; answer: string } | undefined;
+function config() {
+  if (cfg === undefined) {
+    const provider = resolveProvider();
+    cfg = {
+      provider,
+      pipeline: process.env.GURU_PIPELINE_MODEL ?? DEFAULTS[provider].pipeline, // contextualize, rerank
+      answer: process.env.GURU_ANSWER_MODEL ?? DEFAULTS[provider].answer,
+    };
+  }
+  return cfg;
+}
+
+/** Test hook: forget the cached provider/model choice. */
+export function _resetLlmConfig() {
+  cfg = undefined;
+  client = undefined as unknown as Anthropic;
+}
+
 const CONCURRENCY = 8;
 
 let client: Anthropic;
 // A local router usually wants no key; the SDK refuses to construct without one.
 const anthropic = () => (client ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || "local" }));
 
+type CompleteParams = Omit<Anthropic.MessageStreamParams, "stream">;
+
 /**
- * Always stream. Local Anthropic-compatible routers commonly return OpenAI-shaped JSON
- * to a non-streaming request but correct Anthropic SSE to a streaming one, and the spec
- * wants streamed answers anyway.
+ * Anthropic Messages params -> OpenAI chat/completions body.
+ *
+ * Pure and exported so the shape is testable without a network call. Two things
+ * do not survive the trip:
+ *   - `system` may be blocks; OpenAI wants one string, so blocks are flattened.
+ *   - `cache_control` has no equivalent. OpenAI-compatible providers cache stable
+ *     prefixes automatically, so this is dropped rather than emulated. Cache HITS
+ *     still happen, we just cannot pin the breakpoint.
  */
-async function complete(params: Omit<Anthropic.MessageStreamParams, "stream">) {
+export function toOpenAiBody(params: CompleteParams) {
+  const systemText =
+    typeof params.system === "string"
+      ? params.system
+      : (params.system ?? [])
+          .map((b) => (typeof b === "string" ? b : b.type === "text" ? b.text : ""))
+          .join("\n\n");
+
+  const messages = [
+    ...(systemText ? [{ role: "system" as const, content: systemText }] : []),
+    ...params.messages.map((m) => ({
+      role: m.role,
+      content:
+        typeof m.content === "string"
+          ? m.content
+          : m.content
+              .map((b) => (b.type === "text" ? b.text : ""))
+              .join(""),
+    })),
+  ];
+
+  return { model: params.model, max_tokens: params.max_tokens, messages };
+}
+
+function openAiBase(env = process.env) {
+  const base = env.OPENAI_BASE_URL ?? env.DEEPINFRA_BASE_URL;
+  if (!base) throw new Error("GURU_PROVIDER=openai needs OPENAI_BASE_URL (or DEEPINFRA_BASE_URL)");
+  return base.replace(/\/$/, "");
+}
+
+/** OpenAI-compatible path. Plain fetch: chat/completions is small enough that a
+ *  second SDK would be more surface than the ~20 lines it replaces. */
+async function completeOpenAi(params: CompleteParams): Promise<string> {
+  const key = process.env.OPENAI_API_KEY ?? process.env.DEEPINFRA_API_KEY ?? "local";
+  const res = await fetch(`${openAiBase()}/chat/completions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+    body: JSON.stringify(toOpenAiBody(params)),
+  });
+  if (!res.ok) {
+    // Include the body: these endpoints put the real reason (bad model id, quota)
+    // in it, and a bare status turns a 5-second fix into a debugging session.
+    throw new Error(`openai-compatible ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  }
+  const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  return json.choices?.[0]?.message?.content ?? "";
+}
+
+/**
+ * Anthropic path always streams. Local Anthropic-compatible routers commonly return
+ * OpenAI-shaped JSON to a non-streaming request but correct Anthropic SSE to a
+ * streaming one, and the spec wants streamed answers anyway.
+ */
+async function complete(params: CompleteParams) {
+  if (config().provider === "openai") return completeOpenAi(params);
   const message = await anthropic().messages.stream(params).finalMessage();
   return message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
@@ -45,7 +152,7 @@ export async function contextualize(book: { title: string; author: string }, chu
   const doc = chunks.map((c) => c.text).join("\n\n");
   return pooled(chunks, async (chunk) => {
     const context = await complete({
-      model: PIPELINE,
+      model: config().pipeline,
       max_tokens: 150,
       system: [
         {
@@ -80,7 +187,7 @@ export async function contextualize(book: { title: string; author: string }, chu
  */
 export async function expandQuery(query: string) {
   const hypothetical = await complete({
-    model: PIPELINE,
+    model: config().pipeline,
     max_tokens: 200,
     messages: [
       {
@@ -139,7 +246,7 @@ async function rerankOne(query: string, hits: Hit[], k: number): Promise<Hit[]> 
   // ponytail: numbers scraped from prose, not a JSON schema — structured outputs don't
   // survive a translating router. Swap back to output_config if this runs on Anthropic direct.
   const reply = await complete({
-    model: PIPELINE,
+    model: config().pipeline,
     max_tokens: 200,
     messages: [
       {
@@ -218,7 +325,7 @@ export async function ask(query: string, hits: Hit[]) {
   ];
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const answer = await complete({ model: ANSWER, max_tokens: 2000, system: SYSTEM, messages });
+    const answer = await complete({ model: config().answer, max_tokens: 2000, system: SYSTEM, messages });
     const bad = unverifiedQuotes(answer, hits);
     if (!bad.length) return { answer, regenerated: attempt > 0 };
 

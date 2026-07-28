@@ -4,6 +4,15 @@
 //   node src/cli.ts starter            # build data/eval.db first (add --context to compare)
 //   node eval/run.ts                   # hybrid search only, offline
 //   node eval/run.ts --rerank          # adds the LLM rerank stage (needs the API/router)
+// Entry point, so it loads .env like the CLI does. Without this the eval would
+// silently fall back to the Anthropic provider and measure a different backend
+// than the one under test.
+try {
+  process.loadEnvFile();
+} catch {
+  // no .env; env vars may still be set externally
+}
+
 import { readFileSync } from "node:fs";
 import { open, search, cite, type Hit } from "../src/store.ts";
 import { expandQuery, rerank, stats } from "../src/llm.ts";

@@ -1,4 +1,13 @@
 #!/usr/bin/env node
+// ESM hoists imports, so this runs AFTER ./llm.ts is evaluated. That is fine
+// because llm.ts resolves its provider on first use rather than at module scope.
+// Optional by design: the pipeline runs against a local router with no .env.
+try {
+  process.loadEnvFile();
+} catch {
+  // no .env, or a runtime without loadEnvFile — env vars may still be set externally
+}
+
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

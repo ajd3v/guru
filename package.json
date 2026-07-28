@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node src/cli.ts selfcheck && node test/llm.test.ts && .venv/bin/python ingest/ingest.py --selfcheck",
+    "test": "node src/cli.ts selfcheck && node test/llm.test.ts && node test/openai.test.ts && .venv/bin/python ingest/ingest.py --selfcheck",
     "eval": "node eval/run.ts",
     "eval:gen": "node eval/generate.ts"
   },
