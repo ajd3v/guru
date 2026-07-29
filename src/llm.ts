@@ -341,12 +341,23 @@ export function unverifiedQuotes(answer: string, hits: Hit[]) {
   // Orientation matters: a character class of quote marks also matches from a CLOSING
   // curly quote to the next OPENING one, capturing the prose between two quotations and
   // reporting that as a fabricated quote.
-  // Mask citations first. They are bracketed spans that may themselves contain quote
-  // marks, so scanning around them pairs a mark from one citation with a mark from the
-  // next and swallows the prose in between.
-  const prose = answer.replace(/\[\[?[^\]]*\]\]?/g, " ");
-  for (const m of prose.matchAll(/“([^”]{40,})”|"([^"]{40,})"/g)) {
-    quotes.push(stripCite(m[1] ?? m[2]));
+  // Scan the model's OWN prose only. Blockquote lines are spliced verbatim out of the
+  // passages and are already checked above, and the sources are full of quotation marks —
+  // Nietzsche's ‘idealist’, James's asides — so including them paired a mark inside one
+  // passage with a mark inside another and swallowed entire answers, blockquote markers and
+  // all, reporting the lot as one fabricated quotation.
+  //
+  // Citations are masked for the same reason, and the pattern tolerates one level of nesting
+  // because a footnote marker in a chapter title puts brackets inside the brackets.
+  // One line at a time, never across them. A quotation the model writes inline sits inside a
+  // sentence; pairing a mark in one paragraph with a mark in another can only ever capture
+  // the prose in between and call it fabricated, which is what it did.
+  for (const line of answer.split("\n")) {
+    if (line.trimStart().startsWith(">")) continue;
+    const prose = line.replace(/\[(?:[^\[\]]|\[[^\[\]]*\])*\]/g, " ");
+    for (const m of prose.matchAll(/“([^”]{40,})”|"([^"]{40,})"/g)) {
+      quotes.push(stripCite(m[1] ?? m[2]));
+    }
   }
 
   const seen = new Set<string>();
@@ -404,7 +415,7 @@ assert it.`;
 export async function ask(query: string, hits: Hit[]) {
   const { byId, text } = catalogue(hits);
   if (!byId.size) {
-    return { answer: "Your library doesn't cover this.", regenerated: false, dropped: 0 };
+    return { answer: "Your library doesn't cover this.", regenerated: false, dropped: 0, invented: 0, rejected: 0 };
   }
 
   const draft = await complete({
@@ -418,13 +429,14 @@ export async function ask(query: string, hits: Hit[]) {
   // leaves the sentence it supported standing as a bare assertion, which is exactly the
   // "no citation, no claim" rule inverted: every bad answer in a hand-read sample of 20
   // was a paragraph whose every id had been dropped.
-  let dropped = 0;
+  // Ids the model cited that do not exist. The model's error, and correctly dropped.
+  let invented = 0;
   const answer = draft
     .split(/\n\s*\n/)
     .map((block) => {
       const ids = [...block.matchAll(/\b(P\d+S\d+)\b/g)].map((m) => m[1]);
       const valid = ids.filter((id) => byId.has(id));
-      dropped += ids.length - valid.length;
+      invented += ids.length - valid.length;
       // Cited support, none of it real: the claim goes with it.
       if (ids.length > 0 && valid.length === 0) return "";
       return block.replace(/\[?\b(P\d+S\d+)\b\]?/g, (_m, id: string) => {
@@ -446,7 +458,13 @@ export async function ask(query: string, hits: Hit[]) {
   // sniffed for, because gating on the dropped count missed the case where no ids are
   // cited at all: nothing dropped, nothing quoted, confident unsourced prose shipped.
   if (/^\s*NOT COVERED:/i.test(draft)) {
-    return { answer: draft.replace(/^\s*NOT COVERED:\s*/i, "").trim(), regenerated: false, dropped };
+    return {
+      answer: draft.replace(/^\s*NOT COVERED:\s*/i, "").trim(),
+      regenerated: false,
+      dropped: invented,
+      invented,
+      rejected: 0,
+    };
   }
 
   // Verify AFTER splicing, then decide once, at the end. Checking for surviving quotes
@@ -472,13 +490,17 @@ export async function ask(query: string, hits: Hit[]) {
       // the passages it refers to are already listed under the answer.
       answer: "Your library has passages near this, but I could not ground an answer in them.",
       regenerated: true,
-      dropped: dropped + unverified.length,
+      dropped: invented + unverified.length,
+      invented,
+      rejected: unverified.length,
     };
   }
   return {
     answer: final,
     regenerated: unverified.length > 0,
-    dropped: dropped + unverified.length,
+    dropped: invented + unverified.length,
+    invented,
+    rejected: unverified.length,
   };
 }
 

@@ -60,7 +60,11 @@ const UNGROUNDED = "Your library has passages near this";
 
 const db = open(DB);
 const score = Object.fromEntries(
-  MODELS.map((m) => [m, { gold: 0, answered: 0, declined: 0, ungrounded: 0, dropped: 0 }]),
+  // `dropped` was one number covering two unrelated failures, and it hid three verifier bugs
+  // for most of this project's life: movements in it read as the model misbehaving when the
+  // checker was the thing at fault. Reported apart, `rejected` is ours to fix and `invented`
+  // is the model's, and only the first should ever be zero.
+  MODELS.map((m) => [m, { gold: 0, answered: 0, declined: 0, ungrounded: 0, invented: 0, rejected: 0 }]),
 );
 let eligible = 0;
 const notes: string[] = [];
@@ -115,7 +119,8 @@ for (const c of frozen) {
     const result = await ask(c.query, hits);
     const quotes = quotesOf(result.answer);
     const s = score[model];
-    s.dropped += result.dropped;
+    s.invented += result.invented;
+    s.rejected += result.rejected;
 
     if (quotes.length) {
       s.answered++;
@@ -139,7 +144,7 @@ for (const c of frozen) {
 
 const pct = (n: number) => (eligible ? `${((n / eligible) * 100).toFixed(0)}%` : "n/a");
 console.log(`\n${eligible} cases where retrieval supplied the answer, identical passages throughout\n`);
-console.log(`${"model".padEnd(30)} ${"cited gold".padEnd(12)} ${"declined".padEnd(10)} ${"ungrounded".padEnd(11)} dropped`);
+console.log(`${"model".padEnd(30)} ${"cited gold".padEnd(12)} ${"declined".padEnd(10)} ${"ungrounded".padEnd(11)} ${"rejected".padEnd(9)} invented`);
 for (const m of MODELS) {
   const s = score[m];
   console.log(
@@ -148,7 +153,9 @@ for (const m of MODELS) {
       // Declining here is a false negative: the passage that answers the question was on the
       // model's desk, and the reader cannot tell that from a library that truly lacks it.
       `${`${s.declined} ${pct(s.declined)}`.padEnd(10)} ` +
-      `${`${s.ungrounded} ${pct(s.ungrounded)}`.padEnd(11)} ${s.dropped}`,
+      // rejected: quotes the verifier threw out, which should be zero.
+      // invented: sentence ids the model made up, which is the model's error to own.
+      `${`${s.ungrounded} ${pct(s.ungrounded)}`.padEnd(11)} ${String(s.rejected).padEnd(9)} ${s.invented}`,
   );
 }
 if (notes.length) console.log(`\n${notes.join("\n")}`);

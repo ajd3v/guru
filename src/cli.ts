@@ -9,7 +9,16 @@ try {
 }
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert";
@@ -42,6 +51,24 @@ function db() {
 }
 
 async function add(path: string, pageOffset: number, withContext: boolean) {
+  // A directory is a bulk ingest, in this one process: loading the embedder costs more
+  // than embedding a whole book, so 2,000 files must not mean 2,000 process starts.
+  if (statSync(path).isDirectory()) {
+    const files = readdirSync(path)
+      .filter((f) => /\.(pdf|epub)$/i.test(f))
+      .sort();
+    let done = 0;
+    for (const f of files) {
+      // One unparseable file must not abandon the other 1,999.
+      try {
+        await add(join(path, f), pageOffset, withContext);
+      } catch (err) {
+        console.error(`failed ${f}: ${err instanceof Error ? err.message.slice(0, 120) : err}`);
+      }
+      if (++done % 50 === 0) console.error(`  ${done}/${files.length}`);
+    }
+    return;
+  }
   const book = extract(path, pageOffset);
   const contexts = withContext ? await contextualize(book, book.chunks) : undefined;
   await addBook(db(), book, contexts);
@@ -181,6 +208,41 @@ async function selfcheck() {
     ] as any),
     [],
     "a quote whose citation contains brackets must still verify",
+  );
+
+  // The inline scanner exists to catch quotations the model writes in its own prose. Run
+  // over the spliced blockquotes too it paired a quotation mark inside one passage with one
+  // inside another and reported the whole answer, blockquote markers and all, as a single
+  // fabricated quote. Sources are full of such marks.
+  const marked = 'He called it a "sovereign" faculty of the mind, and said so plainly.';
+  const alsoMarked = 'The other passage speaks of "common people" and their stumbling.';
+  assert.deepEqual(
+    unverifiedQuotes(`> ${marked}\n\nSome linking prose.\n\n> ${alsoMarked}`, [
+      { ...top, text: marked },
+      { ...top, text: alsoMarked },
+    ] as any),
+    [],
+    "quotation marks inside verbatim passages must not be scanned as inline quotes",
+  );
+
+  // ...but a quotation the model types in its own prose is still caught.
+  assert.deepEqual(
+    unverifiedQuotes('He wrote that "this sentence appears in no book in the library at all".', [
+      { ...top, text: marked },
+    ] as any),
+    ["this sentence appears in no book in the library at all"],
+    "an invented inline quotation must still be reported",
+  );
+
+  // A stray mark in one paragraph must not pair with one in another. An inline quotation sits
+  // inside a sentence, so pairing across paragraphs can only capture the prose between them.
+  assert.deepEqual(
+    unverifiedQuotes(
+      'He called the faculty "sovereign" here.\n\nA later paragraph mentions "vision" again.',
+      [{ ...top, text: marked }] as any,
+    ),
+    [],
+    "quote marks in separate paragraphs must not pair across them",
   );
 
   // Conceptual query, no shared keywords: the vector half has to carry it.
