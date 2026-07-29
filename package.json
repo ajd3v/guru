@@ -9,7 +9,8 @@
     "eval": "node eval/run.ts",
     "eval:gen": "node eval/generate.ts",
     "worker": "node src/cli.ts worker",
-    "eval:answers": "node eval/answers.ts"
+    "eval:answers": "node eval/answers.ts",
+    "eval:rerank": "node eval/rerank.ts"
   },
   "repository": {
     "type": "git",

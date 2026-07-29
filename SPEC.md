@@ -67,13 +67,29 @@ lost 3 of what search found, at 60 it lost 13), so the 20 further points sitting
 60 and depth 500 cannot be collected by widening the window. Three separate attacks — a local
 cross-encoder, a larger embedder, more depth — all produced the same ~60%.
 
-The consequence for planning: **retrieval work upstream of the reranker is finished**. Chunking,
-embedder, and fusion depth are all knobs on a stage that is no longer binding. The one untested
-lever is running the rerank step on the answer-tier model rather than the pipeline tier, and it
-is deliberately not being tested before launch: the rerank prompt changes with every query, so it
-cannot be prompt-cached (Haiku-tier caching needs a 4096-token stable prefix), and a 4x cost rise
-on the least cacheable stage is the wrong trade at a ~$12/mo subscription. At depth 60 the
-pipeline costs roughly $0.04 per question, most of it rerank.
+**A better reranker was the last component-level lever, and it is worse.** Measured with
+`eval/rerank.ts` on 109 cases where search supplied the answer, each reranker seeing the
+identical frozen candidate list — frozen because HyDE writes a different hypothetical every
+time, and two rerankers compared across separate runs are graded on different candidates:
+
+| reranker | recall@5 | MRR@5 | fallbacks |
+|---|---|---|---|
+| none, fused order | 54/109 50% | — | — |
+| **DeepSeek-V4-Flash** (current) | **87/109 80%** | 0.643 | 0% |
+| DeepSeek-V4-Pro (dearer tier) | 78/109 72% | 0.610 | 0% |
+
+The reranker earns its four calls, 50% to 80%, and the cheaper model does it eight points
+better. Neither run fell back, so this is not a parse failure: the dearer model simply chooses
+worse, exactly as it did at the answer step. These figures also reconcile the shipped number —
+80% of the 72% that search finds is ~58%, which is the recall@5 60% above.
+
+**So 60% is the architecture's ceiling, not any component's.** Four attacks have failed and all
+four failed the same way, by improving one part while the shipped number stayed put: a local
+cross-encoder (much worse), a stronger embedder (better search, identical output), more candidate
+depth (discrimination loss cancels the gain), and a stronger reranker (worse). Raising this needs
+a different design, not a better part. The untried lever is **chunk size**, which
+`ingest/ingest.py` calls the single biggest retrieval lever and which has never been swept since
+HyDE landed; after that, the v2 concept graph.
 
 **Launch decision: 60% is the shipping number.** The 40% that miss produce an honest "your
 library doesn't cover this", not a fabricated quote, so the brand promise holds at this recall.
