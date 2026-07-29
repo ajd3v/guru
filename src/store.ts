@@ -223,8 +223,14 @@ export function cite(h: Hit) {
   // quotations, and a stray mark there pairs with the next one and corrupts the scan.
   // Newlines go for the same reason — EPUB chapter titles wrap, and a locator broken across
   // two lines is half in the blockquote and half out of it once rendered.
+  //
+  // Square brackets go too, and this one was expensive: the whole citation is delimited by
+  // brackets, so a Gutenberg footnote marker inside a chapter title ("HEROISM[309]") nested
+  // one bracket pair inside another. The verifier could not strip the citation off the end
+  // of the quotation, checked the quotation with its citation still attached, found no such
+  // text in any book, and reported every correct quote from that chapter as fabricated.
   const where = h.paginated
     ? `p. ${h.page_start}${h.page_end !== h.page_start ? `-${h.page_end}` : ""}`
-    : String(h.page_start).replace(/["“”]/g, "").replace(/\s+/g, " ").trim();
+    : String(h.page_start).replace(/["“”\[\]]/g, "").replace(/\s+/g, " ").trim();
   return `[${h.title}, ${h.author}, ${where}]`;
 }

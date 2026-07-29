@@ -168,6 +168,21 @@ async function selfcheck() {
     "[Yoga Sutras, Patanjali, Lectures VI And VII. The Sick Soul.,]",
   );
 
+  // Gutenberg footnote markers put brackets inside chapter titles. Nested inside the
+  // citation's own brackets they defeated the verifier's citation stripping, so every
+  // correct quote from such a chapter was dropped as fabricated. Both ends are covered:
+  // the locator carries no brackets, and the stripper survives them if one ever does.
+  const bracketed = cite({ ...top, paginated: 0, page_start: "HEROISM[309], para. 7" } as any);
+  assert.equal(bracketed, "[Yoga Sutras, Patanjali, HEROISM309, para. 7]");
+  const emerson = "To this military attitude of the soul we give the name of Heroism.";
+  assert.deepEqual(
+    unverifiedQuotes(`> ${emerson} [Essays, Emerson, HEROISM[309], para. 7]`, [
+      { ...top, text: emerson },
+    ] as any),
+    [],
+    "a quote whose citation contains brackets must still verify",
+  );
+
   // Conceptual query, no shared keywords: the vector half has to carry it.
   const concept = await search(conn, "quieting a restless mind");
   assert(

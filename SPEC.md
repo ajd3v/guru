@@ -37,6 +37,10 @@ question → hypothetical answer (HyDE) → hybrid retrieval → rerank → teac
 4. **Every claim carries a citation or is removed.** A paragraph whose cited ids all turn out to be invented is dropped with them, and an answer left with no quote at all is replaced by an honest refusal rather than shipped as unsourced prose. Declining is stated explicitly by the model (`NOT COVERED:`) so a legitimate refusal is distinguishable from a bare assertion. Hand-read sample of 20 answers found 5 shipping unsupported claims; after this, a fresh sample of 14 gave 9 grounded, 5 honest refusals, 0 bare claims.
 5. **Verbatim-quote verifier**: a backstop behind the above. Every quoted span, blockquote or inline, must be a substring of a retrieved chunk; blocks resting on one that isn't are dropped and reported. It is the brand, and it should now never fire.
 
+   **It was firing constantly, and it was wrong.** A citation is delimited by square brackets, and Gutenberg footnote markers put brackets *inside* chapter titles — `HEROISM[309]`. Nested one bracket pair inside another, the verifier could not strip the citation off the end of a quotation, so it checked the quotation with its citation still attached, found no book containing that text, and reported a perfectly real quote as fabricated. Every quotation from such a chapter was dropped. Emerson's *Essays* is full of them, so "what is courage?" answered *"I could not ground an answer"* while Emerson's *Heroism* sat in the retrieved passages.
+
+   Measured on the 26 frozen answer cases, identical passages before and after: claims dropped **30 → 3**, ungrounded refusals **1 → 0**, gold citations **92% → 96%**. The lesson is not the regex. It is that a backstop which fails *closed* is invisible: it produced a safe-looking honest refusal every time, and the only symptom was a dropped-claims count that read as the model misbehaving. A verifier needs its own test, because nothing downstream can tell you it is wrong.
+
 **Measured, all 151 cases, DeepSeek-V4-Flash via DeepInfra, rerank fallback rate 0%.**
 
 Search recall by candidate depth, before any reranking:

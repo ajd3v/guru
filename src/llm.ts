@@ -300,7 +300,11 @@ export function unverifiedQuotes(answer: string, hits: Hit[]) {
 
   // Citations trail the quote and are not part of it. Both [x] and [[x]] appear in the
   // wild; capturing them made verbatim quotes look fabricated.
-  const stripCite = (q: string) => q.replace(/\s*\[\[?[^\]]*\]\]?[\s.]*$/, "").trim();
+  // Tolerates one level of nesting inside the citation. `cite` no longer emits brackets in a
+  // locator, but a quotation that survives verification is the entire promise of this
+  // product, so this does not depend on that being true of every citation ever written.
+  const stripCite = (q: string) =>
+    q.replace(/\s*\[(?:[^\[\]]|\[[^\[\]]*\])*\]\s*[\s.]*$/, "").trim();
 
   /**
    * An elided quote ("A ... B") is honest; verify each side, not the joined string.
@@ -450,6 +454,13 @@ export async function ask(query: string, hits: Hit[]) {
   // shipping the bare claim that was left.
   let final = answer;
   const unverified = unverifiedQuotes(final, hits);
+  // GURU_DEBUG=1 prints what the model wrote and what the verifier objected to. The spliced
+  // text comes out of the passages verbatim, so anything unverified here is the verifier
+  // misreading the answer rather than the model inventing a quotation.
+  if (process.env.GURU_DEBUG) {
+    console.error(`\n=== draft ===\n${draft}\n=== unverified (${unverified.length}) ===`);
+    for (const q of unverified) console.error(`  ${JSON.stringify(q)}`);
+  }
   if (unverified.length) {
     // Should be rare: spliced text comes from the passages verbatim.
     final = dropUnverified(final, unverified);
