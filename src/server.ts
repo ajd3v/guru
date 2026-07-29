@@ -311,6 +311,10 @@ const PAGE = (body = "") => `<!doctype html>
                          font: .6875rem/1.6 var(--small); letter-spacing: .12em; text-transform: uppercase; }
   footer button:hover, .file:hover { color: var(--ink); }
   .file input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  /* The waiting line breathes at the same slow rate as the mark, so the page has one pulse
+     rather than two competing ones. */
+  .waiting { animation: breathe 3.2s ease-in-out infinite; }
+  .waiting::after { content: "\\2026"; }
   .answer, h2 { animation: rise .5s ease-out both; }
   @media (prefers-reduced-motion: reduce) { .answer, h2 { animation: none; } }
   @keyframes rise { from { opacity: 0; transform: translateY(.4rem); } to { opacity: 1; transform: none; } }
@@ -328,7 +332,7 @@ const PAGE = (body = "") => `<!doctype html>
   <input name="q" maxlength="${MAX_QUERY}" placeholder="Ask your library&hellip;" autofocus>
   <button>Ask</button>
 </form>
-${body}
+<div id="out">${body}</div>
 <footer>
   <label class="file">Add a book
     <input type="file" accept=".pdf,.epub" id="f"></label>
@@ -341,6 +345,61 @@ ${body}
 </footer>
 </div>
 <script>
+  // Progressive enhancement: without this the form posts normally and the page renders the
+  // whole answer at once. With it, the passages appear as soon as they are found and the
+  // answer replaces the waiting line when it is written.
+  const form = document.querySelector("form.ask"), out = document.getElementById("out");
+  form.addEventListener("submit", async (e) => {
+    const q = form.q.value.trim();
+    if (!q) return;
+    e.preventDefault();
+
+    out.innerHTML = '<h2></h2><p class="note waiting">searching your library</p>';
+    out.querySelector("h2").textContent = q;
+    const waiting = () => out.querySelector(".waiting");
+
+    let res;
+    try {
+      res = await fetch("/ask", {
+        method: "POST",
+        headers: { accept: "text/event-stream", "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ q }),
+      });
+    } catch { waiting().textContent = "could not reach the server"; return; }
+
+    // The daily cap and an over-long question come back as ordinary status codes with a
+    // whole page, so fall back to letting the browser render it.
+    if (!res.ok || !(res.headers.get("content-type") || "").includes("event-stream")) {
+      document.open(); document.write(await res.text()); document.close(); return;
+    }
+
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = "", passages = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      // SSE frames are separated by a blank line; anything after the last one is a partial
+      // frame and has to stay in the buffer until the rest of it arrives.
+      const frames = buf.split("\\n\\n");
+      buf = frames.pop() ?? "";
+      for (const frame of frames) {
+        const name = (frame.match(/^event: (.*)$/m) || [])[1];
+        const data = JSON.parse((frame.match(/^data: (.*)$/m) || [])[1] || "{}");
+        if (name === "stage" && waiting()) waiting().textContent = data.text;
+        if (name === "passages") {
+          passages = data.html;
+          if (waiting()) waiting().textContent = data.text + ", composing an answer";
+        }
+        if (name === "answer") {
+          out.innerHTML = '<h2></h2>' + data.html + passages;
+          out.querySelector("h2").textContent = q;
+        }
+      }
+    }
+    if (waiting()) waiting().textContent = "the answer did not arrive";
+  });
+
   // The file is the whole request body — no multipart, so the server needs no parser for it.
   document.getElementById("f").onchange = async (e) => {
     const file = e.target.files[0];
@@ -471,28 +530,68 @@ createServer(async (req, res) => {
     }
     recordAsk(db);
 
+    /**
+     * Answering takes about eighteen seconds, most of it composing. The passages are known
+     * after roughly seven, and they are the thing the reader came for, so a client that can
+     * stream is given them to read while the rest is written. No invented progress bar: every
+     * event carries something true that has actually happened.
+     */
+    const streaming = (req.headers.accept ?? "").includes("text/event-stream");
+    let emit = (_event: string, _data: unknown) => {};
+    if (streaming) {
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache",
+        // Traefik and friends will otherwise hold the whole response to compress it, which
+        // buffers away the only thing streaming is for.
+        "x-accel-buffering": "no",
+      });
+      emit = (event, data) => void res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    }
+
+    emit("stage", { text: "searching your library" });
     const hits = await rerank(query, await search(db, await expandQuery(query)));
-    if (!hits.length) return send(200, PAGE("<p>Your library doesn't cover this.</p>"));
+    if (!hits.length) {
+      const none = "<p>Your library doesn't cover this.</p>";
+      if (!streaming) return send(200, PAGE(none));
+      emit("answer", { html: none });
+      return void res.end();
+    }
+
+    const sources = [...new Set(hits.map(cite))].map((c) => `<li>${escape(c)}</li>`).join("");
+    // What was read but not quoted: available to anyone who wants to check the work, folded
+    // away from anyone who does not.
+    const consulted =
+      `<details class="note"><summary>Passages consulted</summary>` +
+      `<ul class="shelf">${sources}</ul></details>`;
+    emit("passages", {
+      html: consulted,
+      text: `reading ${hits.length} passage${hits.length > 1 ? "s" : ""}`,
+    });
 
     const { answer, dropped } = await ask(query, hits);
-    const sources = [...new Set(hits.map(cite))].map((c) => `<li>${escape(c)}</li>`).join("");
-    send(
-      200,
-      PAGE(
-        `<h2>${escape(query)}</h2><div class="answer">${render(answer)}</div>` +
-          // What was read but not quoted: available to anyone who wants to check the work,
-          // folded away from anyone who does not.
-          `<details class="note"><summary>Passages consulted</summary>` +
-          `<ul class="shelf">${sources}</ul></details>` +
-          (dropped
-            ? `<p class="note">${dropped} claim${dropped > 1 ? "s" : ""} dropped: the quotation could not be verified.</p>`
-            : ""),
-      ),
-    );
+    const note = dropped
+      ? `<p class="note">${dropped} claim${dropped > 1 ? "s" : ""} dropped: the quotation could not be verified.</p>`
+      : "";
+    const composed = `<div class="answer">${render(answer)}</div>`;
+
+    if (!streaming) {
+      return send(200, PAGE(`<h2>${escape(query)}</h2>${composed}${consulted}${note}`));
+    }
+    emit("answer", { html: composed + note });
+    res.end();
   } catch (err) {
     // The pipeline calls an upstream model. A failure there is not the reader's fault and
     // must not render as an unsourced answer, so it is reported as a failure.
     console.error(err);
-    send(502, PAGE("<p>Something failed upstream. Try again.</p>"));
+    const failed = "<p>Something failed upstream. Try again.</p>";
+    // A stream that has already sent its headers cannot be given a status; it has to say so
+    // in an event and close, or the reader watches a spinner that never resolves.
+    if (res.headersSent) {
+      res.write(`event: answer\ndata: ${JSON.stringify({ html: failed })}\n\n`);
+      res.end();
+    } else {
+      send(502, PAGE(failed));
+    }
   }
 }).listen(PORT, () => console.error(`guru on http://localhost:${PORT}`));

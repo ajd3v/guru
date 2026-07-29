@@ -457,9 +457,9 @@ export async function ask(query: string, hits: Hit[]) {
 
   if (!/^\s*>/m.test(final)) {
     return {
-      answer:
-        "Your library has passages near this, but I could not ground an answer in them. " +
-        "Try `find` to read what came back.",
+      // No interface instruction here: this string is shown in the CLI and on the web, where
+      // the passages it refers to are already listed under the answer.
+      answer: "Your library has passages near this, but I could not ground an answer in them.",
       regenerated: true,
       dropped: dropped + unverified.length,
     };
