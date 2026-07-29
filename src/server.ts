@@ -14,7 +14,7 @@ try {
 import assert from "node:assert";
 import { execFileSync } from "node:child_process";
 import { createServer, type IncomingMessage } from "node:http";
-import { authenticate, toWebRequest } from "./auth.ts";
+import { authenticate, basicAuthOk, toWebRequest } from "./auth.ts";
 import { createReadStream, createWriteStream, existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { once } from "node:events";
@@ -170,9 +170,29 @@ if (process.argv.includes("--selfcheck")) {
       stdio: "pipe",
     });
   assert.throws(() => boot({}), /CLERK_SECRET_KEY is required/, "production with no auth must refuse to boot");
-  // Single-user is a deliberate, named choice and is allowed. The refusal above is aimed at
-  // the silent default, not at someone who decided to run one library behind a proxy.
-  assert.doesNotThrow(() => boot({ GURU_SINGLE_USER: "reader" }), "explicit single-user must boot");
+  // Single-user serves one whole library to whoever asks, so in production it must carry a
+  // password. This pairing is the actual danger, and it is refused rather than documented.
+  assert.throws(
+    () => boot({ GURU_SINGLE_USER: "reader" }),
+    /GURU_BASIC_AUTH .* is required/,
+    "single-user without a password must refuse to boot in production",
+  );
+  assert.doesNotThrow(
+    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:hunter2" }),
+    "single-user with a password must boot",
+  );
+
+  // The credential check itself. Wrong password, wrong scheme, and absent header must all
+  // fail; only the exact pair passes.
+  const ok = (h: string | undefined) => basicAuthOk(h, "ajd3v:s3cret");
+  const header = (s: string) => `Basic ${Buffer.from(s).toString("base64")}`;
+  assert.equal(ok(header("ajd3v:s3cret")), true);
+  assert.equal(ok(header("ajd3v:wrong")), false);
+  assert.equal(ok(header("ajd3v:s3cret ")), false, "trailing whitespace must not pass");
+  assert.equal(ok(header("other:s3cret")), false);
+  assert.equal(ok(undefined), false);
+  assert.equal(ok("Bearer abc"), false);
+  assert.equal(basicAuthOk(undefined, undefined), true, "no credential configured means no check");
 
   // Uploads are capped while streaming, not from content-length, because the header is the
   // client's word. A body that keeps going must be cut off and its partial file removed.

@@ -21,6 +21,9 @@ services:
       # authenticate. Swap this for CLERK_SECRET_KEY + CLERK_PUBLISHABLE_KEY + GURU_ORIGINS
       # the day a second person needs a login; nothing else changes.
       - GURU_SINGLE_USER=${GURU_SINGLE_USER:-reader}
+      # user:password. Enforced by the app, not the proxy — see the note in src/auth.ts.
+      # Without it the app refuses to boot in single-user mode.
+      - GURU_BASIC_AUTH=${GURU_BASIC_AUTH}
       - DEEPINFRA_API_KEY=${DEEPINFRA_API_KEY}
       - DEEPINFRA_BASE_URL=${DEEPINFRA_BASE_URL}
     volumes:

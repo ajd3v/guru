@@ -3,6 +3,7 @@
 // Clerk is used rather than anything hand-rolled: sessions, password storage, MFA, and token
 // rotation are the parts of a SaaS most worth not owning. See SPEC.md.
 import type { IncomingMessage } from "node:http";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createClerkClient, type ClerkClient } from "@clerk/backend";
 
 /**
@@ -39,6 +40,16 @@ const PRODUCTION = process.env.NODE_ENV === "production";
  */
 const SINGLE_USER = process.env.GURU_SINGLE_USER;
 
+/**
+ * `user:password` guarding single-user mode.
+ *
+ * Enforced here rather than at the reverse proxy on purpose. The first attempt put it in a
+ * Traefik middleware, and Coolify regenerated the router's label on deploy and dropped it —
+ * the site came up with no authentication and nothing said so. A door this important should
+ * not depend on another system's label-merge order, and in here it is testable.
+ */
+const BASIC_AUTH = process.env.GURU_BASIC_AUTH;
+
 // A missing key must never silently degrade to "everyone is the same user" on a public
 // box. Local development gets the fallback; production gets a boot failure.
 if (PRODUCTION && !SECRET && !SINGLE_USER) {
@@ -51,16 +62,33 @@ if (PRODUCTION && !SECRET && !SINGLE_USER) {
 if (PRODUCTION && SECRET && !AUTHORIZED_PARTIES.length) {
   throw new Error("GURU_ORIGINS is required when NODE_ENV=production (e.g. https://guru.app)");
 }
-if (PRODUCTION && SINGLE_USER) {
-  console.error(
-    `single-user mode: every request is served as ${SINGLE_USER}. ` +
-      "This is only safe behind an authenticating proxy.",
-  );
+// Single-user mode serves one person's whole library to whoever asks, so in production it
+// must come with a password. Refusing here makes the unsafe combination impossible rather
+// than leaving it to whoever writes the deployment config to remember.
+if (PRODUCTION && SINGLE_USER && !BASIC_AUTH) {
+  throw new Error("GURU_BASIC_AUTH (user:password) is required alongside GURU_SINGLE_USER in production");
 }
 
 let clerk: ClerkClient | undefined;
 if (SECRET) clerk = createClerkClient({ secretKey: SECRET, publishableKey: PUBLISHABLE });
 else console.error("no CLERK_SECRET_KEY — every request resolves to the local dev user");
+
+/**
+ * Constant-time check of an `Authorization: Basic` header against `GURU_BASIC_AUTH`.
+ *
+ * Both sides are hashed before comparing so the buffers are the same length whatever was
+ * sent — `timingSafeEqual` throws on a length mismatch, and the lengths themselves would
+ * otherwise leak the size of the credential.
+ */
+export function basicAuthOk(header: string | undefined, expected = BASIC_AUTH) {
+  if (!expected) return true;
+  if (!header?.startsWith("Basic ")) return false;
+  const given = Buffer.from(header.slice(6).trim(), "base64").toString("utf8");
+  return timingSafeEqual(
+    createHash("sha256").update(given).digest(),
+    createHash("sha256").update(expected).digest(),
+  );
+}
 
 /** Node's request is not a fetch Request, and Clerk wants the latter. Headers and URL only. */
 export function toWebRequest(req: IncomingMessage): Request {
@@ -80,7 +108,16 @@ export function toWebRequest(req: IncomingMessage): Request {
 export async function authenticate(req: IncomingMessage): Promise<Auth> {
   // Checked before Clerk: if both are configured, the explicit choice wins rather than
   // leaving which one applies to the order of two environment variables.
-  if (SINGLE_USER) return { kind: "user", userId: SINGLE_USER };
+  if (SINGLE_USER) {
+    if (BASIC_AUTH && !basicAuthOk(req.headers.authorization)) {
+      return {
+        kind: "respond",
+        status: 401,
+        headers: new Headers({ "www-authenticate": 'Basic realm="guru", charset="UTF-8"' }),
+      };
+    }
+    return { kind: "user", userId: SINGLE_USER };
+  }
   if (!clerk) return { kind: "user", userId: process.env.GURU_USER ?? "demo" };
 
   const state = await clerk.authenticateRequest(toWebRequest(req), {
