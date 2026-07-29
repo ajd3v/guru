@@ -14,7 +14,7 @@ try {
 }
 
 import { readFileSync } from "node:fs";
-import { open, search, cite, type Hit } from "../src/store.ts";
+import { CANDIDATES, open, search, cite, type Hit } from "../src/store.ts";
 import { expandQuery, rerank, stats } from "../src/llm.ts";
 
 const DB = process.env.GURU_DB ?? "data/eval.db";
@@ -51,7 +51,12 @@ const rankOf = (hits: Hit[], expect: string) =>
 
 const db = open(DB);
 const rows: string[] = [];
-let fusedHits = 0;
+// Recall of the fused list at several depths. Reporting a single "recall@20" that was really
+// scanning all CANDIDATES hits (60 by default) hid where the curve bends: it charged the
+// reranker for every case search had only found at rank 40, and made the search half look
+// better than it is. Depth is the knob, so it has to be measured as a curve, not a point.
+const DEPTHS = [...new Set([5, 20, 60, 200, 500].filter((d) => d < CANDIDATES).concat(CANDIDATES))];
+const fusedAt: Record<number, number> = Object.fromEntries(DEPTHS.map((d) => [d, 0]));
 let topHits = 0;
 let mrr = 0;
 let scored = 0;
@@ -77,14 +82,14 @@ for (const c of cases) {
   const final = useRerank ? await rerank(c.query, fused) : fused.slice(0, 5);
   const inTop = rankOf(final, c.expect);
 
-  if (inFused !== -1) fusedHits++;
+  if (inFused !== -1) for (const d of DEPTHS) if (inFused < d) fusedAt[d]++;
   if (inTop !== -1) {
     topHits++;
     bySource[src].top++;
     mrr += 1 / (inTop + 1);
   }
   rows.push(
-    `${inTop !== -1 ? "PASS" : "FAIL"}  fused@20 ${String(inFused).padStart(2)}  ` +
+    `${inTop !== -1 ? "PASS" : "FAIL"}  fused ${String(inFused).padStart(3)}  ` +
       `top@5 ${String(inTop).padStart(2)}  ${c.query.slice(0, 46).padEnd(46)}  ` +
       `${inTop !== -1 ? cite(final[inTop]) : ""}`,
   );
@@ -95,9 +100,11 @@ if (scored <= 15 || process.argv.includes("--verbose")) console.log(rows.join("\
 console.log(
   `\n${scored}/${cases.length} cases in corpus · ${process.env.GURU_EMBED ?? "bge-base"}` +
     ` · ${useHyde ? "hyde + " : ""}${useRerank ? "search + rerank" : "search only"}` +
-    `\nrecall@20 (fused)  ${fusedHits}/${scored}  ${pct(fusedHits)}` +
-    `\nrecall@5  (final)  ${topHits}/${scored}  ${pct(topHits)}` +
-    `\nMRR@5              ${(mrr / scored).toFixed(3)}` +
+    DEPTHS.map(
+      (d) => `\nrecall@${String(d).padEnd(3)} (search) ${String(fusedAt[d]).padStart(3)}/${scored}  ${pct(fusedAt[d])}`,
+    ).join("") +
+    `\nrecall@5   (final)  ${String(topHits).padStart(3)}/${scored}  ${pct(topHits)}` +
+    `\nMRR@5               ${(mrr / scored).toFixed(3)}` +
     `\n` +
     Object.entries(bySource)
       .map(([k, v]) => `  ${k.padEnd(5)} recall@5 ${v.top}/${v.n}  ${((v.top / v.n) * 100).toFixed(0)}%`)
@@ -110,7 +117,8 @@ if (stats.rerankCalls) {
   console.log(`\nrerank fallbacks   ${stats.rerankFallbacks}/${stats.rerankCalls}  ${pct}%${warn}`);
 }
 
-// recall@20 is the ceiling: rerank can only reorder what search already found.
+// The deepest search recall is the ceiling: rerank can only reorder what search already found.
+const ceiling = fusedAt[DEPTHS[DEPTHS.length - 1]];
 if (topHits < scored) {
-  console.log(`\nceiling check: ${fusedHits - topHits} case(s) found by search but lost by ranking`);
+  console.log(`\nceiling check: ${ceiling - topHits} case(s) found by search but lost by ranking`);
 }

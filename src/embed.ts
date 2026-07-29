@@ -12,6 +12,15 @@ const MODELS = {
     pooling: "cls",
     queryPrefix: "Represent this sentence for searching relevant passages: ",
   },
+  // Better search, same shipped answers: on 151 cases it found the right chunk 6 points more
+  // often at depth 60 and the reranker gave every point back (59% vs 60% recall@5). Not the
+  // default — it costs 3x the ingest CPU and a 16% larger database for no measured gain.
+  "bge-large": {
+    id: "Xenova/bge-large-en-v1.5",
+    dim: 1024,
+    pooling: "cls",
+    queryPrefix: "Represent this sentence for searching relevant passages: ",
+  },
   "minilm": { id: "Xenova/all-MiniLM-L6-v2", dim: 384, pooling: "mean", queryPrefix: "" },
 } as const;
 

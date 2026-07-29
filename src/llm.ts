@@ -220,7 +220,11 @@ const RERANK_BATCH = 20;
  */
 export const stats = { rerankCalls: 0, rerankFallbacks: 0 };
 
-/** Step 2 of the retrieval stack: an LLM reorders the fused candidates. */
+/**
+ * Step 2 of the retrieval stack: an LLM reorders the fused candidates.
+ *
+ * A local cross-encoder (bge-reranker-base) was tried here and reverted; see SPEC.md.
+ */
 export async function rerank(query: string, hits: Hit[], k = 5): Promise<Hit[]> {
   if (hits.length <= 1) return hits;
 
