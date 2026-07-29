@@ -4,9 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node src/cli.ts selfcheck && node test/llm.test.ts && node test/openai.test.ts && .venv/bin/python ingest/ingest.py --selfcheck",
+    "test": "node src/cli.ts selfcheck && node src/server.ts --selfcheck && node test/llm.test.ts && node test/openai.test.ts && .venv/bin/python ingest/ingest.py --selfcheck",
+    "serve": "node src/server.ts",
     "eval": "node eval/run.ts",
-    "eval:gen": "node eval/generate.ts"
+    "eval:gen": "node eval/generate.ts",
+    "worker": "node src/cli.ts worker",
+    "eval:answers": "node eval/answers.ts"
   },
   "repository": {
     "type": "git",
@@ -22,6 +25,7 @@
   "homepage": "https://github.com/ajd3v/guru#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
+    "@clerk/backend": "^3.13.2",
     "@huggingface/transformers": "^4.2.0",
     "better-sqlite3": "^13.0.1",
     "sqlite-vec": "^0.1.9"
