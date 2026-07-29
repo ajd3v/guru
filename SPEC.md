@@ -133,13 +133,24 @@ one. Model choice for the answer step is a quality decision, not a cost decision
 allowance (`GURU_MAX_ASKS`, default 40).
 
 **The cost model here was backwards, and measuring it inverted both halves.** Ingest is not the
-spike: embeddings are local `bge-base` on CPU and contextual retrieval is deferred, so adding a
-book costs zero API dollars. Chat is not cheap either. A single answer runs about **$0.04** —
-roughly $0.016 for four rerank batches at Haiku-tier rates and $0.024 for a Sonnet-tier answer.
-Prompt caching does not rescue it: the rerank prompt carries a different candidate set every
-query, so there is no stable prefix to cache, and Haiku-tier caching needs 4096 tokens of one
-anyway. At $12/month a reader asking twenty questions a day costs more than they pay, which is
-why the allowance exists and why it had to land before billing.
+spike: embeddings are local `bge-base` on CPU (no API call anywhere in the embed path, weights
+baked into the image), and contextual retrieval is deferred, so **adding a book costs zero API
+dollars**. Chat is where the money goes, and reranking is most of it — four batched calls
+carrying ~16k input tokens against roughly 3k for the answer.
+
+The absolute figure depends entirely on which models the pipeline is pointed at, and the two
+plausible stacks are twenty times apart:
+
+| stack | per answer | 40 answers/day |
+|---|---|---|
+| DeepSeek-V4-Flash on DeepInfra (deployed) — $0.09/$0.18 per Mtok | **~$0.002** | ~$2.40/month |
+| Haiku pipeline + Sonnet answers on Anthropic (SPEC's intent) — $1/$5 and $3/$15 | **~$0.04** | ~$48/month |
+
+Prompt caching does not rescue either one: the rerank prompt carries a different candidate set
+every query, so there is no stable prefix to cache, and Haiku-tier caching needs 4096 tokens of
+one anyway. The daily allowance exists because the *expensive* configuration would outspend a
+$12 subscription at around ten questions a day. On what is actually running it is comfortable,
+which is an argument for keeping the cheap stack rather than for removing the cap.
 
 **Measured: the expensive answer model buys nothing.** `eval/answers.ts` scores the step the
 retrieval eval cannot — given passages that *do* contain the answer, does the model quote the
