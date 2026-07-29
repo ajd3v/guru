@@ -18,7 +18,7 @@ try {
   // no .env; env vars may still be set externally
 }
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { open, search, type Hit } from "../src/store.ts";
 import { _resetLlmConfig, ask, expandQuery, rerank } from "../src/llm.ts";
 
@@ -55,19 +55,54 @@ const MODELS =
     ? [process.env.GURU_ANSWER_MODEL ?? ""]
     : process.argv[modelsAt + 1].split(",").map((s) => s.trim());
 
+/** `ask` returns this when every quote failed verification. Distinct from a model decline. */
+const UNGROUNDED = "Your library has passages near this";
+
 const db = open(DB);
 const score = Object.fromEntries(
-  MODELS.map((m) => [m, { gold: 0, answered: 0, refused: 0, dropped: 0 }]),
+  MODELS.map((m) => [m, { gold: 0, answered: 0, declined: 0, ungrounded: 0, dropped: 0 }]),
 );
 let eligible = 0;
+const notes: string[] = [];
 
-for (const c of cases) {
-  const hits: Hit[] = await rerank(c.query, await search(db, await expandQuery(c.query)));
+/**
+ * Retrieval is stochastic, so two runs grade two different sets of cases — which makes a
+ * before/after comparison of a prompt change meaningless in exactly the way comparing two
+ * models across separate runs was. Freeze the passages to a file and every later run answers
+ * from identical input. It also makes iterating cheap: retrieval is most of the wall clock.
+ *
+ *   node eval/answers.ts --cache data/answer-cases.json --limit 30
+ */
+const cacheAt = process.argv.indexOf("--cache");
+const CACHE = cacheAt === -1 ? "" : process.argv[cacheAt + 1];
+type Frozen = { query: string; expect: string; hits: Hit[] };
+let frozen: Frozen[] = [];
+
+if (CACHE) {
+  try {
+    frozen = JSON.parse(readFileSync(CACHE, "utf8")) as Frozen[];
+    console.error(`answering from ${frozen.length} frozen cases in ${CACHE}`);
+  } catch {
+    console.error(`building ${CACHE}…`);
+  }
+}
+
+if (!frozen.length) {
+  for (const c of cases) {
+    const hits: Hit[] = await rerank(c.query, await search(db, await expandQuery(c.query)));
+    if (hits.some((h) => flat(h.text).includes(flat(c.expect)))) {
+      frozen.push({ query: c.query, expect: c.expect, hits });
+    }
+  }
+  if (CACHE) writeFileSync(CACHE, JSON.stringify(frozen));
+}
+
+for (const c of frozen) {
+  const hits = c.hits;
 
   // Only score what the answer model was actually given a chance at. A case retrieval missed
   // says nothing about the answer step, and counting it as a failure re-measures search.
-  const gold = hits.find((h) => flat(h.text).includes(flat(c.expect)));
-  if (!gold) continue;
+  const gold = hits.find((h) => flat(h.text).includes(flat(c.expect)))!;
   eligible++;
   const goldText = flat(gold.text);
 
@@ -80,23 +115,40 @@ for (const c of cases) {
     const result = await ask(c.query, hits);
     const quotes = quotesOf(result.answer);
     const s = score[model];
-    if (quotes.length) s.answered++;
-    else s.refused++;
-    if (quotes.some((q) => goldText.includes(q))) s.gold++;
     s.dropped += result.dropped;
+
+    if (quotes.length) {
+      s.answered++;
+      if (quotes.some((q) => goldText.includes(q))) s.gold++;
+      else notes.push(`  miss  ${model.split("/").pop()}  ${c.query.slice(0, 62)}`);
+      continue;
+    }
+
+    // Two very different failures, and lumping them together hides which to fix. A decline
+    // is the model's judgement about passages it was shown. Ungrounded means it answered and
+    // every quote failed verification, which should be near-impossible: the quoted text is
+    // spliced from those same passages, so it is a bug rather than a judgement call.
+    const ungrounded = result.answer.startsWith(UNGROUNDED);
+    if (ungrounded) s.ungrounded++;
+    else s.declined++;
+    notes.push(
+      `  ${ungrounded ? "UNGROUNDED" : "declined  "}  ${model.split("/").pop()}  ${c.query.slice(0, 62)}`,
+    );
   }
 }
 
 const pct = (n: number) => (eligible ? `${((n / eligible) * 100).toFixed(0)}%` : "n/a");
-console.log(`\n${eligible}/${cases.length} cases where retrieval supplied the answer, same passages for every model\n`);
-console.log(`${"model".padEnd(34)} ${"cited gold".padEnd(12)} ${"refused".padEnd(10)} dropped`);
+console.log(`\n${eligible} cases where retrieval supplied the answer, identical passages throughout\n`);
+console.log(`${"model".padEnd(30)} ${"cited gold".padEnd(12)} ${"declined".padEnd(10)} ${"ungrounded".padEnd(11)} dropped`);
 for (const m of MODELS) {
   const s = score[m];
   console.log(
-    `${(m || "(provider default)").padEnd(34)} ` +
+    `${(m || "(provider default)").split("/").pop()!.padEnd(30)} ` +
       `${`${s.gold}/${eligible} ${pct(s.gold)}`.padEnd(12)} ` +
-      // A refusal here is a false negative: the passage that answers the question was on the
-      // model's desk. It is the failure mode a cheaper model is most likely to introduce.
-      `${`${s.refused} ${pct(s.refused)}`.padEnd(10)} ${s.dropped}`,
+      // Declining here is a false negative: the passage that answers the question was on the
+      // model's desk, and the reader cannot tell that from a library that truly lacks it.
+      `${`${s.declined} ${pct(s.declined)}`.padEnd(10)} ` +
+      `${`${s.ungrounded} ${pct(s.ungrounded)}`.padEnd(11)} ${s.dropped}`,
   );
 }
+if (notes.length) console.log(`\n${notes.join("\n")}`);
