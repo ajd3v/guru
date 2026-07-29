@@ -1,0 +1,6 @@
+# Pinned to what the sidecar was developed against. PyMuPDF is the reason this stack has a
+# Python process at all; ebooklib and beautifulsoup4 handle the EPUB half. The soup is built
+# with html.parser, so lxml arrives only as ebooklib's own dependency.
+pymupdf==1.28.0
+EbookLib==0.20
+beautifulsoup4==4.15.0

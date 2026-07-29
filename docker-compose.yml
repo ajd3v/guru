@@ -1,0 +1,55 @@
+# Two containers off one image, sharing the data volume.
+#
+# The split is not decoration: `extract` blocks on a synchronous subprocess and embedding a
+# book is minutes of CPU, either of which would stall every reader's request if it ran in the
+# web process. They share a volume because the worker writes into the reader's own database.
+services:
+  guru:
+    build: .
+    command: serve
+    restart: unless-stopped
+    environment:
+      # Coolify terminates TLS and routes by this domain.
+      - SERVICE_FQDN_GURU_8080=https://guru.gainful.work
+      - NODE_ENV=production
+      - PORT=8080
+      - GURU_STARTER=/app/data/starter.db
+      - GURU_USER_DIR=/app/data/users
+      - GURU_JOBS_DB=/app/data/jobs.db
+      - GURU_UPLOADS=/app/data/uploads
+      # Single-user: every request is served as this reader, so the proxy in front MUST
+      # authenticate. Swap this for CLERK_SECRET_KEY + CLERK_PUBLISHABLE_KEY + GURU_ORIGINS
+      # the day a second person needs a login; nothing else changes.
+      - GURU_SINGLE_USER=${GURU_SINGLE_USER:-reader}
+      - DEEPINFRA_API_KEY=${DEEPINFRA_API_KEY}
+      - DEEPINFRA_BASE_URL=${DEEPINFRA_BASE_URL}
+    volumes:
+      - guru-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.status<500?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      # Generous: the first boot builds the starter library before the port opens.
+      start_period: 15m
+      retries: 3
+
+  worker:
+    build: .
+    command: worker
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - GURU_STARTER=/app/data/starter.db
+      - GURU_USER_DIR=/app/data/users
+      - GURU_JOBS_DB=/app/data/jobs.db
+      - GURU_UPLOADS=/app/data/uploads
+      # The worker serves no requests and never imports auth.ts, but it writes into the
+      # reader's database, so it has to agree with the server about who that reader is.
+      - GURU_SINGLE_USER=${GURU_SINGLE_USER:-reader}
+      - DEEPINFRA_API_KEY=${DEEPINFRA_API_KEY}
+      - DEEPINFRA_BASE_URL=${DEEPINFRA_BASE_URL}
+    volumes:
+      - guru-data:/app/data
+
+volumes:
+  guru-data:

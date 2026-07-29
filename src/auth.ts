@@ -29,13 +29,33 @@ const AUTHORIZED_PARTIES = (process.env.GURU_ORIGINS ?? "")
 
 const PRODUCTION = process.env.NODE_ENV === "production";
 
+/**
+ * Deliberate single-user mode: every request is this reader, whoever sent it.
+ *
+ * Only safe behind an authenticating proxy, because the app itself will no longer ask who
+ * you are. It exists because "one person, their own domain" is a real deployment and Clerk
+ * is premature for it — but it must be named explicitly. The guard below still refuses the
+ * silent default, which is the case that hands one library to the whole internet by accident.
+ */
+const SINGLE_USER = process.env.GURU_SINGLE_USER;
+
 // A missing key must never silently degrade to "everyone is the same user" on a public
 // box. Local development gets the fallback; production gets a boot failure.
-if (PRODUCTION && !SECRET) {
-  throw new Error("CLERK_SECRET_KEY is required when NODE_ENV=production");
+if (PRODUCTION && !SECRET && !SINGLE_USER) {
+  throw new Error(
+    "CLERK_SECRET_KEY is required when NODE_ENV=production " +
+      "(or set GURU_SINGLE_USER to run single-user behind an authenticating proxy)",
+  );
 }
-if (PRODUCTION && !AUTHORIZED_PARTIES.length) {
+// Only meaningful when Clerk is verifying tokens; single-user mode has no tokens to scope.
+if (PRODUCTION && SECRET && !AUTHORIZED_PARTIES.length) {
   throw new Error("GURU_ORIGINS is required when NODE_ENV=production (e.g. https://guru.app)");
+}
+if (PRODUCTION && SINGLE_USER) {
+  console.error(
+    `single-user mode: every request is served as ${SINGLE_USER}. ` +
+      "This is only safe behind an authenticating proxy.",
+  );
 }
 
 let clerk: ClerkClient | undefined;
@@ -58,6 +78,9 @@ export function toWebRequest(req: IncomingMessage): Request {
 }
 
 export async function authenticate(req: IncomingMessage): Promise<Auth> {
+  // Checked before Clerk: if both are configured, the explicit choice wins rather than
+  // leaving which one applies to the order of two environment variables.
+  if (SINGLE_USER) return { kind: "user", userId: SINGLE_USER };
   if (!clerk) return { kind: "user", userId: process.env.GURU_USER ?? "demo" };
 
   const state = await clerk.authenticateRequest(toWebRequest(req), {
