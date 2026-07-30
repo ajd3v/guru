@@ -87,9 +87,32 @@ worse, exactly as it did at the answer step. These figures also reconcile the sh
 four failed the same way, by improving one part while the shipped number stayed put: a local
 cross-encoder (much worse), a stronger embedder (better search, identical output), more candidate
 depth (discrimination loss cancels the gain), and a stronger reranker (worse). Raising this needs
-a different design, not a better part. The untried lever is **chunk size**, which
-`ingest/ingest.py` calls the single biggest retrieval lever and which has never been swept since
-HyDE landed; after that, the v2 concept graph.
+a different design, not a better part.
+
+**Chunk size was the last cheap lever, and it is already at its optimum for a reason worth
+knowing.** Swept with `eval/chunks.ts`, search only, so it costs nothing and cannot vary between
+runs. Scored on the 149 cases whose gold passage survives chunking in every configuration,
+because smaller chunks split some of them and scoring each database against whatever it happens
+to contain compares different case sets:
+
+| chunk chars | chunks | recall@5 | recall@20 | recall@60 |
+|---|---|---|---|---|
+| 1000 | 6049 | 25% | 40% | 53% |
+| **2000 (default)** | 3331 | 23% | 41% | **56%** |
+| 3000 | 2401 | 5% | 21% | 39% |
+
+1000 and 2000 trade a couple of cases, which is noise. The collapse at 3000 is not: **bge-base's
+512-token window is about 2100 characters of English prose**, measured by embedding a passage
+and its prefixes until the vectors come out identical. Past that the text is dropped, so a
+3000-char chunk loses a third of itself before it is ever embedded, and that third is invisible
+to vector search while still being quotable from the stored text.
+
+Nothing reported this. Raising `GURU_CHUNK_CHARS` looks like ordinary tuning and silently
+destroys retrieval, so `src/embed.ts` now warns when a passage exceeds the window. The real
+constraint is that **chunk size is bounded above by the embedder's context window**, not by
+anything about the books, and any future embedder swap moves that bound with it.
+
+Next is the v2 concept graph.
 
 **Launch decision: 60% is the shipping number.** The 40% that miss produce an honest "your
 library doesn't cover this", not a fabricated quote, so the brand promise holds at this recall.

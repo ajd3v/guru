@@ -29,6 +29,18 @@ if (!MODEL) throw new Error(`GURU_EMBED must be one of: ${Object.keys(MODELS).jo
 
 export const DIM = MODEL.dim;
 
+/**
+ * Roughly where the model's 512-token window falls on English prose, measured rather than
+ * assumed: embedding a passage and its first N characters returns an identical vector from
+ * about 2100 chars up, so everything past that is discarded.
+ *
+ * This is why `GURU_CHUNK_CHARS` defaults to 2000. Raising it looks like ordinary tuning and
+ * silently deletes the tail of every chunk: at 3000 chars a third of each one never reaches
+ * the embedder, and search recall@5 measured 5% against 23% at the default.
+ */
+const WINDOW_CHARS = 2100;
+let warned = false;
+
 // ponytail: fixed batch. Embedding a whole book in one call is what the caller wants to
 // write, and it gets the process OOM-killed somewhere north of a few hundred chunks.
 const BATCH = 32;
@@ -38,6 +50,17 @@ let extractor: any;
 export async function embed(texts: string[], kind: "passage" | "query" = "passage") {
   extractor ??= await pipeline("feature-extraction", MODEL.id);
   const input = kind === "query" ? texts.map((t) => MODEL.queryPrefix + t) : texts;
+
+  // Say so, once, rather than let a third of every chunk vanish without a word.
+  const over = input.filter((t) => t.length > WINDOW_CHARS).length;
+  if (over && !warned) {
+    warned = true;
+    const longest = Math.max(...input.map((t) => t.length));
+    console.error(
+      `warning: ${over} passage(s) exceed ~${WINDOW_CHARS} chars (longest ${longest}); ` +
+        `everything past that is dropped before embedding. Lower GURU_CHUNK_CHARS and re-ingest.`,
+    );
+  }
 
   const vectors: Float32Array[] = [];
   for (let i = 0; i < input.length; i += BATCH) {
