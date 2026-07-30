@@ -57,7 +57,7 @@ export function open(path: string) {
  * Questions asked since UTC midnight.
  *
  * Usage lives in the reader's own file rather than a shared table so that everything about a
- * person is still one file — which is what makes export and delete a copy and an unlink.
+ * person is still one file, which is what makes export and delete a copy and an unlink.
  * The day boundary is UTC, so a reader's allowance resets mid-evening in the Americas.
  */
 export const askedToday = (db: Database.Database) =>
@@ -98,7 +98,7 @@ export function userLibrary(userId: string, dir = process.env.GURU_USER_DIR ?? "
 
   if (!existsSync(path)) {
     if (!existsSync(starter)) {
-      throw new Error(`no starter library at ${starter} — build it: GURU_DB=${starter} node src/cli.ts starter`);
+      throw new Error(`no starter library at ${starter}, build it: GURU_DB=${starter} node src/cli.ts starter`);
     }
     mkdirSync(dir, { recursive: true });
     // WAL mode parks recent writes in a `-wal` sidecar, so copying the `.db` alone hands the
@@ -140,7 +140,7 @@ export async function addBook(db: Database.Database, book: Book, contexts?: stri
     // Re-adding a book must replace it, not shadow it. `insert or replace` alone is not
     // enough: SQLite leaves foreign keys OFF by default, so the schema's `on delete cascade`
     // never fires and the previous edition's rows survive in the FTS and vector indexes.
-    // Search's join hides them, which is worse than a visible duplicate — they keep taking
+    // Search's join hides them, which is worse than a visible duplicate. They keep taking
     // up slots in both ranked lists and quietly shift the fusion.
     const prior = priorBook.get(book.source) as { id: number } | undefined;
     if (prior) {
@@ -158,7 +158,7 @@ export async function addBook(db: Database.Database, book: Book, contexts?: stri
       const id = insertChunk.run(
         bookId, c.chunk_id, c.text, String(c.page_start), String(c.page_end),
       ).lastInsertRowid as number;
-      // ponytail: BigInt, not Number — better-sqlite3 binds plain numbers as REAL and
+      // ponytail: BigInt, not Number. better-sqlite3 binds plain numbers as REAL and
       // vec0 rejects a non-integer rowid ("Only integers are allows for primary key values").
       insertFts.run(BigInt(id), indexed[i]);
       insertVec.run(BigInt(id), Buffer.from(vectors[i].buffer));
@@ -217,11 +217,11 @@ export async function search(db: Database.Database, query: string, k = CANDIDATE
   return top.map(([id, score]) => ({ ...byId.get(id), score })).filter((h) => h.id);
 }
 
-/** How guru cites: [Title, Author, p. N] — or chapter/paragraph when the source has no pages. */
+/** How guru cites: [Title, Author, p. N], or chapter/paragraph when the source has no pages. */
 export function cite(h: Hit) {
   // No quote marks in a locator: a citation is embedded in prose that gets scanned for
   // quotations, and a stray mark there pairs with the next one and corrupts the scan.
-  // Newlines go for the same reason — EPUB chapter titles wrap, and a locator broken across
+  // Newlines go for the same reason, EPUB chapter titles wrap, and a locator broken across
   // two lines is half in the blockquote and half out of it once rendered.
   //
   // Square brackets go too, and this one was expensive: the whole citation is delimited by

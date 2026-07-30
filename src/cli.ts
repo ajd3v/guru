@@ -5,7 +5,7 @@
 try {
   process.loadEnvFile();
 } catch {
-  // no .env, or a runtime without loadEnvFile — env vars may still be set externally
+  // no .env, or a runtime without loadEnvFile. Env vars may still be set externally
 }
 
 import { execFileSync } from "node:child_process";
@@ -73,7 +73,7 @@ async function add(path: string, pageOffset: number, withContext: boolean) {
   const contexts = withContext ? await contextualize(book, book.chunks) : undefined;
   await addBook(db(), book, contexts);
   console.log(
-    `added: ${book.title} — ${book.author} (${book.chunks.length} chunks` +
+    `added: ${book.title}, ${book.author} (${book.chunks.length} chunks` +
       `${withContext ? ", contextualized" : ""})`,
   );
 }
@@ -110,7 +110,7 @@ async function starter(withContext: boolean) {
  * The retrieval stack, measured on 90 eval cases (recall@5):
  *   search alone 20% · +rerank 37% · +HyDE 59%
  * HyDE is what raises the recall ceiling; rerank then promotes almost everything
- * search found. Both are needed — neither alone gets close.
+ * search found. Both are needed. Neither alone gets close.
  */
 async function retrieve(query: string) {
   return rerank(query, await search(db(), await expandQuery(query)));
@@ -138,7 +138,7 @@ async function ask(query: string) {
  * Separate from the server on purpose: `extract` blocks on a synchronous subprocess and
  * embedding a book is minutes of CPU, either of which would stall every other reader's
  * request if it ran on the server's event loop. The process boundary around the PDF parser
- * is also the security boundary — see the sidecar note in `extract`.
+ * is also the security boundary. See the sidecar note in `extract`.
  */
 async function worker() {
   const queue = openJobs();
@@ -154,7 +154,7 @@ async function worker() {
     try {
       const book = extract(job.path);
       // The sidecar names the source after the file it read, which here is a generated
-      // upload path that is unique every time — so re-uploading a book would add a second
+      // upload path that is unique every time, so re-uploading a book would add a second
       // copy instead of replacing the first. Key on what the reader actually sent.
       await addBook(userLibrary(job.user_id), { ...book, source: job.filename });
       finish(queue, job.id);
@@ -286,7 +286,7 @@ async function selfcheck() {
   assert.equal((conn.prepare("select count(*) n from chunks_vec").get() as any).n, before.n);
 
   // The daily allowance. Counted per reader in their own file, so it survives a restart and
-  // travels with an export — and so an uncapped reader cannot outspend their subscription.
+  // travels with an export, and so an uncapped reader cannot outspend their subscription.
   assert.equal(askedToday(conn), 0);
   recordAsk(conn);
   recordAsk(conn);

@@ -4,7 +4,7 @@
 //   node src/server.ts            # http://localhost:8080
 //
 // Libraries are per-user files, resolved per request. The only thing still missing is a real
-// identity provider — see `currentUser` below.
+// identity provider. See `currentUser` below.
 try {
   process.loadEnvFile();
 } catch {
@@ -158,7 +158,7 @@ if (process.argv.includes("--selfcheck")) {
   assert.match(toWebRequest(fake({ host: "guru.app", "x-forwarded-proto": "https" })).url, /^https:/);
   assert.equal(toWebRequest(fake({ host: "guru.app", "set-cookie": ["a=1", "b=2"] })).headers.get("set-cookie"), "a=1, b=2");
 
-  // With no keys configured, every request is the local dev user — the state this repo is
+  // With no keys configured, every request is the local dev user. That is the state this repo is
   // in right now, and the one that must be impossible in production.
   assert.deepEqual(await authenticate(fake({ host: "localhost" })), { kind: "user", userId: "demo" });
 
@@ -222,8 +222,8 @@ const jobs = openJobs();
  * prose is connective tissue, so the usual hierarchy is inverted. Passages are set larger and
  * in full ink; the sentences linking them are smaller and quieter.
  *
- * The mark is concentric rings — one centre, many circles around it, which is the thing this
- * does — and deliberately belongs to no tradition. Nothing is fetched: no webfont, no script
+ * The mark is concentric rings, one centre, many circles around it, which is the thing this
+ * does, and deliberately belongs to no tradition. Nothing is fetched: no webfont, no script
  * from anywhere, so the page renders whole on the first byte.
  */
 const PAGE = (body = "") => `<!doctype html>
@@ -400,7 +400,7 @@ const PAGE = (body = "") => `<!doctype html>
     if (waiting()) waiting().textContent = "the answer did not arrive";
   });
 
-  // The file is the whole request body — no multipart, so the server needs no parser for it.
+  // The file is the whole request body, no multipart, so the server needs no parser for it.
   document.getElementById("f").onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -427,11 +427,11 @@ function shelf(user: string) {
     .filter((j) => j.state !== "done")
     .map((j) =>
       j.state === "failed"
-        ? `<li>${escape(j.filename)} — <span class="note">could not be read: ${escape(j.error ?? "")}</span></li>`
-        : `<li>${escape(j.filename)} — <span class="note">${j.state}&hellip;</span></li>`,
+        ? `<li>${escape(j.filename)}, <span class="note">could not be read: ${escape(j.error ?? "")}</span></li>`
+        : `<li>${escape(j.filename)}, <span class="note">${j.state}&hellip;</span></li>`,
     );
 
-  const shelved = books.map((b) => `<li>${escape(b.title)} — ${escape(b.author)}</li>`);
+  const shelved = books.map((b) => `<li>${escape(b.title)}, ${escape(b.author)}</li>`);
 
   // Anything in flight stays visible; the shelf itself folds away. Landing on fourteen book
   // titles makes the first screen a stock list, when the only thing to do here is ask.
@@ -464,7 +464,7 @@ createServer(async (req, res) => {
     const name = new URL(req.url, "http://x").searchParams.get("name") ?? "";
     const ext = name.slice(name.lastIndexOf(".")).toLowerCase();
     // The extension decides which parser runs, so it is checked against a list rather than
-    // sniffed. The name itself never becomes a path — see the generated destination below.
+    // sniffed. The name itself never becomes a path. See the generated destination below.
     if (!ACCEPTED.includes(ext)) return text(415, `Only ${ACCEPTED.join(" and ")} files.`);
 
     const db = userLibrary(user);

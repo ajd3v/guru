@@ -12,7 +12,7 @@ build_starter() {
   echo "building the starter library at $STARTER (one time, ~20 minutes)…" >&2
 
   # A private path per container. Both roles share this volume, and when both built into one
-  # `.building` file they interleaved writes and each deleted the other's write-ahead log —
+  # `.building` file they interleaved writes and each deleted the other's write-ahead log ,
   # which is how the first deployment produced a zero-byte starter and cloned every reader an
   # empty library. Only `serve` builds now, but the unique name keeps that failure impossible
   # rather than merely unlikely.

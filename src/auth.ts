@@ -35,7 +35,7 @@ const PRODUCTION = process.env.NODE_ENV === "production";
  *
  * Only safe behind an authenticating proxy, because the app itself will no longer ask who
  * you are. It exists because "one person, their own domain" is a real deployment and Clerk
- * is premature for it — but it must be named explicitly. The guard below still refuses the
+ * is premature for it, but it must be named explicitly. The guard below still refuses the
  * silent default, which is the case that hands one library to the whole internet by accident.
  */
 const SINGLE_USER = process.env.GURU_SINGLE_USER;
@@ -44,7 +44,7 @@ const SINGLE_USER = process.env.GURU_SINGLE_USER;
  * `user:password` guarding single-user mode.
  *
  * Enforced here rather than at the reverse proxy on purpose. The first attempt put it in a
- * Traefik middleware, and Coolify regenerated the router's label on deploy and dropped it —
+ * Traefik middleware, and Coolify regenerated the router's label on deploy and dropped it ,
  * the site came up with no authentication and nothing said so. A door this important should
  * not depend on another system's label-merge order, and in here it is testable.
  */
@@ -71,13 +71,13 @@ if (PRODUCTION && SINGLE_USER && !BASIC_AUTH) {
 
 let clerk: ClerkClient | undefined;
 if (SECRET) clerk = createClerkClient({ secretKey: SECRET, publishableKey: PUBLISHABLE });
-else console.error("no CLERK_SECRET_KEY — every request resolves to the local dev user");
+else console.error("no CLERK_SECRET_KEY, every request resolves to the local dev user");
 
 /**
  * Constant-time check of an `Authorization: Basic` header against `GURU_BASIC_AUTH`.
  *
  * Both sides are hashed before comparing so the buffers are the same length whatever was
- * sent — `timingSafeEqual` throws on a length mismatch, and the lengths themselves would
+ * sent, `timingSafeEqual` throws on a length mismatch, and the lengths themselves would
  * otherwise leak the size of the credential.
  */
 export function basicAuthOk(header: string | undefined, expected = BASIC_AUTH) {

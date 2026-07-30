@@ -4,7 +4,7 @@
 // next, and it is deliberately not an LLM judge: the cases already carry the gold passage, so
 // "did the answer quote a sentence from the gold chunk" is a fact, not an opinion.
 //
-// Cases where retrieval missed are skipped, not failed — otherwise this measures retrieval
+// Cases where retrieval missed are skipped, not failed. Otherwise this measures retrieval
 // again and a cheaper answer model looks bad for the search stage's reasons.
 //
 // Retrieval runs ONCE per case and every model answers from the same passages. Re-retrieving
@@ -70,7 +70,7 @@ let eligible = 0;
 const notes: string[] = [];
 
 /**
- * Retrieval is stochastic, so two runs grade two different sets of cases — which makes a
+ * Retrieval is stochastic, so two runs grade two different sets of cases, which makes a
  * before/after comparison of a prompt change meaningless in exactly the way comparing two
  * models across separate runs was. Freeze the passages to a file and every later run answers
  * from identical input. It also makes iterating cheap: retrieval is most of the wall clock.

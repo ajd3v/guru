@@ -146,7 +146,7 @@ async function pooled<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[
 /**
  * Anthropic-style contextual retrieval: prepend a situating sentence to each chunk
  * before embedding. The whole book is the cached prefix, so we pay for it once.
- * Cache minimum is 4096 tokens on Haiku — short books just won't hit the cache.
+ * Cache minimum is 4096 tokens on Haiku. Short books just won't hit the cache.
  */
 export async function contextualize(book: { title: string; author: string }, chunks: Chunk[]) {
   const doc = chunks.map((c) => c.text).join("\n\n");
@@ -179,7 +179,7 @@ export async function contextualize(book: { title: string; author: string }, chu
 /**
  * HyDE: search with a hypothetical answer instead of the bare question.
  *
- * A question and the passage that answers it often share almost no vocabulary — "can the
+ * A question and the passage that answers it often share almost no vocabulary, "can the
  * eternal way be put into words?" against "The Tao that can be trodden is not the enduring
  * and unchanging Tao." No embedder or chunk size fixed that; writing the answer in the
  * source's own register is what closes the gap. The question is kept alongside so exact
@@ -247,7 +247,7 @@ async function rerankOne(query: string, hits: Hit[], k: number): Promise<Hit[]> 
     .map((h, i) => `[${i}] ${cite(h)}\n${h.text.slice(0, snippet)}`)
     .join("\n\n---\n\n");
 
-  // ponytail: numbers scraped from prose, not a JSON schema — structured outputs don't
+  // ponytail: numbers scraped from prose, not a JSON schema. Structured outputs don't
   // survive a translating router. Swap back to output_config if this runs on Anthropic direct.
   const reply = await complete({
     model: config().pipeline,
@@ -342,8 +342,8 @@ export function unverifiedQuotes(answer: string, hits: Hit[]) {
   // curly quote to the next OPENING one, capturing the prose between two quotations and
   // reporting that as a fabricated quote.
   // Scan the model's OWN prose only. Blockquote lines are spliced verbatim out of the
-  // passages and are already checked above, and the sources are full of quotation marks —
-  // Nietzsche's ‘idealist’, James's asides — so including them paired a mark inside one
+  // passages and are already checked above, and the sources are full of quotation marks ,
+  // Nietzsche's ‘idealist’, James's asides, so including them paired a mark inside one
   // passage with a mark inside another and swallowed entire answers, blockquote markers and
   // all, reporting the lot as one fabricated quotation.
   //

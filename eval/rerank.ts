@@ -2,7 +2,7 @@
 //
 // The reranker is the measured ceiling on retrieval. Search finds the answer within 60
 // candidates for 72% of cases and the stack ships 60%, and feeding it a better list does not
-// help — a stronger embedder raised search to 78% and shipped 59%. So the question left is
+// help, a stronger embedder raised search to 78% and shipped 59%. So the question left is
 // whether the reranker itself can be made to discriminate better.
 //
 // Candidates are frozen to a file, because HyDE writes a different hypothetical every time and

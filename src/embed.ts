@@ -1,7 +1,7 @@
 import { pipeline } from "@huggingface/transformers";
 
 // ponytail: local embedders, no API key and no per-chunk cost. Selectable so the eval can
-// compare them on identical data — MiniLM measurably ranked known passages 60th-150th on a
+// compare them on identical data, MiniLM measurably ranked known passages 60th-150th on a
 // 1400-chunk corpus, which is how BGE became the default.
 const MODELS = {
   // BGE is trained asymmetrically: queries get an instruction, passages get none.
@@ -14,7 +14,7 @@ const MODELS = {
   },
   // Better search, same shipped answers: on 151 cases it found the right chunk 6 points more
   // often at depth 60 and the reranker gave every point back (59% vs 60% recall@5). Not the
-  // default — it costs 3x the ingest CPU and a 16% larger database for no measured gain.
+  // default, it costs 3x the ingest CPU and a 16% larger database for no measured gain.
   "bge-large": {
     id: "Xenova/bge-large-en-v1.5",
     dim: 1024,

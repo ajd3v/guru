@@ -5,7 +5,7 @@
 //
 // The whole risk here is vocabulary leakage. A generated query that reuses the passage's
 // wording tests BM25 echo, not retrieval, so anything above MAX_OVERLAP is thrown away and
-// the rejection rate is reported — if it is low, the filter is not doing its job.
+// the rejection rate is reported, if it is low, the filter is not doing its job.
 // Entry point, so it loads .env like the CLI does. Without this the eval would
 // silently fall back to the Anthropic provider and measure a different backend
 // than the one under test.
@@ -62,7 +62,7 @@ for (const b of books) {
 }
 
 // Shuffle, or the run stops at WANT while walking books in order and the last book gets
-// no cases at all — which silently drops a whole register from the eval.
+// no cases at all, which silently drops a whole register from the eval.
 for (let i = sample.length - 1; i > 0; i--) {
   const j = Math.floor(Math.random() * (i + 1));
   [sample[i], sample[j]] = [sample[j], sample[i]];

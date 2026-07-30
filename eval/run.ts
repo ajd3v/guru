@@ -28,7 +28,7 @@ const LIMIT = limitAt === -1 ? Infinity : Number(process.argv[limitAt + 1]);
 type Case = { query: string; expect: string; source?: string };
 
 // Hand-written cases are the trusted reference; generated ones give the sample size needed
-// to separate configurations. They are scored separately so drift between them is visible —
+// to separate configurations. They are scored separately so drift between them is visible ,
 // if generated cases score much higher, they leaked vocabulary and the set is not measuring
 // what it claims to.
 const load = (f: string, source: string): Case[] => {
