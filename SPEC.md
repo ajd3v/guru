@@ -8,7 +8,13 @@
 
 - **Web SaaS** at launch: upload library, chat, subscribe.
 - **MCP fast-follow** (weeks after launch): remote MCP endpoint (OAuth + streamable HTTP) on the same backend, paid-tier perk, "add your guru to the assistant" marketing hook.
-- **Starter library**: curated public-domain corpus every user gets day one. Fourteen books spanning scripture and secular spiritual writing: Tao Te Ching, Bhagavad Gita, Dhammapada, Imitation of Christ, William James, Marcus Aurelius, Epictetus, Boethius, Emerson, Thoreau, Whitman, Nietzsche, Gibran, James Allen. Solves empty-state onboarding, gives a zero-copyright demo corpus, and is the eval corpus (see `starter/library.json`).
+- **Starter library**: curated public-domain corpus every user gets day one. **Fifty books, ~14,800 chunks, 109MB** (see `starter/library.json`). Scripture and secular spiritual writing across traditions (Tao Te Ching, Bhagavad Gita, Dhammapada, Analects, Upanishads, Koran, Ecclesiastes, Jataka), the ancient world (Egyptian *Book of the Dead*, Babylonian creation legends, Gilgamesh, *Popol Vuh*, both Eddas, the *Mabinogion*), Greek and Roman philosophy (Plato, Aristotle, Lucretius, Epictetus, Aurelius), Christian contemplatives (Augustine, à Kempis, Brother Lawrence, Julian of Norwich, Caussade, Dante), the Gnostics (*Pistis Sophia* and Mead), and later voices (Montaigne, Spinoza, Emerson, Thoreau, Whitman, Nietzsche, Tolstoy, Gibran, James, Allen, Drummond). Solves empty-state onboarding, gives a zero-copyright demo corpus, and is the eval corpus.
+
+  **Nag Hammadi cannot be included.** It was discovered in 1945 and every English translation is in copyright, so the Gospel of Thomas and its companions are absent by law rather than by oversight. What is here is the whole public-domain Gnostic corpus.
+
+  **The starter is versioned by a hash of `starter/library.json`.** It used to be keyed on the file merely existing, so growing the manifest changed nothing on any box that had already built one: no error, no warning, an old corpus for ever. The entrypoint now stamps the manifest hash beside the database and rebuilds when they differ, and stamps only after the atomic move so an interrupted build is retried rather than recorded as done.
+
+  **Open gap: a rebuilt starter does not reach existing readers.** A library is cloned from the starter the first time a reader appears, and never again, so books added to the manifest are invisible to anyone who already has a library. Rebuilding gives them to new readers only. Fixing this needs a per-book reconciliation on boot (add the starter books a reader is missing, leave their uploads alone), which is real work and is not built. Today the only remedy is deleting a reader's file so it re-clones, which also destroys their uploads.
 
 ## Copyright posture (hybrid)
 

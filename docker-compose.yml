@@ -32,11 +32,11 @@ services:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.status<500?0:1),()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
-      # The first boot fetches fourteen books and embeds ~3300 chunks on CPU before the port
-      # opens. Measured at over 16 minutes on an 8-core box, so 15m marked it unhealthy
-      # mid-build; the container recovers on its own, but Traefik will not route to it and
-      # the certificate is not issued until it does.
-      start_period: 45m
+      # First boot, and any boot after starter/library.json changes, embeds the whole corpus on
+      # CPU before the port opens: 50 books, ~14800 chunks, about 70 minutes on 8 cores. An
+      # earlier 15m window marked the container unhealthy mid-build, and while it recovers on
+      # its own, Traefik will not route to it or obtain a certificate until it does.
+      start_period: 120m
       retries: 3
 
   worker:
