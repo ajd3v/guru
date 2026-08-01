@@ -126,7 +126,8 @@ async function find(query: string) {
 async function ask(query: string) {
   const hits = await retrieve(query);
   if (!hits.length) return console.log("your library doesn't cover this.");
-  const { answer, regenerated, dropped } = await askClaude(query, hits);
+  const { answer, synopsis, regenerated, dropped } = await askClaude(query, hits);
+  if (synopsis) console.log(`${synopsis}\n`);
   console.log(answer);
   if (dropped) console.error(`\n(${dropped} claim(s) dropped: quotes could not be verified)`);
   else if (regenerated) console.error("\n(verifier rejected the first draft; regenerated)");

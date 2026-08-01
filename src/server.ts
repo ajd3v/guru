@@ -147,6 +147,10 @@ if (process.argv.includes("--selfcheck")) {
     "<blockquote><p>quote</p></blockquote>\n<p>and the rest of the sentence</p>");
   assert.match(render('<script>alert("x")</script>'), /&lt;script&gt;/);
 
+  // The synopsis is the model's own words and must be escaped like any other untrusted text,
+  // since it is the one part of the page that is neither a quotation nor written by us.
+  assert.match(escape('<img onerror="x">'), /&lt;img onerror=&quot;x&quot;&gt;/);
+
   // Clerk reads the session cookie off a fetch Request, which Node does not hand us.
   const fake = (headers: Record<string, unknown>, url = "/ask") =>
     ({ url, method: "POST", headers }) as any;
@@ -287,6 +291,10 @@ const PAGE = (body = "") => `<!doctype html>
          letter-spacing: .1em; font-style: normal; }
   .answer > p { color: var(--quiet); font-size: .9375rem; text-wrap: pretty; }
 
+  /* The model's own summary: larger and set in the page's voice, with a rule under it, so it
+     reads as an editor's standfirst rather than as anything quoted from a book. */
+  .synopsis { margin: 0 0 2.5rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--rule);
+              font-size: 1.0625rem; line-height: 1.7; text-wrap: pretty; }
   .note { color: var(--quiet); font-size: .8125rem; }
   .note a { color: inherit; text-underline-offset: .2em; }
   details { margin-top: 2.5rem; }
@@ -569,11 +577,14 @@ createServer(async (req, res) => {
       text: `reading ${hits.length} passage${hits.length > 1 ? "s" : ""}`,
     });
 
-    const { answer, dropped } = await ask(query, hits);
+    const { answer, synopsis, dropped } = await ask(query, hits);
     const note = dropped
       ? `<p class="note">${dropped} claim${dropped > 1 ? "s" : ""} dropped: the quotation could not be verified.</p>`
       : "";
-    const composed = `<div class="answer">${render(answer)}</div>`;
+    // Set apart from the passages on purpose. It is the model's own summary, and the one
+    // thing this page must never do is let its own prose look like somebody's book.
+    const lead = synopsis ? `<p class="synopsis">${escape(synopsis)}</p>` : "";
+    const composed = `${lead}<div class="answer">${render(answer)}</div>`;
 
     if (!streaming) {
       return send(200, PAGE(`<h2>${escape(query)}</h2>${composed}${consulted}${note}`));

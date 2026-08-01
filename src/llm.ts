@@ -410,20 +410,49 @@ passage runs across sentences.
 Write your own prose in short paragraphs. After each claim, put the ids supporting it.
 If the sentences do not answer the question, begin your reply with NOT COVERED: and say
 briefly what they do discuss. A claim with no id is not allowed, so drop it rather than
-assert it.`;
+assert it.
+
+Begin with a single line starting "SYNOPSIS:" and then one or two sentences, in your own
+words, saying what these passages amount to as an answer. It is a summary of the passages
+below it and nothing else, so put nothing in it that the passages do not say.
+
+Match the register of the question. A question asked lightly can be answered lightly, and you
+may be funny if the books are being funny; a wry line is better than a solemn one when
+somebody asks whether it is alright to do nothing on a Sunday. A question asked plainly gets
+a plain answer.
+
+Never be arch or clever about suffering, grief, dying, illness or addiction, however the
+question was phrased, and never about a question that sounds like it was asked at four in the
+morning. When in doubt, be plain. Getting that wrong is far worse than being dull.
+
+Do not begin it with "The passages" or "These passages" or "This text". Say the thing itself.`;
 
 export async function ask(query: string, hits: Hit[]) {
   const { byId, text } = catalogue(hits);
   if (!byId.size) {
-    return { answer: "Your library doesn't cover this.", regenerated: false, dropped: 0, invented: 0, rejected: 0 };
+    return { answer: "Your library doesn't cover this.", synopsis: "", regenerated: false, dropped: 0, invented: 0, rejected: 0 };
   }
 
-  const draft = await complete({
+  const rawDraft = await complete({
     model: config().answer,
     max_tokens: 2000,
     system: SELECT_SYSTEM,
     messages: [{ role: "user", content: `${text}\n\nQuestion: ${query}` }],
   });
+
+  // The synopsis is the model's own summary, not a quotation, so it is lifted out before any
+  // of the quote machinery runs. Leaving it in the draft would feed uncited prose to the
+  // splicer and the verifier, which exist to police source text and would rightly object.
+  // The model opens with "These passages suggest that..." however firmly it is told not to,
+  // which hedges the tone flat. Stripped here rather than argued about in the prompt: the
+  // standfirst styling already says this is editorial, so the words need not say it too.
+  const synopsis = (rawDraft.match(/^[ \t]*SYNOPSIS:[ \t]*(.+)$/im)?.[1]?.trim() ?? "")
+    .replace(
+      /^(?:these|the|this|those)\s+(?:passages?|texts?|excerpts?|readings?|books?)\b[^,.]{0,60}?\b(?:suggest|say|offer|counsel|show|remind us|tell us|point|indicate)\b(?:\s+that)?[:,]?\s*/i,
+      "",
+    )
+    .replace(/^./, (c) => c.toUpperCase());
+  const draft = rawDraft.replace(/^[ \t]*SYNOPSIS:.*$/im, "").trim();
 
   // Drop the CLAIM, not just the dangling id. Deleting an unresolvable id on its own
   // leaves the sentence it supported standing as a bare assertion, which is exactly the
@@ -460,6 +489,8 @@ export async function ask(query: string, hits: Hit[]) {
   if (/^\s*NOT COVERED:/i.test(draft)) {
     return {
       answer: draft.replace(/^\s*NOT COVERED:\s*/i, "").trim(),
+      // A decline is the model's own words already; a synopsis of nothing would be noise.
+      synopsis: "",
       regenerated: false,
       dropped: invented,
       invented,
@@ -490,6 +521,7 @@ export async function ask(query: string, hits: Hit[]) {
       // the passages it refers to are already listed under the answer.
       answer: "Your library has passages near this, but I could not ground an answer in them.",
       regenerated: true,
+      synopsis: "",
       dropped: invented + unverified.length,
       invented,
       rejected: unverified.length,
@@ -498,6 +530,7 @@ export async function ask(query: string, hits: Hit[]) {
   return {
     answer: final,
     regenerated: unverified.length > 0,
+    synopsis,
     dropped: invented + unverified.length,
     invented,
     rejected: unverified.length,
