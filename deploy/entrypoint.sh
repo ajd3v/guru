@@ -21,7 +21,7 @@ build_starter() {
     return 0
   fi
   if [ -f "$STARTER" ]; then
-    echo "starter/library.json changed since this starter was built; rebuilding" >&2
+    echo "starter/library.json or the extractor changed since this starter was built; rebuilding" >&2
   fi
   echo "building the starter library at $STARTER (~70 minutes for 50 books)…" >&2
 
