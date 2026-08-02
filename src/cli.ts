@@ -187,13 +187,13 @@ async function selfcheck() {
   assert(hits.length, "no hits");
   const top = hits[0];
   assert(top.text.includes("stilling of the fluctuations"), `wrong top hit: ${top.text.slice(0, 80)}`);
-  assert.equal(cite(top), "[Yoga Sutras, Patanjali, p. 3-4]");
+  assert.equal(cite(top), "[Patanjali, Yoga Sutras, p. 3-4]");
 
   // Unpaginated sources cite chapter and paragraph, and EPUB chapter titles arrive wrapped.
   // A locator must stay on one line or it renders half inside the blockquote.
   assert.equal(
     cite({ ...top, paginated: 0, page_start: 'Lectures VI And VII. The "Sick\n Soul.",' } as any),
-    "[Yoga Sutras, Patanjali, Lectures VI And VII. The Sick Soul.,]",
+    "[Patanjali, Yoga Sutras, Lectures VI And VII. The Sick Soul.,]",
   );
 
   // Gutenberg footnote markers put brackets inside chapter titles. Nested inside the
@@ -201,7 +201,7 @@ async function selfcheck() {
   // correct quote from such a chapter was dropped as fabricated. Both ends are covered:
   // the locator carries no brackets, and the stripper survives them if one ever does.
   const bracketed = cite({ ...top, paginated: 0, page_start: "HEROISM[309], para. 7" } as any);
-  assert.equal(bracketed, "[Yoga Sutras, Patanjali, HEROISM309, para. 7]");
+  assert.equal(bracketed, "[Patanjali, Yoga Sutras, HEROISM309, para. 7]");
   const emerson = "To this military attitude of the soul we give the name of Heroism.";
   assert.deepEqual(
     unverifiedQuotes(`> ${emerson} [Essays, Emerson, HEROISM[309], para. 7]`, [

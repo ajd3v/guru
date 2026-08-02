@@ -79,7 +79,7 @@ const passage = hit(1, "The Tao that can be trodden is not the enduring and unch
 replies = ["Naming has limits. [P0S0]"];
 const sel = await ask("what is the Tao?", [passage]);
 assert(sel.answer.includes("The Tao that can be trodden"), "verbatim text is spliced in");
-assert(sel.answer.includes("[Tao Te Ching, Laozi, p. 1]"), "citation follows the quote");
+assert(sel.answer.includes("[Laozi, Tao Te Ching, p. 1]"), "citation follows the quote, author first");
 assert.equal(sel.dropped, 0);
 assert(
   JSON.stringify(seen[0].messages).includes("[P0S0]"),

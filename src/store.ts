@@ -232,5 +232,7 @@ export function cite(h: Hit) {
   const where = h.paginated
     ? `p. ${h.page_start}${h.page_end !== h.page_start ? `-${h.page_end}` : ""}`
     : String(h.page_start).replace(/["“”\[\]]/g, "").replace(/\s+/g, " ").trim();
-  return `[${h.title}, ${h.author}, ${where}]`;
+  // Author, then title, then locator: the order a reader expects and the one the daily
+  // readings this is modelled on use. Title-first read like a catalogue entry.
+  return `[${h.author}, ${h.title}, ${where}]`;
 }

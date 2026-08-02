@@ -26,12 +26,25 @@ def parse_args(argv):
 
 
 def title_author(meta_title, meta_author, path):
-    """Metadata wins, else the `Author - Title.ext` filename convention."""
+    """
+    The `Author - Title.ext` filename wins for the author, metadata fills the gaps.
+
+    Gutenberg stores names in a sort-order form and renders them back badly: dc:creator is
+    "of Norwich Julian", "Brother of the Resurrection Lawrence", "Emperor of Rome Marcus
+    Aurelius". Those go in every citation of that book. A filename following the convention
+    was written by someone on purpose, here the curated names in starter/library.json, so it
+    is the better source. An upload called `book.pdf` has no convention to follow and falls
+    back to metadata as before.
+    """
     stem = os.path.splitext(os.path.basename(path))[0]
     author, title = (None, stem)
     if " - " in stem:
         author, title = stem.split(" - ", 1)
-    return (meta_title or title).strip(), (meta_author or author or "Unknown").strip()
+    # The title goes the same way, and for the same reason: Gutenberg titles carry the whole
+    # cataloguing subtitle ("The Varieties of Religious Experience: A Study in Human Nature",
+    # "The Song Celestial; Or, Bhagavad-Gita ... Being a discourse between Arjuna..."), which
+    # swamps a citation. A curated short title in the filename is what a reader would write.
+    return (title or meta_title).strip(), (author or meta_author or "Unknown").strip()
 
 
 def clean(text):
@@ -50,8 +63,34 @@ def read_pdf(path, page_offset):
     return title, author, [u for u in units if u[1]]
 
 
+PAGE_ID = re.compile(r"(?:page|pg)_?0*(\d+)$", re.I)
+
+
+def page_marker(el):
+    """
+    The printed page a Gutenberg page marker denotes, or None.
+
+    Gutenberg keeps the pagination of the book it scanned, in three markups depending on the
+    era of the transcription: TEI `<span class="tei tei-pb" id="page001">[pg 001]</span>`, and
+    ebookmaker's `<span class="x-ebookmaker-pageno" title="[1]">` or `title="[Pg 1]"`, each
+    wrapping an `<a id="Page_1">`. Every book in the starter library carries one of them, so
+    citing "chapter, paragraph" was throwing away the real page numbers.
+
+    The id is matched anchored: ebookmaker also emits ids like `pgepubid00000`, which are
+    internal and would otherwise read as page zero.
+    """
+    cls = " ".join(el.get("class") or [])
+    if "pageno" in cls or "tei-pb" in cls:
+        for src in (el.get("title") or "", el.get_text() or "", el.get("id") or ""):
+            m = re.search(r"\d+", src)
+            if m:
+                return str(int(m.group(0)))
+    m = PAGE_ID.match(el.get("id") or "")
+    return str(int(m.group(1))) if m else None
+
+
 def read_epub(path, _page_offset):
-    """-> (title, author, [(locator, text)]). EPUBs have no pages: chapter + paragraph."""
+    """-> (title, author, [(locator, text)]). Real page numbers when the scan kept them."""
     import ebooklib
     from ebooklib import epub
     from bs4 import BeautifulSoup
@@ -59,7 +98,7 @@ def read_epub(path, _page_offset):
     title = (book.get_metadata("DC", "title") or [("", None)])[0][0]
     author = (book.get_metadata("DC", "creator") or [("", None)])[0][0]
     title, author = title_author(title, author, path)
-    units = []
+    units, page = [], None
     for ch, item in enumerate(book.get_items_of_type(ebooklib.ITEM_DOCUMENT), 1):
         soup = BeautifulSoup(item.get_content(), "html.parser")
         for junk in soup.select('[id^="pg-"], [class^="pg-"]'):
@@ -67,7 +106,16 @@ def read_epub(path, _page_offset):
         # Gutenberg-style books are often one giant document, so a document index is a
         # useless citation. Anchor to the nearest heading above the text: a reader can find it.
         section, para = f"ch. {ch}", 0
-        for el in soup.find_all(["p", "h1", "h2", "h3", "h4"]):
+        # Walked together and in document order so a marker seen before a paragraph sets the
+        # page that paragraph begins on. A marker inside a paragraph belongs to the next one:
+        # the text around it started on the page before the break.
+        for el in soup.find_all(["p", "h1", "h2", "h3", "h4", "span", "a"]):
+            found = page_marker(el)
+            if found:
+                page = found
+                continue
+            if el.name not in ("p", "h1", "h2", "h3", "h4"):
+                continue
             t = clean(el.get_text())
             if not t:
                 continue
@@ -75,7 +123,7 @@ def read_epub(path, _page_offset):
             if heading:
                 section, para = f'"{t[:60]}"', 0
             para += 1
-            units.append((f"{section}, para. {para}", t, heading))
+            units.append((page or f"{section}, para. {para}", t, heading))
     return title, author, units
 
 
@@ -178,8 +226,13 @@ def ingest(path, page_offset=0):
         units = mark_sections(units)
     if not units:
         raise SystemExit(f"no extractable text in {path} (scanned? OCR not supported yet)")
+    chunks = chunk(units)
+    paginated = any(str(c["page_start"]).isdigit() for c in chunks)
     return {"title": title, "author": author, "source": os.path.basename(path),
-            "paginated": reader is read_pdf, "chunks": chunk(units)}
+            # Whether the locators are page numbers, not whether the file was a PDF. EPUB
+            # transcriptions usually keep the pagination of the book that was scanned, and
+            # calling those "para." threw away a real page number the reader could look up.
+            "paginated": paginated, "chunks": chunks}
 
 
 def sample_pdf(path=None):

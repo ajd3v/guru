@@ -11,7 +11,10 @@ STARTER="${GURU_STARTER:-/app/data/starter.db}"
 # existing, so growing starter/library.json from 14 books to 50 changed nothing on any box that
 # had already built one: no error, no warning, just an old corpus for ever.
 STAMP="$STARTER.manifest"
-MANIFEST_HASH=$(sha256sum starter/library.json | cut -d' ' -f1)
+# The manifest AND the code that turns books into chunks. Hashing the book list alone meant a
+# change to the extractor could not trigger a rebuild, so a fix to how pages or authors are
+# read would never reach a box that already had a starter. Same bug, one layer down.
+MANIFEST_HASH=$(cat starter/library.json ingest/ingest.py | sha256sum | cut -d' ' -f1)
 
 build_starter() {
   if [ -f "$STARTER" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$MANIFEST_HASH" ]; then
