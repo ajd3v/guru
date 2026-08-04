@@ -472,6 +472,13 @@ NEVER type a quotation yourself, and never use quotation marks around source wor
 passage runs across sentences.
 
 Write your own prose in short paragraphs. After each claim, put the ids supporting it.
+
+Quote each book once. Pick the one passage from it that says the thing best and build your
+point on that, rather than stacking three neighbouring sentences that say it again. A book
+that has nothing further to add is finished with, and a second voice agreeing is worth more
+than the same voice continuing. Six books quoted once is an answer; one book quoted six times
+is a transcription. If two books genuinely differ, that disagreement is the answer and both
+belong in it.
 If the sentences do not answer the question, begin your reply with NOT COVERED: and say so in
 one sentence. Only add what they discuss instead when it is close to what was asked. A word
 that merely echoes a word in a passage is not a subject the passages address.
@@ -597,6 +604,10 @@ export async function ask(query: string, hits: Hit[]) {
     // Should be rare: spliced text comes from the passages verbatim.
     final = dropUnverified(final, unverified);
   }
+  // After the verifier, not before: if a book's first quotation is the one that fails, the
+  // block carrying it is already gone and the next block from that book is now its best
+  // surviving quotation rather than a repeat of something the reader never saw.
+  final = oneQuotePerBook(final, hits);
 
   if (!/^\s*>/m.test(final)) {
     return {
@@ -624,6 +635,42 @@ export async function ask(query: string, hits: Hit[]) {
 }
 
 /** Remove the blocks that rest on a quote we could not verify, keep the rest. */
+/**
+ * One quotation per book, keeping the first.
+ *
+ * Asked to do this in the prompt, the model ignored it: a question about death came back with
+ * 22 blockquotes, ten of them the same book, because the catalogue is numbered *sentences* and
+ * a single passage yields a dozen quotable ones. Every repeat carried the same chunk-level
+ * citation, so the answer read as one book being transcribed rather than several being
+ * consulted. The instruction stays, because a model that picks its strongest passage writes
+ * better prose than this does deleting blocks afterwards, but the guarantee lives here.
+ *
+ * Blocks, not lines, and for the same reason `dropUnverified` works on blocks: a claim and the
+ * quote supporting it are one unit, and removing the quote alone would leave the claim standing
+ * unsourced, which is the one thing this program must never ship. A block survives if it quotes
+ * any book not yet seen, so a passage that brings a second tradition in is never dropped for
+ * mentioning a first one alongside it.
+ */
+export function oneQuotePerBook(answer: string, hits: Hit[]) {
+  // Keyed off the citation the splicer actually emitted, rather than parsed out of the string,
+  // so a title containing a comma cannot be mistaken for an author.
+  const bookOf = new Map(hits.map((h) => [cite(h), `${h.author}|${h.title}`]));
+  const seen = new Set<string>();
+  return answer
+    .split(/\n\s*\n/)
+    .filter((block) => {
+      const books = [...block.matchAll(/\[[^\]]*\]/g)]
+        .map((m) => bookOf.get(m[0]))
+        .filter((b): b is string => Boolean(b));
+      if (!books.length) return true; // no quotation in it, so nothing to deduplicate
+      if (books.every((b) => seen.has(b))) return false;
+      for (const b of books) seen.add(b);
+      return true;
+    })
+    .join("\n\n")
+    .trim();
+}
+
 function dropUnverified(answer: string, bad: string[]) {
   const flatBad = bad.map(flat).filter(Boolean);
   return answer

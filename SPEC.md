@@ -41,13 +41,24 @@ question → hypothetical answer (HyDE) → hybrid retrieval → rerank → teac
 2. Cross-encoder / LLM rerank → top ~5
 3. **Quotation by reference, not transcription**: the answer model is given numbered source sentences and cites ids; the exact wording is spliced in afterwards. Asked to copy quotations instead, every DeepSeek tier reworded archaic English roughly half the time (V4-Flash 43% accurate, V4-Pro 50%, V3.2 45%). Selecting ids, the cheapest tier renders 42 quotes across four questions with **zero** unverifiable. Misquoting stops being something to detect and becomes something that cannot be expressed.
 4. **Every claim carries a citation or is removed.** A paragraph whose cited ids all turn out to be invented is dropped with them, and an answer left with no quote at all is replaced by an honest refusal rather than shipped as unsourced prose. Declining is stated explicitly by the model (`NOT COVERED:`) so a legitimate refusal is distinguishable from a bare assertion. Hand-read sample of 20 answers found 5 shipping unsupported claims; after this, a fresh sample of 14 gave 9 grounded, 5 honest refusals, 0 bare claims.
-5. **Verbatim-quote verifier**: a backstop behind the above. Every quoted span, blockquote or inline, must be a substring of a retrieved chunk; blocks resting on one that isn't are dropped and reported. It is the brand, and it should now never fire.
+5. **One quotation per book, the first that survives verification.** The catalogue offers
+   numbered *sentences*, so a single retrieved passage yields a dozen quotable ones and the
+   model takes six of them: a question about death returned 22 blockquotes, ten from one book,
+   every repeat carrying the same chunk-level citation. It read as one book being transcribed
+   rather than several being consulted. Asked in the prompt, the model ignored it, so the rule
+   is enforced after splicing. Whole blocks, because a claim and its quote are one unit and
+   removing the quote alone leaves the claim unsourced, and a block survives if it quotes any
+   book not yet seen, so a passage setting two traditions against each other is never dropped.
+   Four blockquotes from four books now, where there were 22 from three. Gold citation stayed
+   in its existing 10-11 of 11 band across four runs, so the diversity is not bought with recall.
+
+6. **Verbatim-quote verifier**: a backstop behind the above. Every quoted span, blockquote or inline, must be a substring of a retrieved chunk; blocks resting on one that isn't are dropped and reported. It is the brand, and it should now never fire.
 
    **It was firing constantly, and it was wrong.** A citation is delimited by square brackets, and Gutenberg footnote markers put brackets *inside* chapter titles, `HEROISM[309]`. Nested one bracket pair inside another, the verifier could not strip the citation off the end of a quotation, so it checked the quotation with its citation still attached, found no book containing that text, and reported a perfectly real quote as fabricated. Every quotation from such a chapter was dropped. Emerson's *Essays* is full of them, so "what is courage?" answered *"I could not ground an answer"* while Emerson's *Heroism* sat in the retrieved passages.
 
    Measured on the 26 frozen answer cases, identical passages before and after: claims dropped **30 → 3**, ungrounded refusals **1 → 0**, gold citations **92% → 96%**. The lesson is not the regex. It is that a backstop which fails *closed* is invisible: it produced a safe-looking honest refusal every time, and the only symptom was a dropped-claims count that read as the model misbehaving. A verifier needs its own test, because nothing downstream can tell you it is wrong.
 
-6. **A relevance floor, so a question the shelf cannot answer returns nothing rather than the
+7. **A relevance floor, so a question the shelf cannot answer returns nothing rather than the
    least-bad five.** The reranker was already told to drop candidates that do not help, and an
    empty reply was read as a malfunction and undone by handing back the unranked top k. Asked
    `skeet?`, HyDE reached for clay pigeons, search matched Sankaracarya on clay pots, and the

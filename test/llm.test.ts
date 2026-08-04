@@ -34,7 +34,8 @@ await new Promise<void>((r) => server.listen(0, r));
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as any).port}`;
 process.env.ANTHROPIC_API_KEY = "stub";
 
-const { ask, contextualize, expandQuery, rerank, stats, unverifiedQuotes } = await import("../src/llm.ts");
+const { ask, contextualize, expandQuery, oneQuotePerBook, rerank, stats, unverifiedQuotes } = await import("../src/llm.ts");
+const { cite } = await import("../src/store.ts");
 
 const hit = (id: number, text: string): Hit => ({
   id, chunk_id: id, text, page_start: "1", page_end: "1",
@@ -164,6 +165,26 @@ assert(dashed.answer.includes("trodden—that one—is"), "the author's em-dash 
 // them would leave a sentence referring to a list that is not there.
 assert.equal(nothing.declined, false, "could-not-ground keeps its passages");
 assert.equal(partial.declined, false, "an ordinary answer keeps its passages");
+
+// One quotation per book. The model ignores being asked, because the catalogue is numbered
+// sentences and one passage yields a dozen, so the guarantee is enforced after splicing.
+{
+  const tao = hit(1, "The Tao that can be trodden is not the enduring Tao.");
+  const other = { ...hit(2, "A second book says something else entirely."), title: "Meditations", author: "Marcus Aurelius" };
+  const a = `first claim\n> ${tao.text} ${cite(tao)}\n\nsecond claim\n> more from the same book ${cite(tao)}\n\nthird claim\n> ${other.text} ${cite(other)}`;
+  const kept = oneQuotePerBook(a, [tao, other]);
+  assert(kept.includes("first claim"), "a book's first quotation survives");
+  assert(!kept.includes("second claim"), "the claim goes with the repeat quote, never left unsourced");
+  assert(kept.includes("third claim"), "a different book is not touched");
+}
+// A block that brings in a new book keeps its already-seen one alongside it, so a passage
+// setting two traditions against each other is never lost to the rule.
+{
+  const a1 = hit(1, "one");
+  const b1 = { ...hit(2, "two"), title: "Meditations", author: "Marcus Aurelius" };
+  const both = `claim\n> one ${cite(a1)}\n\nclaim two\n> one again ${cite(a1)}\n> two ${cite(b1)}`;
+  assert(oneQuotePerBook(both, [a1, b1]).includes("claim two"), "a block introducing a new book survives");
+}
 
 // An invented id cannot become a quotation: it is dropped and counted.
 seen.length = 0;
