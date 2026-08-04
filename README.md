@@ -15,7 +15,9 @@ The model is never allowed to type a quotation. It cites a sentence id and the e
 is spliced in from the source, so a misquote is not expressible rather than merely detected.
 Anything that survives that is checked against the book again, and a claim whose quote fails
 is dropped rather than shipped. Measured on cases where retrieval supplied the answer, the
-deployed model quoted the right passage 91% of the time and invented a quotation zero times.
+deployed model quoted the right passage in 10 or 11 of 11 across runs, and invented a
+quotation **zero** times. The spread is the answer step being stochastic at that sample size;
+the zero is the number that matters and is the one this is built to hold.
 
 Retrieval refuses too. If the reranker judges that nothing on the shelf bears on the question,
 the answer is one sentence saying so, with no citations under it.

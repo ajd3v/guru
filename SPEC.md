@@ -47,6 +47,21 @@ question → hypothetical answer (HyDE) → hybrid retrieval → rerank → teac
 
    Measured on the 26 frozen answer cases, identical passages before and after: claims dropped **30 → 3**, ungrounded refusals **1 → 0**, gold citations **92% → 96%**. The lesson is not the regex. It is that a backstop which fails *closed* is invisible: it produced a safe-looking honest refusal every time, and the only symptom was a dropped-claims count that read as the model misbehaving. A verifier needs its own test, because nothing downstream can tell you it is wrong.
 
+6. **A relevance floor, so a question the shelf cannot answer returns nothing rather than the
+   least-bad five.** The reranker was already told to drop candidates that do not help, and an
+   empty reply was read as a malfunction and undone by handing back the unranked top k. Asked
+   `skeet?`, HyDE reached for clay pigeons, search matched Sankaracarya on clay pots, and the
+   answer step explained whether the pot is real. `NONE` is now a verdict distinct from a reply
+   that could not be parsed, and only the latter falls back.
+
+   Batching hid half of it. A rerank call judges its own twenty and nothing else, so a batch of
+   near-misses returns the best of a bad set; two batches answered `NONE` and the third picked
+   five clay passages, and because five fitted in `k` the consolidation pass was skipped and
+   nothing ever saw the whole result. That pass now always runs when the input was batched,
+   which is the only place the floor can apply to what actually came back. Measured on 60 cases
+   it cost nothing: recall@5 42%→48%, MRR 0.339→0.375, and the same 240 model calls, because
+   the consolidation pass was already running whenever survivors overflowed `k`.
+
 **Measured, all 151 cases, DeepSeek-V4-Flash via DeepInfra, rerank fallback rate 0%.**
 
 Search recall by candidate depth, before any reranking:
@@ -160,8 +175,9 @@ one. Model choice for the answer step is a quality decision, not a cost decision
 ## Agent
 
 - Single agent, warm scholar-teacher persona. Answers **only** from retrieved passages; says "your library doesn't cover this" instead of hallucinating.
-- Model routing: Haiku-tier for pipeline steps (contextualizing, rerank, query rewrite), Sonnet-tier for the answer. Streaming responses.
-- Conversation memory: last-N messages.
+- Model routing: Haiku-tier for pipeline steps (contextualizing, rerank, query rewrite), Sonnet-tier for the answer. **Built as two independent settings** (`GURU_PIPELINE_MODEL`, `GURU_ANSWER_MODEL`), though the measurement below says the dear tier buys nothing at the answer step.
+- Streaming: **partial.** The page updates over SSE as the stages complete, so the reader sees how many passages were found while the answer is being composed, but the answer itself arrives in one event rather than token by token.
+- Conversation memory: last-N messages. **Not built.** Every question is answered standing alone; there is no thread, and a follow-up that says "and what about him?" has nothing to resolve it against. This is the largest unbuilt thing in this section and it is a product gap, not a technical one.
 
 ## Architecture & security
 
@@ -237,7 +253,11 @@ retrieval pass reversed the ranking outright.
 
 1. ~~Ingest with page-accurate metadata~~ **done**. Query a known quote, get the right page. Contextual enrichment built but deferred (see Ingestion).
 2. ~~Chat with cited answers, verifier passing. CLI/API first.~~ **done**. Retrieval closed at recall@5 60% (see Retrieval), the reranker is a measured ceiling and further search work does not move the shipped number.
-3. Web SaaS: auth, billing, upload, starter library. **Launch.**
+3. Web SaaS: auth, billing, upload, starter library. **Launch.** *Partly built:* auth (Clerk, or
+   `GURU_BASIC_AUTH` for a shelf shared with people you know), upload, and the starter library
+   are done and deployed. **Billing is not started**, and neither is Litestream replication, so
+   every reader's library is one file on one volume with no backup. The corpus is reproducible
+   from Gutenberg; a reader's own uploads and history are not.
 4. MCP endpoint fast-follow (paid perk).
 5. v2: concept knowledge graph → cross-tradition synthesis as the headline feature.
 

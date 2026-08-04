@@ -213,8 +213,26 @@ async function selfcheck() {
   // A locator must stay on one line or it renders half inside the blockquote.
   assert.equal(
     cite({ ...top, paginated: 0, page_start: 'Lectures VI And VII. The "Sick\n Soul.",' } as any),
-    "[Patanjali, Yoga Sutras, Lectures VI And VII. The Sick Soul.,]",
+    "[Patanjali, Yoga Sutras, Lectures VI And VII. The Sick Soul.]",
   );
+
+  // Gutenberg separates a chapter number from its title with a doubled em-dash, which put a
+  // typographic scar in the line under every Montaigne quotation. A comma is what it meant.
+  assert.equal(
+    cite({ ...top, paginated: 0, page_start: "CHAPTER XIX——THAT TO STUDY PHILOSOPHY, para. 3" } as any),
+    "[Patanjali, Yoga Sutras, CHAPTER XIX, THAT TO STUDY PHILOSOPHY, para. 3]",
+  );
+  assert.equal(
+    cite({ ...top, paginated: 0, page_start: "BOOK II—OF THE SOUL, para. 7" } as any),
+    "[Patanjali, Yoga Sutras, BOOK II, OF THE SOUL, para. 7]",
+  );
+  // A single hyphen is part of a word, not a separator, so it survives. Two would not.
+  assert.equal(
+    cite({ ...top, paginated: 0, page_start: "well-being, para. 1" } as any),
+    "[Patanjali, Yoga Sutras, well-being, para. 1]",
+  );
+  // Page ranges are built with a hyphen after this runs, so they are untouched by it.
+  assert.equal(cite({ ...top, page_start: "12", page_end: "13" } as any), "[Patanjali, Yoga Sutras, p. 12-13]");
 
   // Gutenberg footnote markers put brackets inside chapter titles. Nested inside the
   // citation's own brackets they defeated the verifier's citation stripping, so every

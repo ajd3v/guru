@@ -229,9 +229,20 @@ export function cite(h: Hit) {
   // one bracket pair inside another. The verifier could not strip the citation off the end
   // of the quotation, checked the quotation with its citation still attached, found no such
   // text in any book, and reported every correct quote from that chapter as fabricated.
+  //
+  // Dash runs go the same way. Gutenberg headings separate with a doubled em-dash, so a
+  // chapter arrives as "CHAPTER XIX——THAT TO STUDY PHILOSOPHY IS TO LEARN TO DIE" and the
+  // citation under a quotation reads with a typographic scar in it. A comma is what the
+  // separator meant. Two or more, so a hyphenated word keeps its hyphen.
   const where = h.paginated
     ? `p. ${h.page_start}${h.page_end !== h.page_start ? `-${h.page_end}` : ""}`
-    : String(h.page_start).replace(/["“”\[\]]/g, "").replace(/\s+/g, " ").trim();
+    : String(h.page_start)
+        .replace(/["“”\[\]]/g, "")
+        .replace(/\s*(?:[—–]|-{2,}){1,}\s*/g, ", ")
+        .replace(/\s+/g, " ")
+        .replace(/,\s*,/g, ",")
+        .replace(/[\s,]+$/, "")
+        .trim();
   // Author, then title, then locator: the order a reader expects and the one the daily
   // readings this is modelled on use. Title-first read like a catalogue entry.
   return `[${h.author}, ${h.title}, ${where}]`;

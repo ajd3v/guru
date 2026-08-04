@@ -1,0 +1,34 @@
+# The whole suite runs offline against stub servers, so this needs no API key and no secrets.
+# That is deliberate: the quote verifier is the product, and a check that only maintainers can
+# run is a check that does not run on the pull request that breaks it.
+name: test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      # better-sqlite3 has no install script but npm rebuilds any package carrying a
+      # binding.gyp anyway, so the runner needs a compiler. ubuntu-latest ships one.
+      - run: npm ci
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The ingest sidecar is a separate process on purpose, and `npm test` ends by running
+      # its selfcheck, so the venv has to exist at the path package.json expects.
+      - run: python -m venv .venv && .venv/bin/pip install -r ingest/requirements.txt
+
+      - run: npm test
