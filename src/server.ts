@@ -367,8 +367,15 @@ const PAGE = (body = "", librarian = true) => `<!doctype html>
      page, which inverts the point of a second ink. The margin rule already says where the
      quotation is. Rubric stays on the four things that appear once: the mark, the initial,
      that rule, and the paragraphus. */
-  cite { display: block; margin-top: .7rem; color: var(--quiet); font: normal .6875rem/1.5 var(--small);
-         letter-spacing: .08em; font-style: normal; opacity: .8; }
+  /* Set in the book face, not the monospace one. Half these titles are Gutenberg catalogue
+     entries ("The Song Celestial; Or, Bhagavad-Gîtâ (from the Mahâbhârata) / Being a discourse
+     between Arjuna...") and monospace is the widest face there is, so a locator ran to three
+     lines under a two-line quotation and shouted louder than the passage. An italic serif fits
+     roughly a third more per line and is what a citation looks like in a printed book anyway.
+     Shortening the titles themselves was the other option and was rejected: cutting that one
+     at its semicolon leaves "The Song Celestial", dropping the name a reader would recognise. */
+  cite { display: block; margin-top: .55rem; color: var(--quiet); opacity: .85;
+         font: italic .8125rem/1.45 var(--serif); letter-spacing: 0; text-wrap: pretty; }
   /* The paragraphus, the mark a scribe put where one thought ended and the next began, before
      the indented paragraph was invented to do the same job with white space. Between passages
      it says these are separate findings rather than one argument running on. */
