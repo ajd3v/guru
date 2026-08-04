@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Milestone 3, slice 1: the retrieval + answer path over HTTP.
+// The retrieval and answer path over HTTP.
 //
 //   node src/server.ts            # http://localhost:8080
 //
-// Libraries are per-user files, resolved per request. The only thing still missing is a real
-// identity provider. See `currentUser` below.
+// Libraries are per-user files, resolved per request, so isolation is by filesystem rather
+// than by WHERE clause. Who the reader is comes from ./auth.ts and nowhere else.
 try {
   process.loadEnvFile();
 } catch {
@@ -209,7 +209,7 @@ if (process.argv.includes("--selfcheck")) {
   // A username that cannot be a filename would only fail on the request that first tried to
   // open its library, which is a 500 for the reader rather than a refusal to deploy.
   assert.throws(
-    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:hunter2,lin:pw" }),
+    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:hunter2,not a name:pw" }),
     /not user:password/,
     "a username that is not a usable filename must refuse to boot",
   );
@@ -221,25 +221,25 @@ if (process.argv.includes("--selfcheck")) {
 
   // The credential check itself. Wrong password, wrong scheme, and absent header must all
   // fail; only an exact pair passes, and it answers with the reader it names.
-  const who = (h: string | undefined) => basicAuthUser(h, ["ajd3v:s3cret", "lin:h0rse"]);
+  const who = (h: string | undefined) => basicAuthUser(h, ["ada:s3cret", "lin:h0rse"]);
   const header = (s: string) => `Basic ${Buffer.from(s).toString("base64")}`;
-  assert.equal(who(header("ajd3v:s3cret")), "ajd3v");
+  assert.equal(who(header("ada:s3cret")), "ada");
   // The whole point of the list: the second credential is a different reader, not the first
   // one's library handed to someone else.
   assert.equal(who(header("lin:h0rse")), "lin");
-  assert.equal(who(header("ajd3v:wrong")), undefined);
+  assert.equal(who(header("ada:wrong")), undefined);
   assert.equal(who(header("lin:s3cret")), undefined, "passwords must not be interchangeable");
-  assert.equal(who(header("ajd3v:s3cret ")), undefined, "trailing whitespace must not pass");
+  assert.equal(who(header("ada:s3cret ")), undefined, "trailing whitespace must not pass");
   assert.equal(who(header("other:s3cret")), undefined);
   assert.equal(who(undefined), undefined);
   assert.equal(who("Bearer abc"), undefined);
-  assert.equal(basicAuthUser(header("ajd3v:s3cret"), []), undefined, "no credential configured means no way in");
+  assert.equal(basicAuthUser(header("ada:s3cret"), []), undefined, "no credential configured means no way in");
 
   // Uploading runs a parser on a file the app keeps, and exporting hands back every book in
   // one file. Naming a librarian closes both doors to everybody else while leaving the asking
   // open, which is the whole point of giving somebody a login to a library they do not own.
-  assert.equal(isLibrarian("ajd3v", ["ajd3v"]), true);
-  assert.equal(isLibrarian("lin", ["ajd3v"]), false, "a reader is not a librarian");
+  assert.equal(isLibrarian("ada", ["ada"]), true);
+  assert.equal(isLibrarian("lin", ["ada"]), false, "a reader is not a librarian");
   assert.equal(isLibrarian("lin", []), true, "unset means a one-person deployment, everyone");
 
   // Uploads are capped while streaming, not from content-length, because the header is the

@@ -9,8 +9,9 @@ services:
     command: serve
     restart: unless-stopped
     environment:
-      # Coolify terminates TLS and routes by this domain.
-      - SERVICE_FQDN_GURU_8080=https://guru.gainful.work
+      # The public URL. Coolify reads this variable to route and to get a certificate; behind
+      # any other proxy it is unused and harmless.
+      - SERVICE_FQDN_GURU_8080=${GURU_URL:-http://localhost:8080}
       - NODE_ENV=production
       - PORT=8080
       - GURU_STARTER=/app/data/starter.db
@@ -21,20 +22,14 @@ services:
       # the proxy in front MUST authenticate. Swap all this for CLERK_SECRET_KEY +
       # CLERK_PUBLISHABLE_KEY + GURU_ORIGINS the day strangers can sign up.
       - GURU_SINGLE_USER=${GURU_SINGLE_USER:-reader}
-      # Comma-separated user:password, e.g. reader:secret,lin:other. Enforced by the
+      # Comma-separated user:password, e.g. ada:secret,lin:other. Enforced by the
       # app, not the proxy. See the note in src/auth.ts. Without it the app refuses to boot.
       # The username that matches is the reader's id, so each one gets its own library and
       # renaming a username orphans that person's books under the old name.
       - GURU_BASIC_AUTH=${GURU_BASIC_AUTH}
-      # OpenAI-compatible endpoint. Points at the 9router gateway on this host rather than
-      # at DeepInfra directly. Guru's networks are deliberately untouched: the router is
-      # attached to THIS app's network instead, under the alias `ninerouter`, because a
-      # container on more than one network leaves Traefik without a `traefik.docker.network`
-      # label to pick from and it routed to the wrong address. See deploy/README-9router.md. The
-      # model id is set explicitly because the gateway namespaces by upstream
-      # (nvidia/deepseek-ai/deepseek-v4-flash) where DeepInfra served the bare id, and the
-      # code's default would 404 against it. Same weights either way, so the quote pipeline
-      # is unaffected.
+      # Any OpenAI-compatible endpoint. The model ids are optional and the per-provider
+      # defaults in src/llm.ts apply when they are unset, which includes being set to the
+      # empty string, since `${VAR:-}` below writes one whether or not VAR exists.
       - DEEPINFRA_API_KEY=${DEEPINFRA_API_KEY}
       - DEEPINFRA_BASE_URL=${DEEPINFRA_BASE_URL}
       - GURU_PIPELINE_MODEL=${GURU_PIPELINE_MODEL:-}
@@ -65,15 +60,9 @@ services:
       # The worker serves no requests and never imports auth.ts, but it writes into the
       # reader's database, so it has to agree with the server about who that reader is.
       - GURU_SINGLE_USER=${GURU_SINGLE_USER:-reader}
-      # OpenAI-compatible endpoint. Points at the 9router gateway on this host rather than
-      # at DeepInfra directly. Guru's networks are deliberately untouched: the router is
-      # attached to THIS app's network instead, under the alias `ninerouter`, because a
-      # container on more than one network leaves Traefik without a `traefik.docker.network`
-      # label to pick from and it routed to the wrong address. See deploy/README-9router.md. The
-      # model id is set explicitly because the gateway namespaces by upstream
-      # (nvidia/deepseek-ai/deepseek-v4-flash) where DeepInfra served the bare id, and the
-      # code's default would 404 against it. Same weights either way, so the quote pipeline
-      # is unaffected.
+      # Any OpenAI-compatible endpoint. The model ids are optional and the per-provider
+      # defaults in src/llm.ts apply when they are unset, which includes being set to the
+      # empty string, since `${VAR:-}` below writes one whether or not VAR exists.
       - DEEPINFRA_API_KEY=${DEEPINFRA_API_KEY}
       - DEEPINFRA_BASE_URL=${DEEPINFRA_BASE_URL}
       - GURU_PIPELINE_MODEL=${GURU_PIPELINE_MODEL:-}

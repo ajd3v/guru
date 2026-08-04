@@ -1,8 +1,7 @@
 {
   "name": "guru",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "A study companion for your own library that never misquotes: every claim is a verbatim quote, cited.",
   "scripts": {
     "test": "node src/cli.ts selfcheck && node src/server.ts --selfcheck && node test/llm.test.ts && node test/openai.test.ts && .venv/bin/python ingest/ingest.py --selfcheck",
     "serve": "node src/server.ts",
@@ -16,8 +15,15 @@
     "type": "git",
     "url": "git+https://github.com/ajd3v/guru.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "rag",
+    "citations",
+    "sqlite",
+    "retrieval",
+    "embeddings",
+    "llm"
+  ],
+  "author": "Alan Devaney",
   "license": "ISC",
   "type": "module",
   "bugs": {
