@@ -47,6 +47,20 @@ CLERK_PUBLISHABLE_KEY=pk_...
 GURU_ORIGINS=https://guru.app  # origins allowed to present a session token
 ```
 
+For a handful of people who know each other, a password each is enough and Clerk is more than
+you need. `GURU_SINGLE_USER` runs without it, and `GURU_BASIC_AUTH` takes a comma-separated
+list of `user:password`:
+
+```sh
+GURU_SINGLE_USER=reader
+GURU_BASIC_AUTH=reader:secret,lin:other
+```
+
+The username that matches is the reader's id, so each one gets `data/users/<username>.db`.
+Renaming a username hands that person a fresh library and leaves their books under the old
+name. Usernames must be `[A-Za-z0-9_-]`, since they become filenames, and the app refuses to
+start if one is not.
+
 ## Eval
 
 ```sh

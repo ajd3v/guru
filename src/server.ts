@@ -14,7 +14,7 @@ try {
 import assert from "node:assert";
 import { execFileSync } from "node:child_process";
 import { createServer, type IncomingMessage } from "node:http";
-import { authenticate, basicAuthOk, toWebRequest } from "./auth.ts";
+import { authenticate, basicAuthUser, toWebRequest } from "./auth.ts";
 import { createReadStream, createWriteStream, existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { once } from "node:events";
@@ -186,17 +186,34 @@ if (process.argv.includes("--selfcheck")) {
     "single-user with a password must boot",
   );
 
+  // A username that cannot be a filename would only fail on the request that first tried to
+  // open its library, which is a 500 for the reader rather than a refusal to deploy.
+  assert.throws(
+    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:hunter2,lin:pw" }),
+    /not user:password/,
+    "a username that is not a usable filename must refuse to boot",
+  );
+  assert.throws(
+    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "nopassword" }),
+    /not user:password/,
+    "an entry with no password must refuse to boot",
+  );
+
   // The credential check itself. Wrong password, wrong scheme, and absent header must all
-  // fail; only the exact pair passes.
-  const ok = (h: string | undefined) => basicAuthOk(h, "ajd3v:s3cret");
+  // fail; only an exact pair passes, and it answers with the reader it names.
+  const who = (h: string | undefined) => basicAuthUser(h, ["ajd3v:s3cret", "lin:h0rse"]);
   const header = (s: string) => `Basic ${Buffer.from(s).toString("base64")}`;
-  assert.equal(ok(header("ajd3v:s3cret")), true);
-  assert.equal(ok(header("ajd3v:wrong")), false);
-  assert.equal(ok(header("ajd3v:s3cret ")), false, "trailing whitespace must not pass");
-  assert.equal(ok(header("other:s3cret")), false);
-  assert.equal(ok(undefined), false);
-  assert.equal(ok("Bearer abc"), false);
-  assert.equal(basicAuthOk(undefined, undefined), true, "no credential configured means no check");
+  assert.equal(who(header("ajd3v:s3cret")), "ajd3v");
+  // The whole point of the list: the second credential is a different reader, not the first
+  // one's library handed to someone else.
+  assert.equal(who(header("lin:h0rse")), "lin");
+  assert.equal(who(header("ajd3v:wrong")), undefined);
+  assert.equal(who(header("lin:s3cret")), undefined, "passwords must not be interchangeable");
+  assert.equal(who(header("ajd3v:s3cret ")), undefined, "trailing whitespace must not pass");
+  assert.equal(who(header("other:s3cret")), undefined);
+  assert.equal(who(undefined), undefined);
+  assert.equal(who("Bearer abc"), undefined);
+  assert.equal(basicAuthUser(header("ajd3v:s3cret"), []), undefined, "no credential configured means no way in");
 
   // Uploads are capped while streaming, not from content-length, because the header is the
   // client's word. A body that keeps going must be cut off and its partial file removed.

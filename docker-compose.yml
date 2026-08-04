@@ -17,12 +17,14 @@ services:
       - GURU_USER_DIR=/app/data/users
       - GURU_JOBS_DB=/app/data/jobs.db
       - GURU_UPLOADS=/app/data/uploads
-      # Single-user: every request is served as this reader, so the proxy in front MUST
-      # authenticate. Swap this for CLERK_SECRET_KEY + CLERK_PUBLISHABLE_KEY + GURU_ORIGINS
-      # the day a second person needs a login; nothing else changes.
+      # Runs without Clerk. Only names the reader if GURU_BASIC_AUTH is empty, in which case
+      # the proxy in front MUST authenticate. Swap all this for CLERK_SECRET_KEY +
+      # CLERK_PUBLISHABLE_KEY + GURU_ORIGINS the day strangers can sign up.
       - GURU_SINGLE_USER=${GURU_SINGLE_USER:-reader}
-      # user:password. Enforced by the app, not the proxy. See the note in src/auth.ts.
-      # Without it the app refuses to boot in single-user mode.
+      # Comma-separated user:password, e.g. reader:secret,lin:other. Enforced by the
+      # app, not the proxy. See the note in src/auth.ts. Without it the app refuses to boot.
+      # The username that matches is the reader's id, so each one gets its own library and
+      # renaming a username orphans that person's books under the old name.
       - GURU_BASIC_AUTH=${GURU_BASIC_AUTH}
       - DEEPINFRA_API_KEY=${DEEPINFRA_API_KEY}
       - DEEPINFRA_BASE_URL=${DEEPINFRA_BASE_URL}

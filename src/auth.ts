@@ -31,24 +31,33 @@ const AUTHORIZED_PARTIES = (process.env.GURU_ORIGINS ?? "")
 const PRODUCTION = process.env.NODE_ENV === "production";
 
 /**
- * Deliberate single-user mode: every request is this reader, whoever sent it.
+ * Runs the app without Clerk, and names the reader when nothing else does.
  *
- * Only safe behind an authenticating proxy, because the app itself will no longer ask who
- * you are. It exists because "one person, their own domain" is a real deployment and Clerk
- * is premature for it, but it must be named explicitly. The guard below still refuses the
- * silent default, which is the case that hands one library to the whole internet by accident.
+ * With GURU_BASIC_AUTH set this is only the mode switch, and the credential that matched
+ * says who the reader is. On its own it means every request is this one reader whoever sent
+ * it, which is only safe behind an authenticating proxy, because the app itself will no
+ * longer ask who you are. It exists because "the people I know, on my own domain" is a real
+ * deployment and Clerk is premature for it, but it must be named explicitly. The guard below
+ * still refuses the silent default, the case that hands a library to the whole internet.
  */
 const SINGLE_USER = process.env.GURU_SINGLE_USER;
 
 /**
- * `user:password` guarding single-user mode.
+ * `user:password` credentials, comma-separated, guarding the app.
+ *
+ * The username that matches becomes the reader's id, so each credential gets its own
+ * library. Two or three people who know each other need a password each, not a signup flow,
+ * and Clerk stays the answer the day strangers can sign up.
  *
  * Enforced here rather than at the reverse proxy on purpose. The first attempt put it in a
  * Traefik middleware, and Coolify regenerated the router's label on deploy and dropped it ,
  * the site came up with no authentication and nothing said so. A door this important should
  * not depend on another system's label-merge order, and in here it is testable.
  */
-const BASIC_AUTH = process.env.GURU_BASIC_AUTH;
+const BASIC_AUTH = (process.env.GURU_BASIC_AUTH ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 // A missing key must never silently degrade to "everyone is the same user" on a public
 // box. Local development gets the fallback; production gets a boot failure.
@@ -65,8 +74,23 @@ if (PRODUCTION && SECRET && !AUTHORIZED_PARTIES.length) {
 // Single-user mode serves one person's whole library to whoever asks, so in production it
 // must come with a password. Refusing here makes the unsafe combination impossible rather
 // than leaving it to whoever writes the deployment config to remember.
-if (PRODUCTION && SINGLE_USER && !BASIC_AUTH) {
+if (PRODUCTION && SINGLE_USER && !BASIC_AUTH.length) {
   throw new Error("GURU_BASIC_AUTH (user:password) is required alongside GURU_SINGLE_USER in production");
+}
+/** The username half of `user:password`, or "" if there is no password to separate it from. */
+function username(cred: string) {
+  const at = cred.indexOf(":");
+  return at > 0 ? cred.slice(0, at) : "";
+}
+
+// A username becomes a filename in GURU_USER_DIR, so it has to survive `libraryPath`. Checked
+// at boot rather than on the request that first uses it, because a typo in the deployment
+// config should be a refusal to start, not one reader's 500 an hour later. Mirrors the
+// pattern in store.ts, which cannot be imported here without dragging SQLite in with it.
+for (const cred of BASIC_AUTH) {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(username(cred))) {
+    throw new Error(`GURU_BASIC_AUTH entry is not user:password with a usable username: ${JSON.stringify(cred.slice(0, 12))}…`);
+  }
 }
 
 let clerk: ClerkClient | undefined;
@@ -74,20 +98,25 @@ if (SECRET) clerk = createClerkClient({ secretKey: SECRET, publishableKey: PUBLI
 else console.error("no CLERK_SECRET_KEY, every request resolves to the local dev user");
 
 /**
- * Constant-time check of an `Authorization: Basic` header against `GURU_BASIC_AUTH`.
+ * The username whose `user:password` matches an `Authorization: Basic` header, or undefined
+ * if none does.
  *
  * Both sides are hashed before comparing so the buffers are the same length whatever was
  * sent, `timingSafeEqual` throws on a length mismatch, and the lengths themselves would
- * otherwise leak the size of the credential.
+ * otherwise leak the size of the credential. Every credential is compared even once one has
+ * matched, so how long the check takes does not say which reader was named.
  */
-export function basicAuthOk(header: string | undefined, expected = BASIC_AUTH) {
-  if (!expected) return true;
-  if (!header?.startsWith("Basic ")) return false;
-  const given = Buffer.from(header.slice(6).trim(), "base64").toString("utf8");
-  return timingSafeEqual(
-    createHash("sha256").update(given).digest(),
-    createHash("sha256").update(expected).digest(),
-  );
+export function basicAuthUser(header: string | undefined, expected = BASIC_AUTH) {
+  if (!header?.startsWith("Basic ")) return undefined;
+  const given = createHash("sha256")
+    .update(Buffer.from(header.slice(6).trim(), "base64").toString("utf8"))
+    .digest();
+
+  let matched: string | undefined;
+  for (const cred of expected) {
+    if (timingSafeEqual(given, createHash("sha256").update(cred).digest())) matched = username(cred);
+  }
+  return matched;
 }
 
 /** Node's request is not a fetch Request, and Clerk wants the latter. Headers and URL only. */
@@ -109,14 +138,21 @@ export async function authenticate(req: IncomingMessage): Promise<Auth> {
   // Checked before Clerk: if both are configured, the explicit choice wins rather than
   // leaving which one applies to the order of two environment variables.
   if (SINGLE_USER) {
-    if (BASIC_AUTH && !basicAuthOk(req.headers.authorization)) {
+    // No credentials configured means the proxy in front is the door, and everyone through
+    // it is the one named reader. With credentials, whoever they signed in as is who they
+    // are, which is what gives a second person their own library rather than a copy of the
+    // first person's.
+    if (!BASIC_AUTH.length) return { kind: "user", userId: SINGLE_USER };
+
+    const user = basicAuthUser(req.headers.authorization);
+    if (!user) {
       return {
         kind: "respond",
         status: 401,
         headers: new Headers({ "www-authenticate": 'Basic realm="guru", charset="UTF-8"' }),
       };
     }
-    return { kind: "user", userId: SINGLE_USER };
+    return { kind: "user", userId: user };
   }
   if (!clerk) return { kind: "user", userId: process.env.GURU_USER ?? "demo" };
 
