@@ -3,7 +3,7 @@
 // Run: node test/openai.test.ts
 import { createServer } from "node:http";
 import assert from "node:assert";
-import { _resetLlmConfig, expandQuery, resolveProvider, toOpenAiBody } from "../src/llm.ts";
+import { _resetLlmConfig, expandQuery, pickContent, resolveProvider, toOpenAiBody } from "../src/llm.ts";
 
 // --- provider selection --------------------------------------------------
 
@@ -107,6 +107,15 @@ assert.equal(seen.length, 1);
 assert.equal(seen[0].url, "/v1/chat/completions", "trailing slash must not double up");
 assert.equal(seen[0].auth, "Bearer test-key");
 assert.equal(seen[0].body.messages.at(-1).role, "user");
+
+// A gateway that appends an SSE terminator to a NON-streaming reply. 9router does this, and
+// res.json() threw on it, turning a perfectly good answer into "Something failed upstream".
+const shaped = (c: string) => JSON.stringify({ choices: [{ message: { content: c } }] });
+assert.equal(pickContent(shaped("clean")), "clean");
+assert.equal(pickContent(shaped("trailing") + "data: [DONE]"), "trailing");
+assert.equal(pickContent(shaped("spaced") + "\n\ndata: [DONE]\n"), "spaced");
+// A body that is broken for any other reason must still fail loudly rather than answer "".
+assert.throws(() => pickContent("<html>502 Bad Gateway</html>"), SyntaxError);
 
 server.close();
 console.error("openai-compatible tests ok");

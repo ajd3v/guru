@@ -114,7 +114,24 @@ async function completeOpenAi(params: CompleteParams): Promise<string> {
     // in it, and a bare status turns a 5-second fix into a debugging session.
     throw new Error(`openai-compatible ${res.status}: ${(await res.text()).slice(0, 300)}`);
   }
-  const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  return pickContent(await res.text());
+}
+
+/**
+ * The reply body, tolerating a gateway that ends a non-streaming response with an SSE
+ * terminator.
+ *
+ * 9router answers `POST /chat/completions` with a complete JSON object and then appends
+ * `data: [DONE]` even though nothing asked it to stream. `res.json()` parses the object,
+ * reaches the terminator and throws "Unexpected non-whitespace character after JSON",
+ * which surfaces as an upstream failure with a correct answer sitting inside it. Parsed
+ * as text and cut at the terminator instead, because whether the reader gets an answer
+ * should not depend on a gateway being well-formed.
+ */
+export function pickContent(text: string) {
+  const end = text.search(/\s*data:\s*\[DONE\]/);
+  const body = end === -1 ? text : text.slice(0, end);
+  const json = JSON.parse(body) as { choices?: Array<{ message?: { content?: string } }> };
   return json.choices?.[0]?.message?.content ?? "";
 }
 
