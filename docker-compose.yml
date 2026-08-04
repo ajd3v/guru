@@ -27,7 +27,10 @@ services:
       # renaming a username orphans that person's books under the old name.
       - GURU_BASIC_AUTH=${GURU_BASIC_AUTH}
       # OpenAI-compatible endpoint. Points at the 9router gateway on this host rather than
-      # at DeepInfra directly, which is why both services join `incubator-net` below. The
+      # at DeepInfra directly. Guru's networks are deliberately untouched: the router is
+      # attached to THIS app's network instead, under the alias `ninerouter`, because a
+      # container on more than one network leaves Traefik without a `traefik.docker.network`
+      # label to pick from and it routed to the wrong address. See deploy/README-9router. The
       # model id is set explicitly because the gateway namespaces by upstream
       # (nvidia/deepseek-ai/deepseek-v4-flash) where DeepInfra served the bare id, and the
       # code's default would 404 against it. Same weights either way, so the quote pipeline
@@ -38,7 +41,6 @@ services:
       - GURU_ANSWER_MODEL=${GURU_ANSWER_MODEL:-}
     volumes:
       - guru-data:/app/data
-    networks: [default, incubator-net]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.status<500?0:1),()=>process.exit(1))"]
       interval: 30s
@@ -64,7 +66,10 @@ services:
       # reader's database, so it has to agree with the server about who that reader is.
       - GURU_SINGLE_USER=${GURU_SINGLE_USER:-reader}
       # OpenAI-compatible endpoint. Points at the 9router gateway on this host rather than
-      # at DeepInfra directly, which is why both services join `incubator-net` below. The
+      # at DeepInfra directly. Guru's networks are deliberately untouched: the router is
+      # attached to THIS app's network instead, under the alias `ninerouter`, because a
+      # container on more than one network leaves Traefik without a `traefik.docker.network`
+      # label to pick from and it routed to the wrong address. See deploy/README-9router. The
       # model id is set explicitly because the gateway namespaces by upstream
       # (nvidia/deepseek-ai/deepseek-v4-flash) where DeepInfra served the bare id, and the
       # code's default would 404 against it. Same weights either way, so the quote pipeline
@@ -75,14 +80,6 @@ services:
       - GURU_ANSWER_MODEL=${GURU_ANSWER_MODEL:-}
     volumes:
       - guru-data:/app/data
-    networks: [default, incubator-net]
 
 volumes:
   guru-data:
-
-# Created by the incubator stack that runs the 9router, so it is joined rather than defined.
-# `default` is listed alongside it on both services because naming any network at all opts a
-# service out of the implicit default, and the default is how the proxy reaches port 8080.
-networks:
-  incubator-net:
-    external: true
