@@ -123,9 +123,11 @@ what happens next, and is deliberately not an LLM judge: the cases carry the gol
 file so two models can be compared against identical input, since retrieval is stochastic and
 otherwise each model gets a different set of cases.
 
-Subsets are not interchangeable. `--limit` strides through the case file rather than taking a
-prefix, and different limits still select different cases, so only compare runs that used the
-same one.
+Subsets are not interchangeable. The eval's `--limit` strides through the case file rather than
+taking a prefix, because the file is ordered by book and a prefix is one author's cases. Two
+different limits therefore select two different subsets, and runs that used different ones are
+not comparable, however similar the numbers look. (`starter --limit` is the plain meaning: the
+first N books.)
 
 ## Licence
 
