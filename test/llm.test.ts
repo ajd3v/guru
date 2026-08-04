@@ -124,6 +124,15 @@ replies = ["NOT COVERED: these sentences discuss water, not the question asked."
 const declined = await ask("q", [passage]);
 assert(/discuss water/.test(declined.answer), "decline text survives");
 assert(!/NOT COVERED/.test(declined.answer), "marker is stripped");
+// The flag the page reads to decide whether to list what was searched. Without it, asking
+// "skeet?" printed five citations under a heading saying they had been consulted, directly
+// under a sentence saying none of them applied.
+assert.equal(declined.declined, true, "a decline is flagged so its passages are not listed");
+
+// The near-miss reply is not a decline. Its own wording points at the passages, so hiding
+// them would leave a sentence referring to a list that is not there.
+assert.equal(nothing.declined, false, "could-not-ground keeps its passages");
+assert.equal(partial.declined, false, "an ordinary answer keeps its passages");
 
 // An invented id cannot become a quotation: it is dropped and counted.
 seen.length = 0;

@@ -408,9 +408,10 @@ NEVER type a quotation yourself, and never use quotation marks around source wor
 passage runs across sentences.
 
 Write your own prose in short paragraphs. After each claim, put the ids supporting it.
-If the sentences do not answer the question, begin your reply with NOT COVERED: and say
-briefly what they do discuss. A claim with no id is not allowed, so drop it rather than
-assert it.
+If the sentences do not answer the question, begin your reply with NOT COVERED: and say so in
+one sentence. Only add what they discuss instead when it is close to what was asked. A word
+that merely echoes a word in a passage is not a subject the passages address.
+A claim with no id is not allowed, so drop it rather than assert it.
 
 Begin with a single line starting "SYNOPSIS:" and then one or two sentences, in your own
 words, saying what these passages amount to as an answer. It is a summary of the passages
@@ -430,7 +431,7 @@ Do not begin it with "The passages" or "These passages" or "This text". Say the 
 export async function ask(query: string, hits: Hit[]) {
   const { byId, text } = catalogue(hits);
   if (!byId.size) {
-    return { answer: "Your library doesn't cover this.", synopsis: "", regenerated: false, dropped: 0, invented: 0, rejected: 0 };
+    return { answer: "Your library doesn't cover this.", synopsis: "", declined: true, regenerated: false, dropped: 0, invented: 0, rejected: 0 };
   }
 
   const rawDraft = await complete({
@@ -491,6 +492,11 @@ export async function ask(query: string, hits: Hit[]) {
       answer: draft.replace(/^\s*NOT COVERED:\s*/i, "").trim(),
       // A decline is the model's own words already; a synopsis of nothing would be noise.
       synopsis: "",
+      // Nothing here bore on the question, so the caller must not list the passages under a
+      // heading that says they were consulted. Asked "skeet?", the shipped answer summarised
+      // five passages on the immortal soul and then said none of them applied, with all five
+      // cited below it. A flag rather than a string test, since the sentence is the model's.
+      declined: true,
       regenerated: false,
       dropped: invented,
       invented,
@@ -522,6 +528,8 @@ export async function ask(query: string, hits: Hit[]) {
       answer: "Your library has passages near this, but I could not ground an answer in them.",
       regenerated: true,
       synopsis: "",
+      // Deliberately not a decline. This sentence points at the passages, so they stay listed.
+      declined: false,
       dropped: invented + unverified.length,
       invented,
       rejected: unverified.length,
@@ -531,6 +539,7 @@ export async function ask(query: string, hits: Hit[]) {
     answer: final,
     regenerated: unverified.length > 0,
     synopsis,
+    declined: false,
     dropped: invented + unverified.length,
     invented,
     rejected: unverified.length,

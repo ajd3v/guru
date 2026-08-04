@@ -371,8 +371,8 @@ const PAGE = (body = "") => `<!doctype html>
 </div>
 <script>
   // Progressive enhancement: without this the form posts normally and the page renders the
-  // whole answer at once. With it, the passages appear as soon as they are found and the
-  // answer replaces the waiting line when it is written.
+  // whole answer at once. With it, the waiting line says how many passages were found while
+  // the answer is still being composed, and the answer replaces it when it is written.
   const form = document.querySelector("form.ask"), out = document.getElementById("out");
   form.addEventListener("submit", async (e) => {
     const q = form.q.value.trim();
@@ -399,7 +399,7 @@ const PAGE = (body = "") => `<!doctype html>
     }
 
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-    let buf = "", passages = "";
+    let buf = "";
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -412,12 +412,11 @@ const PAGE = (body = "") => `<!doctype html>
         const name = (frame.match(/^event: (.*)$/m) || [])[1];
         const data = JSON.parse((frame.match(/^data: (.*)$/m) || [])[1] || "{}");
         if (name === "stage" && waiting()) waiting().textContent = data.text;
-        if (name === "passages") {
-          passages = data.html;
-          if (waiting()) waiting().textContent = data.text + ", composing an answer";
-        }
+        // Only the count is used here. Whether the passages are worth listing depends on the
+        // answer, which has not been written yet, so the server sends the list with it.
+        if (name === "passages" && waiting()) waiting().textContent = data.text + ", composing an answer";
         if (name === "answer") {
-          out.innerHTML = '<h2></h2>' + data.html + passages;
+          out.innerHTML = '<h2></h2>' + data.html;
           out.querySelector("h2").textContent = q;
         }
       }
@@ -589,12 +588,12 @@ createServer(async (req, res) => {
     const consulted =
       `<details class="note"><summary>Passages consulted</summary>` +
       `<ul class="shelf">${sources}</ul></details>`;
-    emit("passages", {
-      html: consulted,
-      text: `reading ${hits.length} passage${hits.length > 1 ? "s" : ""}`,
-    });
+    emit("passages", { text: `reading ${hits.length} passage${hits.length > 1 ? "s" : ""}` });
 
-    const { answer, synopsis, dropped } = await ask(query, hits);
+    const { answer, synopsis, dropped, declined } = await ask(query, hits);
+    // A decline means nothing retrieved bore on the question, so listing what was read under
+    // "Passages consulted" would claim a relevance the answer just denied.
+    const shelf = declined ? "" : consulted;
     const note = dropped
       ? `<p class="note">${dropped} claim${dropped > 1 ? "s" : ""} dropped: the quotation could not be verified.</p>`
       : "";
@@ -604,9 +603,9 @@ createServer(async (req, res) => {
     const composed = `${lead}<div class="answer">${render(answer)}</div>`;
 
     if (!streaming) {
-      return send(200, PAGE(`<h2>${escape(query)}</h2>${composed}${consulted}${note}`));
+      return send(200, PAGE(`<h2>${escape(query)}</h2>${composed}${shelf}${note}`));
     }
-    emit("answer", { html: composed + note });
+    emit("answer", { html: composed + shelf + note });
     res.end();
   } catch (err) {
     // The pipeline calls an upstream model. A failure there is not the reader's fault and
