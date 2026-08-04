@@ -34,7 +34,7 @@ await new Promise<void>((r) => server.listen(0, r));
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as any).port}`;
 process.env.ANTHROPIC_API_KEY = "stub";
 
-const { ask, contextualize, expandQuery, rerank, unverifiedQuotes } = await import("../src/llm.ts");
+const { ask, contextualize, expandQuery, rerank, stats, unverifiedQuotes } = await import("../src/llm.ts");
 
 const hit = (id: number, text: string): Hit => ({
   id, chunk_id: id, text, page_start: "1", page_end: "1",
@@ -68,9 +68,27 @@ const hits = [hit(10, "a"), hit(11, "b"), hit(12, "c")];
 assert.deepEqual((await rerank("q", hits, 5)).map((h) => h.id), [12, 10]);
 assert.equal(seen[0].stream, true, "must stream: routers return OpenAI JSON otherwise");
 
-// A rerank that drops everything must not silently empty the results.
+// The relevance floor. This assertion used to run the other way, on the reasoning that a
+// rerank dropping everything must not empty the results. That conflated the reranker judging
+// nothing relevant with a reranker that broke, and undoing the verdict is what let "skeet?"
+// retrieve passages about clay pots and get a confident answer about them.
+const before = stats.rerankNone;
+replies = ["NONE"];
+assert.equal((await rerank("q", hits, 5)).length, 0, "an explicit NONE empties the results");
 replies = ["none of them are relevant"];
-assert.equal((await rerank("q", hits, 5)).length, 3);
+assert.equal((await rerank("q", hits, 5)).length, 0, "the same verdict in prose reads the same");
+assert.equal(stats.rerankNone - before, 2, "the floor is counted separately from a failure");
+
+// A reply that cannot be read is still a malfunction, and that case is unchanged: it falls
+// back to the unranked order rather than telling the reader their library is silent.
+const fell = stats.rerankFallbacks;
+replies = ["I'm sorry, I can't help with that request."];
+assert.equal((await rerank("q", hits, 5)).length, 3, "an unreadable rerank falls back to unranked");
+assert.equal(stats.rerankFallbacks - fell, 1);
+
+// A pick alongside the word is still a pick, since the numbers are parsed first.
+replies = ["none stand out, but 1"];
+assert.deepEqual((await rerank("q", hits, 5)).map((h) => h.id), [11]);
 
 // --- ask: the model cites sentence ids and never types quotations. The exact wording is
 // spliced in from the passage, so a misquote is not expressible rather than merely detected.

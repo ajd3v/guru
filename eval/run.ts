@@ -115,6 +115,11 @@ if (stats.rerankCalls) {
   const pct = ((stats.rerankFallbacks / stats.rerankCalls) * 100).toFixed(0);
   const warn = stats.rerankFallbacks / stats.rerankCalls > 0.02 ? "  <-- RESULTS NOT TRUSTWORTHY" : "";
   console.log(`\nrerank fallbacks   ${stats.rerankFallbacks}/${stats.rerankCalls}  ${pct}%${warn}`);
+  // The relevance floor, reported next to the failures it must not be mistaken for. Every
+  // case here has a right answer in the corpus, so each NONE is the floor refusing a question
+  // the library can actually answer. Recall falling while this rises is the floor overreaching.
+  console.log(`rerank NONE        ${stats.rerankNone}/${stats.rerankCalls}  ` +
+    `${((stats.rerankNone / stats.rerankCalls) * 100).toFixed(0)}%`);
 }
 
 // The deepest search recall is the ceiling: rerank can only reorder what search already found.

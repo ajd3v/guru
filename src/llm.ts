@@ -217,8 +217,12 @@ const RERANK_BATCH = 20;
  * behaviour but indistinguishable from a reranker that simply ranked badly. A rate-limited
  * or truncating model therefore looks like a quality result. Count it so the eval can say
  * whether a number reflects the pipeline or a dead upstream.
+ *
+ * `rerankNone` is the opposite case and must not be read as a failure: the reranker judged
+ * every candidate irrelevant and the query returns nothing. A recall number that falls while
+ * this rises is the floor working, not the pipeline breaking.
  */
-export const stats = { rerankCalls: 0, rerankFallbacks: 0 };
+export const stats = { rerankCalls: 0, rerankFallbacks: 0, rerankNone: 0 };
 
 /**
  * Step 2 of the retrieval stack: an LLM reorders the fused candidates.
@@ -226,6 +230,9 @@ export const stats = { rerankCalls: 0, rerankFallbacks: 0 };
  * A local cross-encoder (bge-reranker-base) was tried here and reverted; see SPEC.md.
  */
 export async function rerank(query: string, hits: Hit[], k = 5): Promise<Hit[]> {
+  // ponytail: a lone candidate skips the floor, since one hit is already its own ranking.
+  // Hybrid search returns tens of candidates, so this is the empty-library case in practice.
+  // Judge it too if a one-book shelf ever starts answering questions it should decline.
   if (hits.length <= 1) return hits;
 
   if (hits.length > RERANK_BATCH) {
@@ -234,7 +241,13 @@ export async function rerank(query: string, hits: Hit[], k = 5): Promise<Hit[]> 
       batches.push(hits.slice(i, i + RERANK_BATCH));
     }
     const survivors = (await Promise.all(batches.map((b) => rerankOne(query, b, k)))).flat();
-    return survivors.length > k ? rerankOne(query, survivors, k) : survivors;
+    // Judged again together, always, not only when they overflow k. A batch sees its own
+    // twenty and nothing else, so a batch holding nothing but near-misses returns the best of
+    // a bad set rather than none of them: asked "skeet?", two batches answered NONE and the
+    // third picked five passages about clay pots, and because five fitted in k those five
+    // were never looked at again. This pass is the only place anything sees what actually
+    // came back, which makes it the only place the floor can apply to the whole result.
+    return survivors.length ? rerankOne(query, survivors, k) : survivors;
   }
   return rerankOne(query, hits, k);
 }
@@ -260,20 +273,39 @@ async function rerankOne(query: string, hits: Hit[], k: number): Promise<Hit[]> 
           `Rank the candidates that actually help answer the question, best first. ` +
           `Judge by meaning, not shared wording: passages from different translations or ` +
           `traditions can say the same thing in different words. Drop the ones that don't help.\n` +
-          `Reply with at most ${k} candidate numbers, comma-separated, and nothing else.`,
+          `A candidate that merely repeats a word from the question is not help.\n` +
+          `Reply with at most ${k} candidate numbers, comma-separated, and nothing else. ` +
+          `If not one of them helps, reply with the single word NONE.`,
       },
     ],
   });
 
   stats.rerankCalls++;
+  // GURU_DEBUG=1 prints what the reranker replied. The floor below depends entirely on this
+  // string, so when a junk query still gets an answer, this is the first thing to read.
+  if (process.env.GURU_DEBUG) console.error(`=== rerank (${hits.length} candidates) === ${JSON.stringify(reply)}`);
   const seen = new Set<number>();
   const picked = [...reply.matchAll(/\d+/g)]
     .map((m) => Number(m[0]))
     .filter((i) => hits[i] && !seen.has(i) && seen.add(i))
     .slice(0, k)
     .map((i) => hits[i]);
-  if (!picked.length) stats.rerankFallbacks++; // upstream said nothing usable
-  return picked.length ? picked : hits.slice(0, k); // a useless rerank must not empty the results
+  if (picked.length) return picked;
+
+  // The relevance floor. "NONE" is the reranker judging that nothing here bears on the
+  // question, which is a different event from a reply we could not read, and folding the two
+  // together is what gave junk queries confident answers: every candidate was dropped, the
+  // drop was read as a malfunction, and the unranked top k was handed back as though it had
+  // been chosen. Asked "skeet?", the expansion reached for clay pigeons, search matched
+  // Sankaracarya on clay pots, and the answer step dutifully explained whether the pot is
+  // real. Numbers are parsed first, so a reply carrying both a pick and the word NONE is
+  // still read as a pick.
+  if (/\bNONE\b/i.test(reply)) {
+    stats.rerankNone++;
+    return [];
+  }
+  stats.rerankFallbacks++; // upstream said nothing usable
+  return hits.slice(0, k); // a useless rerank must not empty the results
 }
 
 const SYSTEM = `You are a scholar-teacher for the reader's own library. You are warm, direct, and

@@ -14,7 +14,7 @@ try {
 import assert from "node:assert";
 import { execFileSync } from "node:child_process";
 import { createServer, type IncomingMessage } from "node:http";
-import { authenticate, basicAuthUser, toWebRequest } from "./auth.ts";
+import { authenticate, basicAuthUser, isLibrarian, toWebRequest } from "./auth.ts";
 import { createReadStream, createWriteStream, existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { once } from "node:events";
@@ -215,6 +215,13 @@ if (process.argv.includes("--selfcheck")) {
   assert.equal(who("Bearer abc"), undefined);
   assert.equal(basicAuthUser(header("ajd3v:s3cret"), []), undefined, "no credential configured means no way in");
 
+  // Uploading runs a parser on a file the app keeps, and exporting hands back every book in
+  // one file. Naming a librarian closes both doors to everybody else while leaving the asking
+  // open, which is the whole point of giving somebody a login to a library they do not own.
+  assert.equal(isLibrarian("ajd3v", ["ajd3v"]), true);
+  assert.equal(isLibrarian("lin", ["ajd3v"]), false, "a reader is not a librarian");
+  assert.equal(isLibrarian("lin", []), true, "unset means a one-person deployment, everyone");
+
   // Uploads are capped while streaming, not from content-length, because the header is the
   // client's word. A body that keeps going must be cut off and its partial file removed.
   const tmp = mkdtempSync(join(tmpdir(), "guru-up-"));
@@ -247,7 +254,9 @@ const jobs = openJobs();
  * does, and deliberately belongs to no tradition. Nothing is fetched: no webfont, no script
  * from anywhere, so the page renders whole on the first byte.
  */
-const PAGE = (body = "") => `<!doctype html>
+// `librarian` decides whether the two controls that move books are drawn at all. It is only
+// the chrome; the routes refuse the request themselves.
+const PAGE = (body = "", librarian = true) => `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>guru</title>
 <style>
@@ -359,10 +368,12 @@ const PAGE = (body = "") => `<!doctype html>
 </form>
 <div id="out">${body}</div>
 <footer>
-  <label class="file">Add a book
+  ${librarian
+    ? `<label class="file">Add a book
     <input type="file" accept=".pdf,.epub" id="f"></label>
   <span class="note" id="s"></span>
-  <a class="note" href="/export">Export</a>
+  <a class="note" href="/export">Export</a>`
+    : ""}
   <form method="post" action="/delete">
     <input name="confirm" placeholder="type DELETE">
     <button>Delete all</button>
@@ -425,7 +436,9 @@ const PAGE = (body = "") => `<!doctype html>
   });
 
   // The file is the whole request body, no multipart, so the server needs no parser for it.
-  document.getElementById("f").onchange = async (e) => {
+  // Absent for a reader who may not add books, in which case there is nothing to wire up.
+  const picker = document.getElementById("f");
+  if (picker) picker.onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const s = document.getElementById("s");
@@ -437,6 +450,18 @@ const PAGE = (body = "") => `<!doctype html>
     if (r.ok) setTimeout(() => location.reload(), 1500);
   };
 </script>`;
+
+// Second selfcheck block, because PAGE is defined below the first one and a const cannot be
+// read before it exists. The controls are chrome: a reader who has seen the page once knows
+// both URLs, so the routes refuse the request themselves and this only stops drawing buttons
+// that would 403.
+if (process.argv.includes("--selfcheck")) {
+  assert.match(PAGE("", true), /Add a book/);
+  assert.doesNotMatch(PAGE("", false), /Add a book/);
+  assert.doesNotMatch(PAGE("", false), /href="\/export"/);
+  assert.match(PAGE("", false), /action="\/delete"/, "a reader may still delete their own library");
+  assert.doesNotMatch(PAGE("", false), /getElementById\("f"\)\.onchange/, "no handler for an absent picker");
+}
 
 /** What the reader has, and what is still being read in. */
 function shelf(user: string) {
@@ -479,11 +504,19 @@ createServer(async (req, res) => {
   }
   const user = auth.userId;
 
-  if (req.method === "GET" && req.url === "/") return send(200, PAGE(shelf(user)));
+  // Both doors that move books rather than answers. Enforced on the routes, not by hiding the
+  // controls: the upload is a plain PUT and the export a plain GET, so anyone who has seen the
+  // page once can call them again by hand.
+  const librarian = isLibrarian(user);
+  const page = (html = "") => PAGE(html, librarian);
+
+  if (req.method === "GET" && req.url === "/") return send(200, page(shelf(user)));
 
   if (req.method === "PUT" && req.url?.startsWith("/upload")) {
     const text = (code: number, msg: string) =>
       res.writeHead(code, { "content-type": "text/plain; charset=utf-8" }).end(msg);
+
+    if (!librarian) return text(403, "Only the librarian can add books to this library.");
 
     const name = new URL(req.url, "http://x").searchParams.get("name") ?? "";
     const ext = name.slice(name.lastIndexOf(".")).toLowerCase();
@@ -514,6 +547,7 @@ createServer(async (req, res) => {
   // GDPR, and cheap because a reader is one file: their books, chunks, and usage all travel
   // together. WAL is checkpointed first or the copy arrives missing its most recent writes.
   if (req.method === "GET" && req.url === "/export") {
+    if (!librarian) return send(403, page("<p>Only the librarian can export this library.</p>"));
     const db = userLibrary(user);
     db.pragma("wal_checkpoint(TRUNCATE)");
     db.close();
@@ -528,21 +562,21 @@ createServer(async (req, res) => {
     const form = new URLSearchParams(await body(req));
     // Irreversible and one request away from the ask form, so it takes a deliberate word
     // rather than a bare POST.
-    if (form.get("confirm") !== "DELETE") return send(400, PAGE("<p>Type DELETE to confirm.</p>"));
+    if (form.get("confirm") !== "DELETE") return send(400, page("<p>Type DELETE to confirm.</p>"));
 
     for (const j of listJobs(jobs, user, 1000)) await rm(j.path, { force: true });
     jobs.prepare("delete from jobs where user_id = ?").run(user);
     // -wal and -shm hold data too; leaving them behind would seed the next database of the
     // same name with the deleted reader's writes.
     for (const suffix of ["", "-wal", "-shm"]) await rm(libraryPath(user) + suffix, { force: true });
-    return send(200, PAGE("<p>Your library and its history are gone.</p>"));
+    return send(200, page("<p>Your library and its history are gone.</p>"));
   }
 
-  if (req.method !== "POST" || req.url !== "/ask") return send(404, PAGE("<p>Not found.</p>"));
+  if (req.method !== "POST" || req.url !== "/ask") return send(404, page("<p>Not found.</p>"));
 
   const query = new URLSearchParams(await body(req)).get("q")?.trim() ?? "";
-  if (!query) return send(400, PAGE("<p>Ask something.</p>"));
-  if (query.length > MAX_QUERY) return send(413, PAGE("<p>That question is too long.</p>"));
+  if (!query) return send(400, page("<p>Ask something.</p>"));
+  if (query.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>"));
 
   try {
     const db = userLibrary(user);
@@ -550,7 +584,7 @@ createServer(async (req, res) => {
     // finds an answer, and a failed question that refunds its slot is a free retry loop.
     if (askedToday(db) >= MAX_ASKS) {
       db.close();
-      return send(429, PAGE(`<p>That's ${MAX_ASKS} questions today. Back tomorrow.</p>`));
+      return send(429, page(`<p>That's ${MAX_ASKS} questions today. Back tomorrow.</p>`));
     }
     recordAsk(db);
 
@@ -577,7 +611,7 @@ createServer(async (req, res) => {
     const hits = await rerank(query, await search(db, await expandQuery(query)));
     if (!hits.length) {
       const none = "<p>Your library doesn't cover this.</p>";
-      if (!streaming) return send(200, PAGE(none));
+      if (!streaming) return send(200, page(none));
       emit("answer", { html: none });
       return void res.end();
     }
@@ -603,7 +637,7 @@ createServer(async (req, res) => {
     const composed = `${lead}<div class="answer">${render(answer)}</div>`;
 
     if (!streaming) {
-      return send(200, PAGE(`<h2>${escape(query)}</h2>${composed}${shelf}${note}`));
+      return send(200, page(`<h2>${escape(query)}</h2>${composed}${shelf}${note}`));
     }
     emit("answer", { html: composed + shelf + note });
     res.end();
@@ -618,7 +652,7 @@ createServer(async (req, res) => {
       res.write(`event: answer\ndata: ${JSON.stringify({ html: failed })}\n\n`);
       res.end();
     } else {
-      send(502, PAGE(failed));
+      send(502, page(failed));
     }
   }
 }).listen(PORT, () => console.error(`guru on http://localhost:${PORT}`));

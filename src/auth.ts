@@ -119,6 +119,27 @@ export function basicAuthUser(header: string | undefined, expected = BASIC_AUTH)
   return matched;
 }
 
+/**
+ * Who may add books to the shelf and take the whole library away, comma-separated.
+ *
+ * Reading is what a reader is given; the corpus itself is not. Uploading runs a PDF parser
+ * on a file the app then keeps, and exporting hands back a single SQLite file containing
+ * every book in it, so between them they are the two doors that move literature rather than
+ * answers. Unset means everyone, which is right for a one-person deployment and for the CLI,
+ * where the only reader is the owner.
+ *
+ * Deletion is deliberately not gated. A reader removing their own library is their right and
+ * takes nothing away from anybody else.
+ */
+const LIBRARIANS = (process.env.GURU_LIBRARIAN ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+/** Whether this reader may upload or export. True for everyone when none is named. */
+export const isLibrarian = (userId: string, allowed = LIBRARIANS) =>
+  !allowed.length || allowed.includes(userId);
+
 /** Node's request is not a fetch Request, and Clerk wants the latter. Headers and URL only. */
 export function toWebRequest(req: IncomingMessage): Request {
   const proto = (req.headers["x-forwarded-proto"] as string | undefined) ?? "http";
