@@ -108,6 +108,20 @@ assert.equal(seen[0].url, "/v1/chat/completions", "trailing slash must not doubl
 assert.equal(seen[0].auth, "Bearer test-key");
 assert.equal(seen[0].body.messages.at(-1).role, "user");
 
+// An empty model override must fall back to the default, not be sent as the model id. Every
+// layer of the deployment writes "" for "unset": compose interpolates `${VAR:-}` whether or
+// not VAR exists, and clearing a field in a control panel stores an empty string rather than
+// deleting the row. This shipped once and took answering down with `The model `` does not exist`.
+process.env.GURU_ANSWER_MODEL = "";
+process.env.GURU_PIPELINE_MODEL = "";
+_resetLlmConfig();
+seen.length = 0;
+await expandQuery("what is the way?");
+assert.equal(seen.at(-1).body.model, "deepseek-ai/DeepSeek-V4-Flash", "empty override falls back");
+delete process.env.GURU_ANSWER_MODEL;
+delete process.env.GURU_PIPELINE_MODEL;
+_resetLlmConfig();
+
 // A gateway that appends an SSE terminator to a NON-streaming reply. 9router does this, and
 // res.json() threw on it, turning a perfectly good answer into "Something failed upstream".
 const shaped = (c: string) => JSON.stringify({ choices: [{ message: { content: c } }] });

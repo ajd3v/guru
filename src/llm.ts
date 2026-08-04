@@ -37,10 +37,16 @@ let cfg: { provider: Provider; pipeline: string; answer: string } | undefined;
 function config() {
   if (cfg === undefined) {
     const provider = resolveProvider();
+    // `||`, not `??`. An empty string is how every layer of the deployment says "unset":
+    // docker-compose writes `GURU_ANSWER_MODEL=${GURU_ANSWER_MODEL:-}` whether or not the
+    // variable exists, and clearing a field in a control panel stores "" rather than deleting
+    // the row. `??` keeps all of those, because "" is not nullish, so the model id became the
+    // empty string and every call came back `The model `` does not exist` with the defaults
+    // sitting right there unused. Answering was down until it was spotted in the log.
     cfg = {
       provider,
-      pipeline: process.env.GURU_PIPELINE_MODEL ?? DEFAULTS[provider].pipeline, // contextualize, rerank
-      answer: process.env.GURU_ANSWER_MODEL ?? DEFAULTS[provider].answer,
+      pipeline: process.env.GURU_PIPELINE_MODEL || DEFAULTS[provider].pipeline, // contextualize, rerank
+      answer: process.env.GURU_ANSWER_MODEL || DEFAULTS[provider].answer,
     };
   }
   return cfg;
