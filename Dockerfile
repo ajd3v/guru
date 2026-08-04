@@ -4,9 +4,17 @@
 # language boundary doubles as the boundary the PDF parser runs behind.
 FROM node:24-bookworm-slim
 
-# build-essential and python3-dev: better-sqlite3 compiles from source. ca-certificates:
-# model weights and Gutenberg are fetched over TLS.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# build-essential and python3-dev: better-sqlite3 compiles from source, because npm runs an
+# implicit `node-gyp rebuild` for any package carrying a binding.gyp whatever prebuilds it
+# ships. ca-certificates: model weights and Gutenberg are fetched over TLS.
+#
+# ForceIPv4 because the deploy host advertises IPv6 and cannot route it. apt tried the AAAA
+# record first and sat on a connect timeout per package, which is not an error and never
+# fails the build, it just stalls: this same install measured 276s by default against 7s with
+# the flag, and one deployment spent 989 seconds inside a single package fetch. Drop the line
+# if the host ever gets working IPv6, it costs nothing but it is a lie about the network.
+RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4 \
+ && apt-get update && apt-get install -y --no-install-recommends \
       build-essential python3 python3-venv python3-dev ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
