@@ -50,23 +50,7 @@ function db() {
   return open(DB);
 }
 
-/**
- * `known` overrides what the file says its title and author are.
- *
- * Gutenberg's own metadata is a catalogue record, not a citation: the Gita arrives as "The
- * Song Celestial; Or, Bhagavad-Gîtâ (from the Mahâbhârata) / Being a discourse between
- * Arjuna, Prince of India, and the Supreme Being under the form of Krishna", and Tolstoy
- * arrives with his German title still attached as "graf Leo Tolstoy". starter/library.json
- * already carries the short name for all fifty, and that name was only being used to build
- * the download filename before being thrown away in favour of the record. A reader's own
- * uploads pass nothing here and keep whatever the file claims, which is all we know of them.
- */
-async function add(
-  path: string,
-  pageOffset: number,
-  withContext: boolean,
-  known?: { author: string; title: string },
-) {
+async function add(path: string, pageOffset: number, withContext: boolean) {
   // A directory is a bulk ingest, in this one process: loading the embedder costs more
   // than embedding a whole book, so 2,000 files must not mean 2,000 process starts.
   if (statSync(path).isDirectory()) {
@@ -85,8 +69,7 @@ async function add(
     }
     return;
   }
-  const extracted = extract(path, pageOffset);
-  const book = known ? { ...extracted, ...known } : extracted;
+  const book = extract(path, pageOffset);
   const contexts = withContext ? await contextualize(book, book.chunks) : undefined;
   await addBook(db(), book, contexts);
   console.log(
@@ -98,16 +81,14 @@ async function add(
 /** The public-domain corpus every user gets on day one, and the eval corpus. */
 export const STARTER_DIR = "data/starter";
 
-export type StarterBook = { gutenberg: number; author: string; title: string };
-
-/** The manifest, which is the authority on what these fifty books are called. */
-export const starterManifest = () =>
-  JSON.parse(readFileSync("starter/library.json", "utf8")) as StarterBook[];
-
 export async function fetchStarter() {
-  const books = starterManifest();
+  const books = JSON.parse(readFileSync("starter/library.json", "utf8")) as {
+    gutenberg: number;
+    author: string;
+    title: string;
+  }[];
   mkdirSync(STARTER_DIR, { recursive: true });
-  const paths: { path: string; known: { author: string; title: string } }[] = [];
+  const paths: string[] = [];
   for (const b of books) {
     const path = join(STARTER_DIR, `${b.author} - ${b.title}.epub`);
     if (!existsSync(path)) {
@@ -116,43 +97,13 @@ export async function fetchStarter() {
       writeFileSync(path, Buffer.from(await res.arrayBuffer()));
       console.error(`fetched ${b.title}`);
     }
-    paths.push({ path, known: { author: b.author, title: b.title } });
+    paths.push(path);
   }
   return paths;
 }
 
 async function starter(withContext: boolean) {
-  for (const { path, known } of await fetchStarter()) await add(path, 0, withContext, known);
-}
-
-/**
- * Re-sync the fifty starter books' titles and authors from the manifest, in GURU_DB.
- *
- * Needed because the manifest's names are only read while building a library, and every
- * library that already exists was built before they were being kept. Rebuilding instead
- * would be seventy minutes of re-embedding to change fifty strings, and would still leave
- * every reader's own copy untouched, since a copy is made once and never revisited.
- *
- * Joined on `source`, which is the download filename and was itself built from the manifest,
- * so the match is exact rather than fuzzy. A book the reader added themselves has a source
- * that is not in the manifest and is left alone.
- */
-function retitle() {
-  const wanted = new Map(starterManifest().map((b) => [`${b.author} - ${b.title}.epub`, b]));
-  const target = db();
-  const rows = target.prepare("select id, source, title, author from books").all() as {
-    id: number; source: string; title: string; author: string;
-  }[];
-  const update = target.prepare("update books set title = ?, author = ? where id = ?");
-  let changed = 0;
-  for (const row of rows) {
-    const b = wanted.get(row.source);
-    if (!b || (b.title === row.title && b.author === row.author)) continue;
-    update.run(b.title, b.author, row.id);
-    console.error(`  ${row.author}, ${row.title.slice(0, 58)}\n    -> ${b.author}, ${b.title}`);
-    changed++;
-  }
-  console.error(`retitled ${changed} of ${rows.length} books in ${process.env.GURU_DB ?? "data/library.db"}`);
+  for (const path of await fetchStarter()) await add(path, 0, withContext);
 }
 
 /**
@@ -378,9 +329,8 @@ else if (cmd === "starter") await starter(withContext);
 else if (cmd === "find") await find(arg);
 else if (cmd === "ask") await ask(arg);
 else if (cmd === "worker") await worker();
-else if (cmd === "retitle") retitle();
 else if (cmd === "selfcheck") await selfcheck();
 else
   console.log(
-    "usage: guru add BOOK.pdf [--page-offset N] [--context] | starter [--context] | find QUERY | ask QUESTION | worker | retitle | selfcheck",
+    "usage: guru add BOOK.pdf [--page-offset N] [--context] | starter [--context] | find QUERY | ask QUESTION | worker | selfcheck",
   );
