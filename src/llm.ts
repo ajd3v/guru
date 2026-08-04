@@ -486,7 +486,7 @@ Do not begin it with "The passages" or "These passages" or "This text". Say the 
  * author's sentence and break the one promise this program makes. A dash the reader sees
  * inside a blockquote is Plato's, and it stays.
  */
-const plainDashes = (s: string) => s.replace(/\s*[—–]\s*/g, ", ").replace(/,\s*,/g, ",");
+export const plainDashes = (s: string) => s.replace(/\s*[—–]\s*/g, ", ").replace(/,\s*,/g, ",");
 
 export async function ask(query: string, hits: Hit[]) {
   const { byId, text } = catalogue(hits);

@@ -21,7 +21,7 @@ import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { askedToday, cite, libraryPath, recordAsk, search, userLibrary } from "./store.ts";
-import { ask, expandQuery, rerank } from "./llm.ts";
+import { ask, expandQuery, plainDashes, rerank } from "./llm.ts";
 import { countActive, enqueue, listJobs, openJobs } from "./jobs.ts";
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -125,7 +125,18 @@ function render(answer: string) {
     quoting = quoted;
     // A prose line trailing a quote starts with the punctuation that closed the sentence the
     // quote was spliced into ("… as follows [quote]. This is why …"). Drop the orphan.
-    buf.push(quoted ? line.replace(/^&gt; ?/, "") : line.replace(/^[.,;:]\s*/, ""));
+    //
+    // This is also the only place that can tell the model's prose from the author's, which is
+    // why the dashes are flattened here rather than upstream: `quoted` decides it per line, so
+    // a quotation keeps whatever punctuation its author used and the sentences around it get
+    // the plainer comma. Doing it any earlier would have to guess.
+    const cleaned = quoted ? line.replace(/^&gt; ?/, "") : plainDashes(line.replace(/^[.,;:]\s*/, ""));
+    // A prose line with no word in it is left over from splicing, usually a lone dash or the
+    // tail of punctuation from a sentence a quotation already carried away. It used to render
+    // as an empty paragraph, which was invisible until the paragraphus gave it a red mark and
+    // a line of its own.
+    if (!quoted && !/[\p{L}\p{N}]/u.test(cleaned)) continue;
+    buf.push(cleaned);
   }
   flush();
   return out.join("\n");
@@ -145,6 +156,15 @@ if (process.argv.includes("--selfcheck")) {
   assert.equal(render("claim\n> quote"), "<p>claim</p>\n<blockquote><p>quote</p></blockquote>");
   assert.equal(render("> quote\n. and the rest of the sentence"),
     "<blockquote><p>quote</p></blockquote>\n<p>and the rest of the sentence</p>");
+  assert.equal(render("> quote\n-\n> another"),
+    "<blockquote><p>quote</p></blockquote>\n<blockquote><p>another</p></blockquote>",
+    "a wordless prose line is dropped, not rendered as an empty paragraph");
+  // Dashes: the author keeps theirs, the model does not keep its own. Only this function can
+  // tell the two apart, because only here is a line known to be a quotation or not.
+  assert.equal(
+    render("> a quoted line—with the author's dash\nthe model's line—with its own"),
+    "<blockquote><p>a quoted line—with the author's dash</p></blockquote>\n<p>the model's line, with its own</p>",
+  );
   assert.match(render('<script>alert("x")</script>'), /&lt;script&gt;/);
 
   // The synopsis is the model's own words and must be escaped like any other untrusted text,
@@ -262,13 +282,23 @@ const PAGE = (body = "", librarian = true) => `<!doctype html>
 <style>
   :root {
     --paper: #f6f3ec; --ink: #23211c; --quiet: #7d776b; --rule: #ddd7c9; --field: #eae5d9;
+    /* Rubric. Scribes across the Latin and Islamic book traditions kept a second, red ink for
+       the parts that tell you where you are: headings, section breaks, the openings of things.
+       It was never colour for its own sake, it was the structure of the page made visible. So
+       it is spent here only on what marks structure, the mark, the drop cap that opens the
+       summary, the paragraphus between passages, and the citation under a quotation. Nowhere
+       in the body text, which stays one ink, as it would in a book. */
+    --rubric: #9d3b1f;
     /* Old-style serifs, in order of how good they look. No webfont: a page about patient
        reading should not wait on a network round trip to show its first line. */
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", "Book Antiqua", Georgia, serif;
     --small: ui-monospace, "SF Mono", "IBM Plex Mono", "DejaVu Sans Mono", monospace;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --paper: #14130f; --ink: #e6e1d5; --quiet: #8b8578; --rule: #2e2b24; --field: #1d1b16; }
+    /* Vermilion on a dark ground goes muddy and loses its edge, so the rubric is lifted
+       toward the orange the same pigment takes by lamplight rather than kept at its paper value. */
+    :root { --paper: #14130f; --ink: #e6e1d5; --quiet: #8b8578; --rule: #2e2b24; --field: #1d1b16;
+            --rubric: #c8663d; }
   }
   * { box-sizing: border-box; }
   body {
@@ -281,17 +311,29 @@ const PAGE = (body = "", librarian = true) => `<!doctype html>
   .sheet { max-width: 36rem; margin: 0 auto; }
 
   header { text-align: center; margin-bottom: clamp(2.5rem, 7vh, 4.5rem); }
-  .mark { width: 46px; height: 46px; fill: none; stroke: currentColor; stroke-width: 1; color: var(--quiet); }
-  .mark circle { opacity: .55; transform-origin: 32px 32px; animation: breathe 11s ease-in-out infinite; }
-  .mark circle:nth-child(2) { animation-delay: -2.6s; }
-  .mark circle:nth-child(3) { animation-delay: -5.2s; }
-  .mark circle:nth-child(4) { animation-delay: -7.8s; fill: currentColor; stroke: none; }
+  .mark { width: 72px; height: 48px; fill: none; stroke: currentColor; stroke-width: 1; color: var(--quiet); }
+  /* The two circles drift a hair apart and back, about the rate of slow breathing, so the
+     overlap opens and closes. Eleven seconds is long enough that you notice it only if you
+     stop and watch, which is the correct amount of attention for a mark to ask for. */
+  .mark circle { opacity: .5; animation: drift 11s ease-in-out infinite; }
+  .mark circle:nth-of-type(2) { animation-direction: alternate-reverse; }
+  .mark .almond { fill: var(--rubric); stroke: none; opacity: .9; animation: kindle 11s ease-in-out infinite; }
+  @keyframes drift { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(1.6px); } }
+  .mark circle:nth-of-type(1) { animation-name: driftback; }
+  @keyframes driftback { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-1.6px); } }
+  @keyframes kindle { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
   @keyframes breathe { 0%, 100% { opacity: .25; } 50% { opacity: .7; } }
-  @media (prefers-reduced-motion: reduce) { .mark circle { animation: none; opacity: .5; } }
+  @media (prefers-reduced-motion: reduce) {
+    .mark circle, .mark .almond { animation: none; opacity: .55; }
+    .mark .almond { opacity: .9; }
+  }
 
   h1 { margin: .9rem 0 .3rem; font-size: 1.5rem; font-weight: 400; letter-spacing: .34em;
        text-indent: .34em; text-transform: lowercase; }
-  .tagline { margin: 0; color: var(--quiet); font-size: .9375rem; font-style: italic; }
+  .tagline { margin: 0; color: var(--quiet); font-size: .9375rem; font-style: italic; text-wrap: balance; }
+  /* The waiting line and the answer arrive on the same slow rise, so the page composes itself
+     in one movement instead of several things popping in. */
+  header { animation: rise .8s ease-out both; }
 
   /* The question sits on a ruled line, like writing on a page, not inside a widget. */
   .ask { display: flex; gap: .75rem; align-items: baseline;
@@ -309,18 +351,46 @@ const PAGE = (body = "", librarian = true) => `<!doctype html>
        margin: 0 0 2rem; text-wrap: balance; }
 
   /* Inverted hierarchy: the passage is the payload, the prose around it is scaffolding. */
-  blockquote { margin: 2.25rem 0; }
+  /* A quoted passage is set off the way a manuscript sets one off: a rule in the margin rather
+     than a box around it, so the page stays a page. The rule is rubric because it is doing the
+     job rubric did, telling you where somebody else's words start and stop. */
+  blockquote { position: relative; margin: 2.5rem 0; padding-left: 1.4rem; }
+  blockquote::before {
+    content: ""; position: absolute; left: 0; top: .34em; bottom: .34em; width: 2px;
+    background: var(--rubric); opacity: .5;
+  }
   blockquote p { margin: 0; font-size: 1.1875rem; line-height: 1.62; text-wrap: pretty; }
   blockquote p::before { content: "\\201C"; margin-left: -.42em; }
   blockquote p::after { content: "\\201D"; }
+  /* Not rubricated, though it was at first. A citation follows every quotation, so colouring
+     it put three lines of red under each passage and made the accent the loudest thing on the
+     page, which inverts the point of a second ink. The margin rule already says where the
+     quotation is. Rubric stays on the four things that appear once: the mark, the initial,
+     that rule, and the paragraphus. */
   cite { display: block; margin-top: .7rem; color: var(--quiet); font: normal .6875rem/1.5 var(--small);
-         letter-spacing: .1em; font-style: normal; }
+         letter-spacing: .08em; font-style: normal; opacity: .8; }
+  /* The paragraphus, the mark a scribe put where one thought ended and the next began, before
+     the indented paragraph was invented to do the same job with white space. Between passages
+     it says these are separate findings rather than one argument running on. */
+  blockquote + p:not(:empty)::before {
+    content: "\\00B6"; color: var(--rubric); opacity: .55; font-size: .8em;
+    margin-right: .5em; vertical-align: .05em;
+  }
   .answer > p { color: var(--quiet); font-size: .9375rem; text-wrap: pretty; }
 
   /* The model's own summary: larger and set in the page's voice, with a rule under it, so it
      reads as an editor's standfirst rather than as anything quoted from a book. */
   .synopsis { margin: 0 0 2.5rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--rule);
               font-size: 1.0625rem; line-height: 1.7; text-wrap: pretty; }
+  /* The initial. In a manuscript the enlarged opening letter tells you the text starts here,
+     and it is the one place the page is allowed to be beautiful for its own sake. It sits on
+     the summary rather than on a quotation on purpose: illuminating somebody else's sentence
+     would dress up a passage this program is only borrowing. Two lines deep, not six, because
+     the summary is often two sentences and a taller cap would leave it hanging in air. */
+  .synopsis::first-letter {
+    float: left; font-size: 3.1em; line-height: .82; padding: .06em .12em 0 0;
+    color: var(--rubric); font-weight: 400;
+  }
   .note { color: var(--quiet); font-size: .8125rem; }
   .note a { color: inherit; text-underline-offset: .2em; }
   details { margin-top: 2.5rem; }
@@ -355,12 +425,20 @@ const PAGE = (body = "", librarian = true) => `<!doctype html>
 </style>
 <div class="sheet">
 <header>
-  <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
-    <circle cx="32" cy="32" r="30"/><circle cx="32" cy="32" r="21.5"/>
-    <circle cx="32" cy="32" r="13"/><circle cx="32" cy="32" r="3.4"/>
+  <!-- Vesica piscis: two circles overlapping by a radius, the almond between them picked out
+       in rubric. It is the one contemplative figure that is nobody's insignia, turning up as
+       the mandorla in Christian painting, in Islamic pattern work and in Buddhist mandalas
+       alike, which suits a shelf holding all three. It also happens to draw what the page
+       does, a reader and a book overlapping, with the answer only in the part they share. -->
+  <svg class="mark" viewBox="0 0 96 64" aria-hidden="true">
+    <!-- The lens itself. Centres 26 apart with r=26 put the crossings at y 9.5 and 54.5, and
+         both arcs take sweep=1: reversing direction is what makes the second one bulge back. -->
+    <path class="almond" d="M48 9.5A26 26 0 0 1 48 54.5A26 26 0 0 1 48 9.5Z"/>
+    <circle cx="35" cy="32" r="26"/>
+    <circle cx="61" cy="32" r="26"/>
   </svg>
   <h1>guru</h1>
-  <p class="tagline">Your own library, answering in its own words.</p>
+  <p class="tagline">Nothing said here is mine to say.</p>
 </header>
 <form class="ask" method="post" action="/ask">
   <input name="q" maxlength="${MAX_QUERY}" placeholder="Ask your library&hellip;" autofocus>
