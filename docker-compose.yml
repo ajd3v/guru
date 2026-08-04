@@ -30,7 +30,7 @@ services:
       # at DeepInfra directly. Guru's networks are deliberately untouched: the router is
       # attached to THIS app's network instead, under the alias `ninerouter`, because a
       # container on more than one network leaves Traefik without a `traefik.docker.network`
-      # label to pick from and it routed to the wrong address. See deploy/README-9router. The
+      # label to pick from and it routed to the wrong address. See deploy/README-9router.md. The
       # model id is set explicitly because the gateway namespaces by upstream
       # (nvidia/deepseek-ai/deepseek-v4-flash) where DeepInfra served the bare id, and the
       # code's default would 404 against it. Same weights either way, so the quote pipeline
@@ -69,7 +69,7 @@ services:
       # at DeepInfra directly. Guru's networks are deliberately untouched: the router is
       # attached to THIS app's network instead, under the alias `ninerouter`, because a
       # container on more than one network leaves Traefik without a `traefik.docker.network`
-      # label to pick from and it routed to the wrong address. See deploy/README-9router. The
+      # label to pick from and it routed to the wrong address. See deploy/README-9router.md. The
       # model id is set explicitly because the gateway namespaces by upstream
       # (nvidia/deepseek-ai/deepseek-v4-flash) where DeepInfra served the bare id, and the
       # code's default would 404 against it. Same weights either way, so the quote pipeline
