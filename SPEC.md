@@ -169,7 +169,7 @@ one. Model choice for the answer step is a quality decision, not a cost decision
 - **Litestream** continuous replication to S3. Encryption at rest + TLS.
 - Hosting: Fly.io / Hetzner / Railway-class with persistent volumes (SQLite rules out pure serverless).
 - Auth: managed (Clerk/WorkOS), never hand-rolled. Billing: Stripe.
-- GDPR-shaped from day one: per-user export + delete endpoints. **Built**, `GET /export` streams the reader's SQLite file (books, chunks, and usage all travel together, since it is one file), `POST /delete` removes it along with its `-wal`/`-shm` sidecars, queued uploads, and job rows.
+- GDPR-shaped from day one: per-user export + delete endpoints. **Built**, `GET /export` streams the reader's SQLite file (books, chunks, and usage all travel together, since it is one file), `POST /delete` removes it along with its `-wal`/`-shm` sidecars, queued uploads, and job rows. Where `GURU_LIBRARIAN` names who may take the corpus away, everyone else exports their ask history as JSON instead: the books are not theirs, and `asks` holds timestamps and no question text, so that history is the whole of what is. Deletion is not gated, since removing your own library costs nobody else anything.
 - SOC2 / pen test / WAF: deferred until an institutional buyer asks.
 
 ## Pricing
@@ -188,7 +188,7 @@ plausible stacks are twenty times apart:
 
 | stack | per answer | 40 answers/day |
 |---|---|---|
-| DeepSeek-V4-Flash on DeepInfra (deployed), $0.09/$0.18 per Mtok | **~$0.002** | ~$2.40/month |
+| DeepSeek-V4-Flash on DeepInfra (deployed, now the `-0731` build), $0.09/$0.18 per Mtok | **~$0.002** | ~$2.40/month |
 | Haiku pipeline + Sonnet answers on Anthropic (SPEC's intent), $1/$5 and $3/$15 | **~$0.04** | ~$48/month |
 
 Prompt caching does not rescue either one: the rerank prompt carries a different candidate set

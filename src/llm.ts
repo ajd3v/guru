@@ -25,7 +25,16 @@ export function resolveProvider(env = process.env): Provider {
 // to claude-* ids, so the defaults differ. Override either with GURU_*_MODEL.
 const DEFAULTS = {
   anthropic: { pipeline: "claude-haiku-4-5", answer: "claude-sonnet-5" },
-  openai: { pipeline: "deepseek-ai/DeepSeek-V4-Flash", answer: "deepseek-ai/DeepSeek-V4-Flash" },
+  // The dated build rather than the rolling alias, so an upstream refresh cannot change the
+  // pipeline underneath a measurement. Compared against the undated one on the same 40-case
+  // subset and the same frozen answer cases: search recall 48%->50%, shipped recall 30%->33%,
+  // MRR 0.229->0.283, and 11/11 gold citations with zero invented quotations on both. Every
+  // one of those gaps is a single case, so it is a tie that regresses nothing, which is the
+  // bar a model swap has to clear here.
+  openai: {
+    pipeline: "deepseek-ai/DeepSeek-V4-Flash-0731",
+    answer: "deepseek-ai/DeepSeek-V4-Flash-0731",
+  },
 } as const;
 
 /**
