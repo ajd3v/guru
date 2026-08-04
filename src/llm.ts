@@ -305,8 +305,12 @@ async function rerankOne(query: string, hits: Hit[], k: number): Promise<Hit[]> 
           `Rank the candidates that actually help answer the question, best first. ` +
           `Judge by meaning, not shared wording: passages from different translations or ` +
           `traditions can say the same thing in different words. Drop the ones that don't help.\n` +
-          `A candidate that merely repeats a word from the question is not help.\n` +
-          `Reply with at most ${k} candidate numbers, comma-separated, and nothing else. ` +
+          `A candidate that merely repeats a word from the question is not help. Nor is one ` +
+          `that is merely on the same subject: it has to carry some part of the answer, so a ` +
+          `passage about death is not an answer to how a person should meet it.\n` +
+          `${k} is a limit, not a target. Two that answer are a better reply than five that ` +
+          `stand near the subject, and there is no credit for filling the list.\n` +
+          `Reply with the candidate numbers, comma-separated, and nothing else. ` +
           `If not one of them helps, reply with the single word NONE.`,
       },
     ],
