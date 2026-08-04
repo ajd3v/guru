@@ -26,10 +26,19 @@ services:
       # The username that matches is the reader's id, so each one gets its own library and
       # renaming a username orphans that person's books under the old name.
       - GURU_BASIC_AUTH=${GURU_BASIC_AUTH}
+      # OpenAI-compatible endpoint. Points at the 9router gateway on this host rather than
+      # at DeepInfra directly, which is why both services join `incubator-net` below. The
+      # model id is set explicitly because the gateway namespaces by upstream
+      # (nvidia/deepseek-ai/deepseek-v4-flash) where DeepInfra served the bare id, and the
+      # code's default would 404 against it. Same weights either way, so the quote pipeline
+      # is unaffected.
       - DEEPINFRA_API_KEY=${DEEPINFRA_API_KEY}
       - DEEPINFRA_BASE_URL=${DEEPINFRA_BASE_URL}
+      - GURU_PIPELINE_MODEL=${GURU_PIPELINE_MODEL:-}
+      - GURU_ANSWER_MODEL=${GURU_ANSWER_MODEL:-}
     volumes:
       - guru-data:/app/data
+    networks: [default, incubator-net]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.status<500?0:1),()=>process.exit(1))"]
       interval: 30s
@@ -54,10 +63,26 @@ services:
       # The worker serves no requests and never imports auth.ts, but it writes into the
       # reader's database, so it has to agree with the server about who that reader is.
       - GURU_SINGLE_USER=${GURU_SINGLE_USER:-reader}
+      # OpenAI-compatible endpoint. Points at the 9router gateway on this host rather than
+      # at DeepInfra directly, which is why both services join `incubator-net` below. The
+      # model id is set explicitly because the gateway namespaces by upstream
+      # (nvidia/deepseek-ai/deepseek-v4-flash) where DeepInfra served the bare id, and the
+      # code's default would 404 against it. Same weights either way, so the quote pipeline
+      # is unaffected.
       - DEEPINFRA_API_KEY=${DEEPINFRA_API_KEY}
       - DEEPINFRA_BASE_URL=${DEEPINFRA_BASE_URL}
+      - GURU_PIPELINE_MODEL=${GURU_PIPELINE_MODEL:-}
+      - GURU_ANSWER_MODEL=${GURU_ANSWER_MODEL:-}
     volumes:
       - guru-data:/app/data
+    networks: [default, incubator-net]
 
 volumes:
   guru-data:
+
+# Created by the incubator stack that runs the 9router, so it is joined rather than defined.
+# `default` is listed alongside it on both services because naming any network at all opts a
+# service out of the implicit default, and the default is how the proxy reaches port 8080.
+networks:
+  incubator-net:
+    external: true
