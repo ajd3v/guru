@@ -29,11 +29,17 @@ npm install
 python -m venv .venv && .venv/bin/pip install -r ingest/requirements.txt
 cp .env.example .env                    # then add a model API key
 
-node src/cli.ts starter                 # fetch and ingest 50 public-domain books
+npm test                                # no API key needed, runs against stubs
+
+node src/cli.ts starter --limit 5       # five books, ~3 minutes
 node src/cli.ts ask "what is the self?"
 node src/cli.ts find "quieting a restless mind"
-npm test
 ```
+
+Drop `--limit` for the whole starter library. That is 50 books and about **70 minutes** of CPU,
+because every chunk is embedded locally, so it is worth knowing before you start it rather
+than after. The first five books are already four traditions, which is enough to see whether
+the cross-tradition answers are what you want.
 
 `node src/cli.ts add "Author - Title.pdf"` adds your own books. The `Author - Title` filename
 is used in preference to the file's own metadata, because a catalogue record makes a poor

@@ -81,12 +81,25 @@ async function add(path: string, pageOffset: number, withContext: boolean) {
 /** The public-domain corpus every user gets on day one, and the eval corpus. */
 export const STARTER_DIR = "data/starter";
 
-export async function fetchStarter() {
-  const books = JSON.parse(readFileSync("starter/library.json", "utf8")) as {
+/**
+ * `limit` takes the first N books instead of all fifty.
+ *
+ * The whole library is about seventy minutes of CPU before the first question can be asked,
+ * which is the right cost for a real shelf and the wrong one for finding out whether you want
+ * it. The manifest opens with the Tao Te Ching, the Gita, the Dhammapada and the Upanishads,
+ * so the first handful is already several traditions and the cross-tradition answers this
+ * exists for work at five books.
+ *
+ * Not for the eval, which needs the whole corpus: the case set is generated against all fifty
+ * and scoring a subset silently changes which cases are in corpus.
+ */
+export async function fetchStarter(limit = Infinity) {
+  const all = JSON.parse(readFileSync("starter/library.json", "utf8")) as {
     gutenberg: number;
     author: string;
     title: string;
   }[];
+  const books = Number.isFinite(limit) ? all.slice(0, limit) : all;
   mkdirSync(STARTER_DIR, { recursive: true });
   const paths: string[] = [];
   for (const b of books) {
@@ -102,8 +115,15 @@ export async function fetchStarter() {
   return paths;
 }
 
-async function starter(withContext: boolean) {
-  for (const path of await fetchStarter()) await add(path, 0, withContext);
+async function starter(withContext: boolean, limit = Infinity) {
+  const paths = await fetchStarter(limit);
+  let done = 0;
+  for (const path of paths) {
+    await add(path, 0, withContext);
+    // Fifty books is long enough that silence reads as a hang. The count is the only way to
+    // tell "still working" from "stuck on a book that will not parse".
+    console.error(`  ${++done}/${paths.length} books`);
+  }
 }
 
 /**
@@ -320,17 +340,22 @@ const [cmd, ...rest] = process.argv.slice(2);
 const withContext = rest.includes("--context");
 const offsetAt = rest.indexOf("--page-offset");
 const pageOffset = offsetAt === -1 ? 0 : Number(rest[offsetAt + 1]);
-const arg = rest
-  .filter((a, i) => a !== "--context" && (offsetAt === -1 || (i !== offsetAt && i !== offsetAt + 1)))
-  .join(" ");
+const limitAt = rest.indexOf("--limit");
+const bookLimit = limitAt === -1 ? Infinity : Number(rest[limitAt + 1]);
+// A flag and its value must both drop out, or `ask --limit 5 what is the self?` searches for
+// the flag along with the question.
+const flagged = new Set(
+  [offsetAt, limitAt].flatMap((i) => (i === -1 ? [] : [i, i + 1])),
+);
+const arg = rest.filter((a, i) => a !== "--context" && !flagged.has(i)).join(" ");
 
 if (cmd === "add") await add(arg, pageOffset, withContext);
-else if (cmd === "starter") await starter(withContext);
+else if (cmd === "starter") await starter(withContext, bookLimit);
 else if (cmd === "find") await find(arg);
 else if (cmd === "ask") await ask(arg);
 else if (cmd === "worker") await worker();
 else if (cmd === "selfcheck") await selfcheck();
 else
   console.log(
-    "usage: guru add BOOK.pdf [--page-offset N] [--context] | starter [--context] | find QUERY | ask QUESTION | worker | selfcheck",
+    "usage: guru add BOOK.pdf [--page-offset N] [--context] | starter [--limit N] [--context] | find QUERY | ask QUESTION | worker | selfcheck",
   );
