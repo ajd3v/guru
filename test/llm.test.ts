@@ -147,6 +147,19 @@ assert(!/NOT COVERED/.test(declined.answer), "marker is stripped");
 // under a sentence saying none of them applied.
 assert.equal(declined.declined, true, "a decline is flagged so its passages are not listed");
 
+// Dashes are stripped from the model's own prose only. A quotation keeps the author's.
+seen.length = 0;
+replies = ["NOT COVERED: these discuss water—not the question asked."];
+assert.equal((await ask("q", [passage])).answer, "these discuss water, not the question asked.");
+// The passage itself carries an em-dash, so the spliced quotation must still carry it: the
+// answer body is the author's words and repunctuating them would be a silent misquote.
+seen.length = 0;
+const dashedSource = hit(1, "The Tao that can be trodden—that one—is not the enduring Tao.");
+replies = [`SYNOPSIS: the way named—the spoken one—is not the lasting way\nA claim [P0S0]`];
+const dashed = await ask("q", [dashedSource]);
+assert.equal(dashed.synopsis, "The way named, the spoken one, is not the lasting way");
+assert(dashed.answer.includes("trodden—that one—is"), "the author's em-dash survives in the quote");
+
 // The near-miss reply is not a decline. Its own wording points at the passages, so hiding
 // them would leave a sentence referring to a list that is not there.
 assert.equal(nothing.declined, false, "could-not-ground keeps its passages");

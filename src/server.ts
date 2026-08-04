@@ -371,9 +371,9 @@ const PAGE = (body = "", librarian = true) => `<!doctype html>
   ${librarian
     ? `<label class="file">Add a book
     <input type="file" accept=".pdf,.epub" id="f"></label>
-  <span class="note" id="s"></span>
-  <a class="note" href="/export">Export</a>`
+  <span class="note" id="s"></span>`
     : ""}
+  <a class="note" href="/export">Export</a>
   <form method="post" action="/delete">
     <input name="confirm" placeholder="type DELETE">
     <button>Delete all</button>
@@ -547,7 +547,20 @@ createServer(async (req, res) => {
   // GDPR, and cheap because a reader is one file: their books, chunks, and usage all travel
   // together. WAL is checkpointed first or the copy arrives missing its most recent writes.
   if (req.method === "GET" && req.url === "/export") {
-    if (!librarian) return send(403, page("<p>Only the librarian can export this library.</p>"));
+    // A reader who cannot add books has nothing of their own in the file. The corpus is the
+    // librarian's, and `asks` holds timestamps and no question text, so what is actually
+    // theirs is a list of when they asked something. That is what they get, rather than a
+    // 403 on the word "export" while the data protection right it exists for goes unserved.
+    if (!librarian) {
+      const db = userLibrary(user);
+      const asks = (db.prepare("select at from asks order by at").all() as { at: string }[]).map((r) => r.at);
+      db.close();
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "content-disposition": `attachment; filename="guru-${user}.json"`,
+      });
+      return void res.end(JSON.stringify({ user, asks, note: "Questions are not stored, only when they were asked. The books are the librarian's." }, null, 2));
+    }
     const db = userLibrary(user);
     db.pragma("wal_checkpoint(TRUNCATE)");
     db.close();

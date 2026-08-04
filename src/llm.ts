@@ -460,6 +460,17 @@ morning. When in doubt, be plain. Getting that wrong is far worse than being dul
 
 Do not begin it with "The passages" or "These passages" or "This text". Say the thing itself.`;
 
+/**
+ * Plain punctuation in the model's own prose.
+ *
+ * Applied to the synopsis and to a decline, and to nothing else, because those are the only
+ * two strings on the page the model wrote rather than copied. The answer body is quotations
+ * spliced verbatim out of the passages, and rewriting punctuation there would change an
+ * author's sentence and break the one promise this program makes. A dash the reader sees
+ * inside a blockquote is Plato's, and it stays.
+ */
+const plainDashes = (s: string) => s.replace(/\s*[—–]\s*/g, ", ").replace(/,\s*,/g, ",");
+
 export async function ask(query: string, hits: Hit[]) {
   const { byId, text } = catalogue(hits);
   if (!byId.size) {
@@ -479,12 +490,13 @@ export async function ask(query: string, hits: Hit[]) {
   // The model opens with "These passages suggest that..." however firmly it is told not to,
   // which hedges the tone flat. Stripped here rather than argued about in the prompt: the
   // standfirst styling already says this is editorial, so the words need not say it too.
-  const synopsis = (rawDraft.match(/^[ \t]*SYNOPSIS:[ \t]*(.+)$/im)?.[1]?.trim() ?? "")
+  const rawSynopsis = (rawDraft.match(/^[ \t]*SYNOPSIS:[ \t]*(.+)$/im)?.[1]?.trim() ?? "")
     .replace(
       /^(?:these|the|this|those)\s+(?:passages?|texts?|excerpts?|readings?|books?)\b[^,.]{0,60}?\b(?:suggest|say|offer|counsel|show|remind us|tell us|point|indicate)\b(?:\s+that)?[:,]?\s*/i,
       "",
     )
     .replace(/^./, (c) => c.toUpperCase());
+  const synopsis = plainDashes(rawSynopsis);
   const draft = rawDraft.replace(/^[ \t]*SYNOPSIS:.*$/im, "").trim();
 
   // Drop the CLAIM, not just the dangling id. Deleting an unresolvable id on its own
@@ -521,7 +533,8 @@ export async function ask(query: string, hits: Hit[]) {
   // cited at all: nothing dropped, nothing quoted, confident unsourced prose shipped.
   if (/^\s*NOT COVERED:/i.test(draft)) {
     return {
-      answer: draft.replace(/^\s*NOT COVERED:\s*/i, "").trim(),
+      // Quote-free by design, so this is the model's own prose and safe to repunctuate.
+      answer: plainDashes(draft.replace(/^\s*NOT COVERED:\s*/i, "").trim()),
       // A decline is the model's own words already; a synopsis of nothing would be noise.
       synopsis: "",
       // Nothing here bore on the question, so the caller must not list the passages under a
