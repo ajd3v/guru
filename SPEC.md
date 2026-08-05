@@ -206,7 +206,14 @@ one. Model choice for the answer step is a quality decision, not a cost decision
 ## Architecture & security
 
 - **SQLite-per-user** (sqlite-vec + FTS5): one file per user = isolation by filesystem, no `WHERE user_id` bug can leak book A to user B. Microsecond queries, trivial data export/delete.
-- **Litestream** continuous replication to S3. Encryption at rest + TLS.
+- **Litestream** continuous replication to S3. Encryption at rest + TLS. **Not built. What is
+  built is a nightly `VACUUM INTO` snapshot of every database on the volume, rotated seven days,
+  with a restore test that opens each one and reads text back (`deploy/backup.sh`,
+  `deploy/backup-verify.sh`).** That covers deletion, corruption and a bad deploy. It does not
+  cover losing the disk, because it lives on it: the script copies off-site through `rclone`
+  when `GURU_BACKUP_REMOTE` is set, and says on every run when it is not. Litestream would be
+  better than nightly snapshots (continuous, so the window is seconds rather than a day) and
+  still needs the same thing this does, a bucket.
 - Hosting: Fly.io / Hetzner / Railway-class with persistent volumes (SQLite rules out pure serverless).
 - Auth: managed (Clerk/WorkOS), never hand-rolled. Billing: Stripe.
 - GDPR-shaped from day one: per-user export + delete endpoints. **Built**, `GET /export` streams the reader's SQLite file (books, chunks, and usage all travel together, since it is one file), `POST /delete` removes it along with its `-wal`/`-shm` sidecars, queued uploads, and job rows. Where `GURU_LIBRARIAN` names who may take the corpus away, everyone else exports their ask history as JSON instead: the books are not theirs, and `asks` holds timestamps and no question text, so that history is the whole of what is. Deletion is not gated, since removing your own library costs nobody else anything.

@@ -107,6 +107,33 @@ entrypoint builds the starter library once onto the volume, which takes about 70
 
 Set `GURU_URL` to the public URL, and the model provider variables from `.env.example`.
 
+### Backups
+
+A reader's whole library is one SQLite file, so a backup is a snapshot of that file, and
+`deploy/backup.sh` takes one of every database on the volume nightly.
+
+It uses `VACUUM INTO` rather than copying the file. These databases run in WAL mode, so the
+`.db` on its own is missing whatever is still in its `-wal` sidecar, and a plain copy of a live
+one restores as a library with books quietly absent. It also runs inside the serving container
+rather than a throwaway one with the volume mounted read-only, because a WAL database has to
+touch its `-shm` file even to be read and a read-only mount fails before it reads a byte.
+
+```sh
+install -m755 deploy/backup.sh        /home/deploy/backup-guru.sh
+install -m755 deploy/backup-verify.sh /home/deploy/backup-verify-guru.sh
+(crontab -l 2>/dev/null; echo '30 2 * * * /home/deploy/backup-guru.sh >> /home/deploy/backups/guru-backup.log 2>&1') | crontab -
+```
+
+`deploy/backup-verify.sh` restores the newest archive into a throwaway directory, runs SQLite's
+integrity check on every database and reads a chunk of text back out. Run it monthly. A backup
+nobody has restored is a file, not a backup.
+
+**A local snapshot is half a backup.** It covers the losses that actually happen, someone types
+DELETE into the delete box, a deploy goes wrong, a file is corrupted. It does not cover the disk
+going away, because it is on that disk. Set `GURU_BACKUP_REMOTE` to an `rclone` remote and the
+same script copies off-site as well; without one it says so on every run rather than letting the
+gap go quiet.
+
 ## Eval
 
 Retrieval and answering are scored separately, because a cheap answer model otherwise looks
