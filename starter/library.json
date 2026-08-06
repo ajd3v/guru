@@ -1,58 +1,622 @@
 [
-  { "gutenberg": 216,   "author": "Laozi",                   "title": "Tao Teh King" },
-  { "gutenberg": 2388,  "author": "Edwin Arnold",            "title": "The Song Celestial (Bhagavad Gita)" },
-  { "gutenberg": 2017,  "author": "Max Muller",              "title": "The Dhammapada" },
-  { "gutenberg": 621,   "author": "William James",           "title": "The Varieties of Religious Experience" },
-  { "gutenberg": 1653,  "author": "Thomas a Kempis",         "title": "The Imitation of Christ" },
-  { "gutenberg": 2680,  "author": "Marcus Aurelius",         "title": "Meditations" },
-  { "gutenberg": 45109, "author": "Epictetus",               "title": "The Enchiridion" },
-  { "gutenberg": 14328, "author": "Boethius",                "title": "The Consolation of Philosophy" },
-  { "gutenberg": 16643, "author": "Ralph Waldo Emerson",     "title": "Essays" },
-  { "gutenberg": 205,   "author": "Henry David Thoreau",     "title": "Walden" },
-  { "gutenberg": 1322,  "author": "Walt Whitman",            "title": "Leaves of Grass" },
-  { "gutenberg": 1998,  "author": "Friedrich Nietzsche",     "title": "Thus Spake Zarathustra" },
-  { "gutenberg": 58585, "author": "Kahlil Gibran",           "title": "The Prophet" },
-  { "gutenberg": 4507,  "author": "James Allen",             "title": "As a Man Thinketh" },
-
-  { "gutenberg": 3330,  "author": "Confucius",               "title": "The Analects" },
-  { "gutenberg": 3283,  "author": "Max Muller",              "title": "The Upanishads" },
-  { "gutenberg": 2526,  "author": "Patanjali",               "title": "The Yoga Sutras" },
-  { "gutenberg": 59709, "author": "Zhuangzi",                "title": "Chuang Tzu" },
-  { "gutenberg": 45159, "author": "Rumi",                    "title": "The Persian Mystics" },
-  { "gutenberg": 246,   "author": "Omar Khayyam",            "title": "The Rubaiyat" },
-  { "gutenberg": 13726, "author": "Plato",                   "title": "Apology, Crito and Phaedo of Socrates" },
-  { "gutenberg": 5657,  "author": "Brother Lawrence",        "title": "The Practice of the Presence of God" },
-  { "gutenberg": 52958, "author": "Julian of Norwich",       "title": "Revelations of Divine Love" },
-  { "gutenberg": 8021,  "author": "King James Bible",        "title": "Ecclesiastes" },
-
-  { "gutenberg": 2800,  "author": "Anonymous",               "title": "The Koran" },
-  { "gutenberg": 16295, "author": "Sankaracarya",            "title": "The Vedanta Sutras" },
-  { "gutenberg": 51880, "author": "Rhys Davids",             "title": "Buddhist Birth Stories (Jataka)" },
-  { "gutenberg": 9394,  "author": "James Legge",             "title": "The Shih King (Book of Poetry)" },
-  { "gutenberg": 12894, "author": "Epiphanius Wilson",       "title": "Sacred Books of the East" },
-
-  { "gutenberg": 7145,  "author": "E A Wallis Budge",        "title": "The Book of the Dead" },
-  { "gutenberg": 9914,  "author": "E A Wallis Budge",        "title": "The Babylonian Legends of the Creation" },
-  { "gutenberg": 11000, "author": "Morris Jastrow",          "title": "An Old Babylonian Version of the Gilgamesh Epic" },
-  { "gutenberg": 56550, "author": "Lewis Spence",            "title": "The Popol Vuh" },
-  { "gutenberg": 73533, "author": "Anonymous",               "title": "The Poetic Edda" },
-  { "gutenberg": 18947, "author": "Snorri Sturluson",        "title": "The Younger Edda" },
-  { "gutenberg": 5160,  "author": "Anonymous",               "title": "The Mabinogion" },
-  { "gutenberg": 785,   "author": "Lucretius",               "title": "On the Nature of Things" },
-
-  { "gutenberg": 76266, "author": "G R S Mead",              "title": "Pistis Sophia" },
-  { "gutenberg": 12892, "author": "G R S Mead",              "title": "Simon Magus" },
-  { "gutenberg": 35735, "author": "G R S Mead",              "title": "The Gnostic Crucifixion" },
-  { "gutenberg": 35460, "author": "G R S Mead",              "title": "Apollonius of Tyana" },
-
-  { "gutenberg": 3296,  "author": "Augustine",               "title": "The Confessions" },
-  { "gutenberg": 10661, "author": "Epictetus",               "title": "The Discourses" },
-  { "gutenberg": 8438,  "author": "Aristotle",               "title": "The Nicomachean Ethics" },
-  { "gutenberg": 3800,  "author": "Baruch Spinoza",          "title": "Ethics" },
-  { "gutenberg": 3600,  "author": "Michel de Montaigne",     "title": "Essays" },
-  { "gutenberg": 4602,  "author": "Leo Tolstoy",             "title": "The Kingdom of God Is Within You" },
-
-  { "gutenberg": 1004,  "author": "Dante Alighieri",         "title": "The Divine Comedy" },
-  { "gutenberg": 23334, "author": "Henry Drummond",          "title": "Natural Law in the Spiritual World" },
-  { "gutenberg": 52057, "author": "Jean Pierre de Caussade", "title": "Abandonment to Divine Providence" }
+ {
+  "gutenberg": 216,
+  "author": "Laozi",
+  "title": "Tao Teh King"
+ },
+ {
+  "gutenberg": 2388,
+  "author": "Edwin Arnold",
+  "title": "The Song Celestial (Bhagavad Gita)"
+ },
+ {
+  "gutenberg": 2017,
+  "author": "Max Muller",
+  "title": "The Dhammapada"
+ },
+ {
+  "gutenberg": 621,
+  "author": "William James",
+  "title": "The Varieties of Religious Experience"
+ },
+ {
+  "gutenberg": 1653,
+  "author": "Thomas a Kempis",
+  "title": "The Imitation of Christ"
+ },
+ {
+  "gutenberg": 2680,
+  "author": "Marcus Aurelius",
+  "title": "Meditations"
+ },
+ {
+  "gutenberg": 45109,
+  "author": "Epictetus",
+  "title": "The Enchiridion"
+ },
+ {
+  "gutenberg": 14328,
+  "author": "Boethius",
+  "title": "The Consolation of Philosophy"
+ },
+ {
+  "gutenberg": 16643,
+  "author": "Ralph Waldo Emerson",
+  "title": "Essays"
+ },
+ {
+  "gutenberg": 205,
+  "author": "Henry David Thoreau",
+  "title": "Walden"
+ },
+ {
+  "gutenberg": 1322,
+  "author": "Walt Whitman",
+  "title": "Leaves of Grass"
+ },
+ {
+  "gutenberg": 1998,
+  "author": "Friedrich Nietzsche",
+  "title": "Thus Spake Zarathustra"
+ },
+ {
+  "gutenberg": 58585,
+  "author": "Kahlil Gibran",
+  "title": "The Prophet"
+ },
+ {
+  "gutenberg": 4507,
+  "author": "James Allen",
+  "title": "As a Man Thinketh"
+ },
+ {
+  "gutenberg": 3330,
+  "author": "Confucius",
+  "title": "The Analects"
+ },
+ {
+  "gutenberg": 3283,
+  "author": "Max Muller",
+  "title": "The Upanishads"
+ },
+ {
+  "gutenberg": 2526,
+  "author": "Patanjali",
+  "title": "The Yoga Sutras"
+ },
+ {
+  "gutenberg": 59709,
+  "author": "Zhuangzi",
+  "title": "Chuang Tzu"
+ },
+ {
+  "gutenberg": 45159,
+  "author": "Rumi",
+  "title": "The Persian Mystics"
+ },
+ {
+  "gutenberg": 246,
+  "author": "Omar Khayyam",
+  "title": "The Rubaiyat"
+ },
+ {
+  "gutenberg": 13726,
+  "author": "Plato",
+  "title": "Apology, Crito and Phaedo of Socrates"
+ },
+ {
+  "gutenberg": 5657,
+  "author": "Brother Lawrence",
+  "title": "The Practice of the Presence of God"
+ },
+ {
+  "gutenberg": 52958,
+  "author": "Julian of Norwich",
+  "title": "Revelations of Divine Love"
+ },
+ {
+  "gutenberg": 8021,
+  "author": "King James Bible",
+  "title": "Ecclesiastes"
+ },
+ {
+  "gutenberg": 2800,
+  "author": "Anonymous",
+  "title": "The Koran"
+ },
+ {
+  "gutenberg": 16295,
+  "author": "Sankaracarya",
+  "title": "The Vedanta Sutras"
+ },
+ {
+  "gutenberg": 51880,
+  "author": "Rhys Davids",
+  "title": "Buddhist Birth Stories (Jataka)"
+ },
+ {
+  "gutenberg": 9394,
+  "author": "James Legge",
+  "title": "The Shih King (Book of Poetry)"
+ },
+ {
+  "gutenberg": 12894,
+  "author": "Epiphanius Wilson",
+  "title": "Sacred Books of the East"
+ },
+ {
+  "gutenberg": 7145,
+  "author": "E A Wallis Budge",
+  "title": "The Book of the Dead"
+ },
+ {
+  "gutenberg": 9914,
+  "author": "E A Wallis Budge",
+  "title": "The Babylonian Legends of the Creation"
+ },
+ {
+  "gutenberg": 11000,
+  "author": "Morris Jastrow",
+  "title": "An Old Babylonian Version of the Gilgamesh Epic"
+ },
+ {
+  "gutenberg": 56550,
+  "author": "Lewis Spence",
+  "title": "The Popol Vuh"
+ },
+ {
+  "gutenberg": 73533,
+  "author": "Anonymous",
+  "title": "The Poetic Edda"
+ },
+ {
+  "gutenberg": 18947,
+  "author": "Snorri Sturluson",
+  "title": "The Younger Edda"
+ },
+ {
+  "gutenberg": 5160,
+  "author": "Anonymous",
+  "title": "The Mabinogion"
+ },
+ {
+  "gutenberg": 785,
+  "author": "Lucretius",
+  "title": "On the Nature of Things"
+ },
+ {
+  "gutenberg": 76266,
+  "author": "G R S Mead",
+  "title": "Pistis Sophia"
+ },
+ {
+  "gutenberg": 12892,
+  "author": "G R S Mead",
+  "title": "Simon Magus"
+ },
+ {
+  "gutenberg": 35735,
+  "author": "G R S Mead",
+  "title": "The Gnostic Crucifixion"
+ },
+ {
+  "gutenberg": 35460,
+  "author": "G R S Mead",
+  "title": "Apollonius of Tyana"
+ },
+ {
+  "gutenberg": 3296,
+  "author": "Augustine",
+  "title": "The Confessions"
+ },
+ {
+  "gutenberg": 10661,
+  "author": "Epictetus",
+  "title": "The Discourses"
+ },
+ {
+  "gutenberg": 8438,
+  "author": "Aristotle",
+  "title": "The Nicomachean Ethics"
+ },
+ {
+  "gutenberg": 3800,
+  "author": "Baruch Spinoza",
+  "title": "Ethics"
+ },
+ {
+  "gutenberg": 3600,
+  "author": "Michel de Montaigne",
+  "title": "Essays"
+ },
+ {
+  "gutenberg": 4602,
+  "author": "Leo Tolstoy",
+  "title": "The Kingdom of God Is Within You"
+ },
+ {
+  "gutenberg": 1004,
+  "author": "Dante Alighieri",
+  "title": "The Divine Comedy"
+ },
+ {
+  "gutenberg": 23334,
+  "author": "Henry Drummond",
+  "title": "Natural Law in the Spiritual World"
+ },
+ {
+  "gutenberg": 52057,
+  "author": "Jean Pierre de Caussade",
+  "title": "Abandonment to Divine Providence"
+ },
+ {
+  "gutenberg": 23559,
+  "author": "Ralph Waldo Trine",
+  "title": "In Tune with the Infinite"
+ },
+ {
+  "gutenberg": 59844,
+  "author": "Wallace D. Wattles",
+  "title": "The Science of Getting Rich"
+ },
+ {
+  "gutenberg": 10390,
+  "author": "Thomas Troward",
+  "title": "The Edinburgh Lectures on Mental Science"
+ },
+ {
+  "gutenberg": 10361,
+  "author": "Thomas Troward",
+  "title": "The Creative Process in the Individual"
+ },
+ {
+  "gutenberg": 1570,
+  "author": "William Walker Atkinson",
+  "title": "The Power of Concentration"
+ },
+ {
+  "gutenberg": 13160,
+  "author": "Orison Swett Marden",
+  "title": "An Iron Will"
+ },
+ {
+  "gutenberg": 10740,
+  "author": "James Allen",
+  "title": "The Way of Peace"
+ },
+ {
+  "gutenberg": 74178,
+  "author": "James Allen",
+  "title": "Out from the Heart"
+ },
+ {
+  "gutenberg": 14209,
+  "author": "Three Initiates",
+  "title": "The Kybalion"
+ },
+ {
+  "gutenberg": 26659,
+  "author": "William James",
+  "title": "The Will to Believe"
+ },
+ {
+  "gutenberg": 16287,
+  "author": "William James",
+  "title": "Talks to Teachers on Psychology"
+ },
+ {
+  "gutenberg": 5116,
+  "author": "William James",
+  "title": "Pragmatism"
+ },
+ {
+  "gutenberg": 2317,
+  "author": "Richard Jefferies",
+  "title": "The Story of My Heart"
+ },
+ {
+  "gutenberg": 48217,
+  "author": "Maurice Maeterlinck",
+  "title": "The Treasure of the Humble"
+ },
+ {
+  "gutenberg": 4349,
+  "author": "Maurice Maeterlinck",
+  "title": "Wisdom and Destiny"
+ },
+ {
+  "gutenberg": 19711,
+  "author": "Maurice Maeterlinck",
+  "title": "The Buried Temple"
+ },
+ {
+  "gutenberg": 8545,
+  "author": "Henri-Frederic Amiel",
+  "title": "Amiel's Journal"
+ },
+ {
+  "gutenberg": 21774,
+  "author": "Evelyn Underhill",
+  "title": "Practical Mysticism"
+ },
+ {
+  "gutenberg": 29433,
+  "author": "Ralph Waldo Emerson",
+  "title": "Nature"
+ },
+ {
+  "gutenberg": 39827,
+  "author": "Ralph Waldo Emerson",
+  "title": "The Conduct of Life"
+ },
+ {
+  "gutenberg": 6312,
+  "author": "Ralph Waldo Emerson",
+  "title": "Representative Men"
+ },
+ {
+  "gutenberg": 69258,
+  "author": "Ralph Waldo Emerson",
+  "title": "Society and Solitude"
+ },
+ {
+  "gutenberg": 2945,
+  "author": "Ralph Waldo Emerson",
+  "title": "Essays, Second Series"
+ },
+ {
+  "gutenberg": 9846,
+  "author": "Henry David Thoreau",
+  "title": "Excursions"
+ },
+ {
+  "gutenberg": 4232,
+  "author": "Henry David Thoreau",
+  "title": "A Week on the Concord and Merrimack Rivers"
+ },
+ {
+  "gutenberg": 8642,
+  "author": "Margaret Fuller",
+  "title": "Woman in the Nineteenth Century"
+ },
+ {
+  "gutenberg": 56075,
+  "author": "Seneca",
+  "title": "Seneca's Morals"
+ },
+ {
+  "gutenberg": 64576,
+  "author": "Seneca",
+  "title": "Minor Dialogues"
+ },
+ {
+  "gutenberg": 14988,
+  "author": "Cicero",
+  "title": "Tusculan Disputations"
+ },
+ {
+  "gutenberg": 23639,
+  "author": "Plutarch",
+  "title": "Plutarch's Morals"
+ },
+ {
+  "gutenberg": 871,
+  "author": "Epictetus",
+  "title": "The Golden Sayings"
+ },
+ {
+  "gutenberg": 1177,
+  "author": "Xenophon",
+  "title": "The Memorabilia"
+ },
+ {
+  "gutenberg": 10741,
+  "author": "Arthur Schopenhauer",
+  "title": "The Wisdom of Life"
+ },
+ {
+  "gutenberg": 10732,
+  "author": "Arthur Schopenhauer",
+  "title": "Studies in Pessimism"
+ },
+ {
+  "gutenberg": 10715,
+  "author": "Arthur Schopenhauer",
+  "title": "Counsels and Maxims"
+ },
+ {
+  "gutenberg": 4363,
+  "author": "Friedrich Nietzsche",
+  "title": "Beyond Good and Evil"
+ },
+ {
+  "gutenberg": 52881,
+  "author": "Friedrich Nietzsche",
+  "title": "The Joyful Wisdom"
+ },
+ {
+  "gutenberg": 39955,
+  "author": "Friedrich Nietzsche",
+  "title": "The Dawn of Day"
+ },
+ {
+  "gutenberg": 56463,
+  "author": "Francis Bacon",
+  "title": "Essays"
+ },
+ {
+  "gutenberg": 55681,
+  "author": "Lafcadio Hearn",
+  "title": "Gleanings in Buddha-Fields"
+ },
+ {
+  "gutenberg": 8882,
+  "author": "Lafcadio Hearn",
+  "title": "Kokoro"
+ },
+ {
+  "gutenberg": 769,
+  "author": "Kakuzo Okakura",
+  "title": "The Book of Tea"
+ },
+ {
+  "gutenberg": 12096,
+  "author": "Inazo Nitobe",
+  "title": "Bushido, the Soul of Japan"
+ },
+ {
+  "gutenberg": 32540,
+  "author": "John Muir",
+  "title": "My First Summer in the Sierra"
+ },
+ {
+  "gutenberg": 10012,
+  "author": "John Muir",
+  "title": "The Mountains of California"
+ },
+ {
+  "gutenberg": 5706,
+  "author": "John Burroughs",
+  "title": "Time and Change"
+ },
+ {
+  "gutenberg": 30249,
+  "author": "John Burroughs",
+  "title": "Ways of Nature"
+ },
+ {
+  "gutenberg": 6157,
+  "author": "Leo Tolstoy",
+  "title": "What Men Live By"
+ },
+ {
+  "gutenberg": 3743,
+  "author": "Thomas Paine",
+  "title": "The Age of Reason"
+ },
+ {
+  "gutenberg": 5616,
+  "author": "Kahlil Gibran",
+  "title": "The Madman"
+ },
+ {
+  "gutenberg": 54580,
+  "author": "Kahlil Gibran",
+  "title": "The Forerunner"
+ },
+ {
+  "gutenberg": 25638,
+  "author": "Thomas Troward",
+  "title": "The Hidden Power"
+ },
+ {
+  "gutenberg": 1398,
+  "author": "Thomas Troward",
+  "title": "The Dore Lectures"
+ },
+ {
+  "gutenberg": 15568,
+  "author": "Thomas Troward",
+  "title": "The Law and the Word"
+ },
+ {
+  "gutenberg": 13402,
+  "author": "William Walker Atkinson",
+  "title": "The Hindu-Yogi Science of Breath"
+ },
+ {
+  "gutenberg": 13656,
+  "author": "William Walker Atkinson",
+  "title": "A Series of Lessons in Raja Yoga"
+ },
+ {
+  "gutenberg": 13407,
+  "author": "William Walker Atkinson",
+  "title": "A Series of Lessons in Gnani Yoga"
+ },
+ {
+  "gutenberg": 41892,
+  "author": "William Walker Atkinson",
+  "title": "Dynamic Thought"
+ },
+ {
+  "gutenberg": 42055,
+  "author": "William Walker Atkinson",
+  "title": "Your Mind and How to Use It"
+ },
+ {
+  "gutenberg": 41838,
+  "author": "William Walker Atkinson",
+  "title": "The Art of Logical Thinking"
+ },
+ {
+  "gutenberg": 45113,
+  "author": "William Walker Atkinson",
+  "title": "Nuggets of the New Thought"
+ },
+ {
+  "gutenberg": 41901,
+  "author": "Orison Swett Marden",
+  "title": "The Victorious Attitude"
+ },
+ {
+  "gutenberg": 18394,
+  "author": "Orison Swett Marden",
+  "title": "Cheerfulness as a Life Power"
+ },
+ {
+  "gutenberg": 20679,
+  "author": "James Allen",
+  "title": "The Heavenly Life"
+ },
+ {
+  "gutenberg": 1561,
+  "author": "Edward Carpenter",
+  "title": "Pagan and Christian Creeds"
+ },
+ {
+  "gutenberg": 44094,
+  "author": "Edward Carpenter",
+  "title": "Civilisation: Its Cause and Cure"
+ },
+ {
+  "gutenberg": 15082,
+  "author": "Evelyn Underhill",
+  "title": "The Life of the Spirit and the Life of To-day"
+ },
+ {
+  "gutenberg": 74203,
+  "author": "Evelyn Underhill",
+  "title": "The Essentials of Mysticism"
+ },
+ {
+  "gutenberg": 18269,
+  "author": "Blaise Pascal",
+  "title": "Pensees"
+ },
+ {
+  "gutenberg": 72368,
+  "author": "Swami Vivekananda",
+  "title": "Jnana Yoga, Part II"
+ },
+ {
+  "gutenberg": 42930,
+  "author": "Plotinus",
+  "title": "Complete Works, Volume 1"
+ },
+ {
+  "gutenberg": 42931,
+  "author": "Plotinus",
+  "title": "Complete Works, Volume 2"
+ },
+ {
+  "gutenberg": 42932,
+  "author": "Plotinus",
+  "title": "Complete Works, Volume 3"
+ },
+ {
+  "gutenberg": 42933,
+  "author": "Plotinus",
+  "title": "Complete Works, Volume 4"
+ }
 ]

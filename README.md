@@ -8,10 +8,18 @@ Ask it a question and it answers out of books you own, in their words rather tha
 A model that cannot find an answer in your shelf says so instead of writing one.
 
 **The reading room is open at [guru.alanj.dev](https://guru.alanj.dev).** Search the starter
-shelf, fifty public-domain books across traditions, as much as you like and with no model in
-the loop. Five composed answers come with the visit, which is enough to ask something the
-shelf covers, something it covers badly, and something it does not cover at all. The last one
-is the interesting one.
+shelf, 124 public-domain books, as much as you like and with no model in the loop. Five
+composed answers come with the visit, which is enough to ask something the shelf covers,
+something it covers badly, and something it does not cover at all. The last one is the
+interesting one.
+
+The shelf runs from scripture through to the writers who left scripture behind: the Tao Te
+Ching, the Gita, the Dhammapada and the Analects alongside Emerson, Thoreau, Whitman and
+Margaret Fuller; the Stoics and Plotinus alongside Schopenhauer, Nietzsche and Pascal;
+Underhill and Maeterlinck studying mysticism rather than preaching it; the whole New Thought
+line from Trine and Troward to Atkinson and Allen; Muir and Burroughs and Richard Jefferies
+finding it outdoors; Okakura, Nitobe and Hearn on the Japanese inner life. Every id is
+resolved against Gutenberg rather than recalled.
 
 See [SPEC.md](SPEC.md) for the design and the measured numbers.
 
