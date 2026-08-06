@@ -14,6 +14,7 @@ try {
 import assert from "node:assert";
 import SqliteDatabase from "better-sqlite3";
 import { execFileSync } from "node:child_process";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import { authenticate, basicAuthUser, isLibrarian, toWebRequest } from "./auth.ts";
 import { createReadStream, createWriteStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
@@ -176,6 +177,24 @@ if (process.argv.includes("--selfcheck")) {
   );
   assert.match(render('<script>alert("x")</script>'), /&lt;script&gt;/);
 
+  // The guest allowance follows the browser, so the cookie that carries it has to be
+  // unforgeable: an id this server never issued must not open a fresh bucket, and neither
+  // must somebody else's id with the signature left off.
+  {
+    const secret = "a".repeat(64);
+    const id = "0".repeat(32);
+    const sig = signDevice(id, secret);
+    assert.equal(readDevice(`gd=${id}.${sig}`, secret), id, "a signature we issued is accepted");
+    assert.equal(readDevice(`other=1; gd=${id}.${sig}; x=2`, secret), id, "found among other cookies");
+    assert.equal(readDevice(`gd=${id}.${sig}`, "b".repeat(64)), undefined, "signed with another key");
+    assert.equal(readDevice(`gd=${id}.${"f".repeat(32)}`, secret), undefined, "forged signature");
+    assert.equal(readDevice(`gd=${id}`, secret), undefined, "unsigned id");
+    assert.equal(readDevice(`gd=${"1".repeat(32)}.${sig}`, secret), undefined, "another id, our signature");
+    assert.equal(readDevice(undefined, secret), undefined, "no cookie at all");
+    // Every id gets a distinct signature, or one leaked cookie would open all of them.
+    assert.notEqual(signDevice("1".repeat(32), secret), sig);
+  }
+
   // The synopsis is the model's own words and must be escaped like any other untrusted text,
   // since it is the one part of the page that is neither a quotation nor written by us.
   assert.match(escape('<img onerror="x">'), /&lt;img onerror=&quot;x&quot;&gt;/);
@@ -302,22 +321,95 @@ const logEvent = (user: string, event: string, q: string) => {
   } catch {}
 };
 
-// Guest allowance, counted per address in the same file as the log so there is one thing to
-// back up. Unlike the log, a failure here must NOT be swallowed: a quota that silently stops
-// counting is an open bar.
+/**
+ * The guest allowance, counted per browser and bounded per address.
+ *
+ * Per address alone was wrong in both directions. An office, a university, a conference and
+ * anyone behind CGNAT share one address, so the first curious person there spent the
+ * allowance for everybody. Meanwhile one person with a phone and a laptop looked like two.
+ *
+ * So the allowance belongs to the browser: a signed id in a cookie, one bucket each. That
+ * cannot stand alone, because clearing a cookie asks the server for a fresh id and the
+ * server will always give one. The address therefore keeps a ceiling: it may hand out
+ * `GUEST_DEVICES` allowances before it stops, which leaves a shared network usable and
+ * still bounds the cookie-clearing loop. A guest is refused when EITHER counter is spent.
+ *
+ * Both live in the log database so there is still one file to back up. Unlike the log, a
+ * failure here must NOT be swallowed: a quota that silently stops counting is an open bar.
+ */
+const GUEST_DEVICES = Number(process.env.GURU_GUEST_DEVICES ?? 4);
 logdb.exec("create table if not exists guest_quota (ip text primary key, n integer not null default 0, first_at text default (datetime('now')), last_at text)");
+logdb.exec("create table if not exists guest_device (id text primary key, n integer not null default 0, first_at text default (datetime('now')), last_at text)");
+logdb.exec("create table if not exists kv (k text primary key, v text not null)");
+
 const quotaGet = logdb.prepare("select n from guest_quota where ip = ?");
 const quotaBump = logdb.prepare(
   "insert into guest_quota (ip, n, last_at) values (?, 1, datetime('now')) " +
     "on conflict(ip) do update set n = n + 1, last_at = datetime('now') returning n",
 );
+const deviceGet = logdb.prepare("select n from guest_device where id = ?");
+const deviceBump = logdb.prepare(
+  "insert into guest_device (id, n, last_at) values (?, 1, datetime('now')) " +
+    "on conflict(id) do update set n = n + 1, last_at = datetime('now') returning n",
+);
+
+/**
+ * The key that signs device ids.
+ *
+ * Kept in the database rather than the environment so it survives a restart without another
+ * variable to set and to forget. Rotating it is a deliberate act: every guest gets a fresh
+ * allowance, which is why it is not simply regenerated at boot.
+ */
+const deviceSecret = (() => {
+  const row = logdb.prepare("select v from kv where k = 'device_secret'").get() as { v: string } | undefined;
+  if (row) return row.v;
+  const v = randomBytes(32).toString("hex");
+  logdb.prepare("insert into kv (k, v) values ('device_secret', ?)").run(v);
+  return v;
+})();
+
+/** The browser's id, or a new one. `fresh` means the cookie still has to be sent back. */
+function deviceId(req: IncomingMessage): { id: string; fresh: boolean } {
+  const id = readDevice(req.headers.cookie, deviceSecret);
+  return id ? { id, fresh: false } : { id: randomBytes(16).toString("hex"), fresh: true };
+}
+
+const deviceCookie = (id: string) =>
+  `gd=${id}.${signDevice(id, deviceSecret)}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax` +
+  (process.env.NODE_ENV === "production" ? "; Secure" : "");
+
+
+// A declaration, not a const arrow: the selfcheck block runs at module scope above this
+// line and needs it hoisted.
+function signDevice(id: string, secret: string) {
+  return createHmac("sha256", secret).update(id).digest("hex").slice(0, 32);
+}
+
+/**
+ * The id in a `gd` cookie, if it is one this server issued. Pure, so it is testable without
+ * a database: the secret lives in one and the selfcheck runs before any is opened.
+ *
+ * Signed so the value cannot be edited into somebody else's bucket, or into an id that was
+ * never issued at all. It identifies a browser and nothing else: no fingerprint, no address
+ * in the cookie, and the id is meaningless outside this one table.
+ */
+export function readDevice(cookie: string | undefined, secret: string): string | undefined {
+  const m = cookie?.match(/(?:^|;\s*)gd=([0-9a-f]{32})\.([0-9a-f]{32})/);
+  if (!m) return undefined;
+  const [, id, sig] = m;
+  const expect = signDevice(id, secret);
+  // Constant-time: the signature is derived from a secret, and comparing it with === leaks a
+  // prefix oracle, which is enough to forge one byte at a time.
+  if (sig.length !== expect.length) return undefined;
+  return timingSafeEqual(Buffer.from(sig), Buffer.from(expect)) ? id : undefined;
+}
 
 /**
  * The visitor's address, as observed by our own proxy.
  *
  * Traefik APPENDS the peer it saw to any X-Forwarded-For the client sent, so the last entry
  * is the one our infrastructure observed and the earlier ones are the client's to invent.
- * Taking the last is what makes the quota worth having. With no header at all we are not
+ * Taking the last is what makes the ceiling worth having. With no header at all we are not
  * behind the proxy, so the socket is the truth.
  */
 function clientAddress(req: IncomingMessage) {
@@ -745,8 +837,18 @@ function shelf(user: string) {
 }
 
 createServer(async (req, res) => {
+  // Resolved once per request and attached to whatever HTML goes back, so a guest's first
+  // page view is what issues the id rather than their first question. Without that the
+  // cookie would arrive on the 302 after an ask and the very first request of every visit
+  // would count as a new browser.
+  const device = deviceId(req);
   const send = (code: number, html: string) =>
-    res.writeHead(code, { "content-type": "text/html; charset=utf-8" }).end(html);
+    res
+      .writeHead(code, {
+        "content-type": "text/html; charset=utf-8",
+        ...(device.fresh ? { "set-cookie": deviceCookie(device.id) } : {}),
+      })
+      .end(html);
 
   // Installable-web-app plumbing, before authentication on purpose: Safari fetches the
   // manifest and icons without credentials, and /login is how credentials arrive at all.
@@ -943,16 +1045,23 @@ createServer(async (req, res) => {
 
   if (req.method !== "POST" || req.url !== "/ask") return send(404, page("<p>Not found.</p>"));
 
-  // A guest gets a handful of composed answers, counted per address, so the room can
-  // actually be judged rather than just looked at. Search stays free and uncounted.
+  // A guest gets a handful of composed answers so the room can actually be judged rather
+  // than just looked at. The allowance is this browser's; the address only sets a ceiling
+  // on how many browsers it may hand one to. Search stays free and uncounted.
   if (guest) {
     const ip = clientAddress(req);
-    const used = (quotaGet.get(ip) as { n: number } | undefined)?.n ?? 0;
-    if (used >= GUEST_ASKS) {
+    const spent = (deviceGet.get(device.id) as { n: number } | undefined)?.n ?? 0;
+    const fromHere = (quotaGet.get(ip) as { n: number } | undefined)?.n ?? 0;
+    if (spent >= GUEST_ASKS || fromHere >= GUEST_ASKS * GUEST_DEVICES) {
+      // Which limit was hit changes what the reader should do about it, so say which.
+      const why =
+        spent >= GUEST_ASKS
+          ? `That is ${GUEST_ASKS} composed answers, which is what the reading room offers.`
+          : `This network has spent what the reading room offers it.`;
       return send(
         429,
         page(
-          `<p>That is ${GUEST_ASKS} composed answers, which is what the reading room offers. ` +
+          `<p>${why} ` +
             `Find still works and costs nothing, so the shelf is still open to search. ` +
             `For a library of your own, <a href="mailto:alandevaney@gmail.com">ask for an account</a>.</p>`,
         ),
@@ -966,7 +1075,10 @@ createServer(async (req, res) => {
   logEvent(user, "ask", query);
   // Counted before the work and after validation: the model calls happen whether or not the
   // pipeline finds anything, and a failed question that refunds its slot is a free retry loop.
-  if (guest) quotaBump.run(clientAddress(req));
+  if (guest) {
+    deviceBump.run(device.id);
+    quotaBump.run(clientAddress(req));
+  }
 
   try {
     const db = userLibrary(user);

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "A study companion for your own library that never misquotes: every claim is a verbatim quote, cited.",
   "scripts": {
-    "test": "node src/cli.ts selfcheck && node src/server.ts --selfcheck && node test/llm.test.ts && node test/openai.test.ts && .venv/bin/python ingest/ingest.py --selfcheck",
+    "test": "node src/cli.ts selfcheck && node src/server.ts --selfcheck && node test/llm.test.ts && node test/openai.test.ts && node test/quota.test.ts && .venv/bin/python ingest/ingest.py --selfcheck",
     "serve": "node src/server.ts",
     "eval": "node eval/run.ts",
     "eval:gen": "node eval/generate.ts",

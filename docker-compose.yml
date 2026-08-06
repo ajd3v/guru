@@ -27,6 +27,19 @@ services:
       # The username that matches is the reader's id, so each one gets its own library and
       # renaming a username orphans that person's books under the old name.
       - GURU_BASIC_AUTH=${GURU_BASIC_AUTH}
+      # The reading room. Set GURU_GUEST to a username and a request with no credential at
+      # all becomes that reader: one shared library, search free and uncounted, and a small
+      # number of composed answers so the thing can be judged rather than just looked at.
+      # Leave it unset and the deployment is private.
+      #
+      # The allowance belongs to the browser, tracked by a signed cookie, because an office
+      # or a campus is one address and the first curious person there should not spend it
+      # for everybody. Clearing that cookie asks for a new one and gets it, so the address
+      # keeps a ceiling of GURU_GUEST_DEVICES allowances. A guest is refused when either
+      # counter is spent, which is GURU_GUEST_ASKS * GURU_GUEST_DEVICES per address at most.
+      - GURU_GUEST=${GURU_GUEST:-}
+      - GURU_GUEST_ASKS=${GURU_GUEST_ASKS:-5}
+      - GURU_GUEST_DEVICES=${GURU_GUEST_DEVICES:-4}
       # Any OpenAI-compatible endpoint. The model ids are optional and the per-provider
       # defaults in src/llm.ts apply when they are unset, which includes being set to the
       # empty string, since `${VAR:-}` below writes one whether or not VAR exists.
