@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 
-# The starter library is 14 public-domain books, identical for every reader, and every new
+# The starter library is the public-domain shelf in starter/library.json, identical for every
+# reader, and every new
 # reader's database is a copy of it. Building it means fetching from Gutenberg and embedding
 # ~3300 chunks, so it happens once onto the volume rather than at image build (where it would
 # bloat the layer and go stale) or per signup (where it would be minutes of CPU each).
@@ -23,7 +24,7 @@ build_starter() {
   if [ -f "$STARTER" ]; then
     echo "starter/library.json or the extractor changed since this starter was built; rebuilding" >&2
   fi
-  echo "building the starter library at $STARTER (~70 minutes for 50 books)…" >&2
+  echo "building the starter library at $STARTER ($(grep -c gutenberg starter/library.json) books, hours not minutes)…" >&2
 
   # A private path per container. Both roles share this volume, and when both built into one
   # `.building` file they interleaved writes and each deleted the other's write-ahead log ,
@@ -56,11 +57,54 @@ build_starter() {
   # Stamped only after the move, so an interrupted build is retried rather than recorded done.
   printf '%s' "$MANIFEST_HASH" > "$STAMP"
   echo "starter library ready: $books books" >&2
+
+  # A user's library is copied from the starter once and never again (store.ts only clones
+  # when the file is absent), so growing the manifest reached nobody who already existed: the
+  # shelf went from 50 books to 124 and every reader on the box kept reading the 50. Drop the
+  # clones that are still pure starter and they are recopied on next use. A library holding
+  # anything the reader uploaded is left alone, because that book exists nowhere else.
+  node --input-type=commonjs -e "$(cat <<'JS'
+const D = require('better-sqlite3'), fs = require('fs'), path = require('path');
+const dir = process.env.GURU_USER_DIR || 'data/users';
+if (!fs.existsSync(dir)) process.exit(0);
+// `source` is a bare filename either way, so there is no path to test: a starter book is
+// named after its manifest entry and an upload is named after what the reader sent. Anything
+// the manifest cannot account for is theirs. A book dropped FROM the manifest therefore reads
+// as the reader's and keeps the library, which is the safe direction to be wrong in.
+const mine = new Set(JSON.parse(fs.readFileSync('starter/library.json', 'utf8'))
+  .map(b => `${b.author} - ${b.title}.epub`));
+for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.db'))) {
+  const p = path.join(dir, f);
+  let own;
+  try {
+    const db = new D(p, { readonly: true });
+    own = db.prepare('select source from books').all().filter(r => !mine.has(r.source));
+    db.close();
+  } catch (e) { continue; }   // unreadable or mid-write: leave it, it is not ours to delete
+  if (own.length) { console.error(`keeping ${f}: ${own.length} book(s) not from the manifest`); continue; }
+  for (const s of ['', '-wal', '-shm']) fs.rmSync(p + s, { force: true });
+  console.error(`reset ${f} to the new starter`);
+}
+JS
+)"
 }
 
 case "${1:-serve}" in
   serve)
-    build_starter
+    # Block only when there is nothing to serve. A starter that merely went stale is still a
+    # working library, so growing starter/library.json rebuilds it in the background and the
+    # old one keeps answering until the atomic mv swaps it. Blocking here meant every book
+    # added to the manifest bought an outage the length of the whole rebuild: 50 books is
+    # about 70 minutes, and at 124 it also overran the healthcheck's start window, so the
+    # deploy went unhealthy and Traefik stopped routing to a container that was merely busy.
+    if [ -f "$STARTER" ] && [ "$(cat "$STAMP" 2>/dev/null)" != "$MANIFEST_HASH" ]; then
+      # ponytail: the child is reparented to node as PID 1 and left unreaped, which costs one
+      # process-table entry until the container stops. An init shim is the fix if that ever
+      # stops being true.
+      build_starter &
+    else
+      build_starter
+    fi
     exec node src/server.ts
     ;;
   worker)
