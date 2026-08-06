@@ -816,6 +816,13 @@ if (process.argv.includes("--selfcheck")) {
   assert.equal(redirectTarget("guru.alanj.dev:443", "/", "guru.alanj.dev"), undefined, "a port is not a different host");
   assert.equal(redirectTarget("anything", "/", undefined), undefined, "unset means nothing redirects");
   assert.equal(redirectTarget("", "/", "guru.alanj.dev"), undefined, "no Host header, no guess");
+  // The healthcheck calls in on the loopback address. Redirecting it away cost an outage:
+  // every probe failed, the container went unhealthy, and Traefik stopped routing to a
+  // process that was serving correctly the whole time.
+  assert.equal(redirectTarget("127.0.0.1:8080", "/", "guru.alanj.dev"), undefined, "the healthcheck is not a browser");
+  assert.equal(redirectTarget("localhost:8080", "/", "guru.alanj.dev"), undefined, "nor is localhost");
+  assert.equal(redirectTarget("[::1]:8080", "/", "guru.alanj.dev"), undefined, "nor is the v6 loopback");
+  assert.equal(redirectTarget("10.0.0.4", "/", "guru.alanj.dev"), undefined, "nor anything calling by address");
   // History renders into its own container above the server-rendered body (the shelf), so
   // past answers stack without displacing it. The body must stay inside #out for the
   // non-JS POST path, which renders the whole answer server-side.
@@ -897,6 +904,11 @@ const CANONICAL_HOST = process.env.GURU_CANONICAL_HOST;
 export function redirectTarget(host: string | undefined, url: string | undefined, canonical: string | undefined) {
   const h = String(host ?? "").split(":")[0];
   if (!canonical || !h || h === canonical) return undefined;
+  // An address rather than a name means the caller is inside: the container healthcheck
+  // fetches 127.0.0.1, and sending it away made every probe fail, which made the container
+  // unhealthy, which made the proxy stop routing to a server that was answering fine. A
+  // redirect is for a browser that arrived at the wrong public name; nothing else.
+  if (h === "localhost" || h.startsWith("[") || /^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return undefined;
   return `https://${canonical}${url ?? "/"}`;
 }
 
