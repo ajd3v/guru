@@ -7,7 +7,7 @@
 ## Product
 
 - **Web SaaS** at launch: upload library, chat, subscribe.
-- **MCP fast-follow** (weeks after launch): remote MCP endpoint (OAuth + streamable HTTP) on the same backend, paid-tier perk, "add your guru to the assistant" marketing hook.
+- **MCP fast-follow** (weeks after launch): remote MCP endpoint (OAuth + streamable HTTP) on the same backend, paid-tier perk, "plug your guru into any MCP client" marketing hook.
 - **Starter library**: curated public-domain corpus every user gets day one. **123 books** (see `starter/library.json`). Scripture and secular spiritual writing across traditions (Tao Te Ching, Bhagavad Gita, Dhammapada, Analects, Upanishads, Koran, Ecclesiastes, Jataka), the ancient world (Egyptian *Book of the Dead*, Babylonian creation legends, Gilgamesh, *Popol Vuh*, both Eddas, the *Mabinogion*), Greek and Roman philosophy (Plato, Aristotle, Lucretius, Epictetus, Aurelius), Christian contemplatives (Augustine, à Kempis, Brother Lawrence, Julian of Norwich, Caussade, Dante), the Gnostics (*Pistis Sophia* and Mead), and later voices (Montaigne, Spinoza, Emerson, Thoreau, Whitman, Nietzsche, Tolstoy, Gibran, James, Allen, Drummond). Solves empty-state onboarding, gives a zero-copyright demo corpus, and is the eval corpus.
 
   **Nag Hammadi cannot be included.** It was discovered in 1945 and every English translation is in copyright, so the Gospel of Thomas and its companions are absent by law rather than by oversight. What is here is the whole public-domain Gnostic corpus.
@@ -276,7 +276,7 @@ retrieval pass reversed the ranking outright.
 
 ## Stack
 
-**TypeScript core** (backend + web + MCP: one language, one deployable; reference MCP SDK) · better-sqlite3 + sqlite-vec + FTS5 + Litestream · the assistant (Sonnet answers, Haiku pipeline) · Clerk/WorkOS · Stripe · Fly.io-class host. Web UI: minimal, calm, fast (SSR or thin React, decide at build).
+**TypeScript core** (backend + web + MCP: one language, one deployable; reference MCP SDK) · better-sqlite3 + sqlite-vec + FTS5 + Litestream · hosted LLM API (a large model for answers, a small one for the pipeline) · Clerk/WorkOS · Stripe · Fly.io-class host. Web UI: minimal, calm, fast (SSR or thin React, decide at build).
 
 **Ingest sidecar: Python** (~50 lines, pymupdf + ebooklib), PDF/EPUB in → JSON chunks with page numbers out, run by a queue worker in its sandbox. The language boundary doubles as the security boundary. Rationale: bottleneck is LLM latency, not runtime; PyMuPDF is the only irreplaceable Python dependency. Rust/Go rejected: they optimize microseconds in a pipeline dominated by seconds-long API calls, at solo-dev iteration cost; Rust reconsidered only for a profiled retrieval bottleneck or a future local/desktop build.
 

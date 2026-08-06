@@ -32,7 +32,7 @@ import {
   openJobs,
   requeueStale,
 } from "./jobs.ts";
-import { ask as askClaude, contextualize, expandQuery, rerank, unverifiedQuotes } from "./llm.ts";
+import { ask as askLlm, contextualize, expandQuery, rerank, unverifiedQuotes } from "./llm.ts";
 
 const PY = ".venv/bin/python";
 const SIDECAR = "ingest/ingest.py";
@@ -157,7 +157,7 @@ async function find(query: string) {
 async function ask(query: string) {
   const hits = await retrieve(query);
   if (!hits.length) return console.log("your library doesn't cover this.");
-  const { answer, synopsis, regenerated, dropped } = await askClaude(query, hits);
+  const { answer, synopsis, regenerated, dropped } = await askLlm(query, hits);
   if (synopsis) console.log(`${synopsis}\n`);
   console.log(answer);
   if (dropped) console.error(`\n(${dropped} claim(s) dropped: quotes could not be verified)`);

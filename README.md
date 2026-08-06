@@ -177,6 +177,5 @@ first N books.)
 
 ISC. See [LICENSE](LICENSE).
 
-Built by [Alan De Vaney](https://alanj.dev). The same engine runs
-[a-private-project](https://github.com/ajd3v/a-private-project), a study companion for
-A.A. literature, by swapping the library and nothing else.
+Built by [Alan De Vaney](https://alanj.dev). The engine is library-agnostic.
+Swap in your own texts and nothing else changes.
