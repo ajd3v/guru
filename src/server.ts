@@ -808,6 +808,14 @@ if (process.argv.includes("--selfcheck")) {
   assert.match(PAGE("", true, false, true), /A fixed shelf/, "and says why the controls are absent");
   // Off by default: a private deployment is a workspace and keeps its controls.
   assert.match(PAGE("", true, false, false), /Add a book/, "not a demo unless it says so");
+
+  // An old hostname is sent to the canonical one, path and query intact. The canonical host
+  // must never redirect: that is a loop, and a loop is the whole site gone.
+  assert.equal(redirectTarget("guru.gainful.work", "/x?q=1", "guru.alanj.dev"), "https://guru.alanj.dev/x?q=1");
+  assert.equal(redirectTarget("guru.alanj.dev", "/", "guru.alanj.dev"), undefined, "the canonical host stays put");
+  assert.equal(redirectTarget("guru.alanj.dev:443", "/", "guru.alanj.dev"), undefined, "a port is not a different host");
+  assert.equal(redirectTarget("anything", "/", undefined), undefined, "unset means nothing redirects");
+  assert.equal(redirectTarget("", "/", "guru.alanj.dev"), undefined, "no Host header, no guess");
   // History renders into its own container above the server-rendered body (the shelf), so
   // past answers stack without displacing it. The body must stay inside #out for the
   // non-JS POST path, which renders the whole answer server-side.
@@ -867,7 +875,40 @@ function shelf(user: string) {
   );
 }
 
+/**
+ * The host this deployment answers to. Everything else 301s here.
+ *
+ * The reading room moved from gainful.work to alanj.dev and the old name still has a DNS
+ * record pointing at the same box, so it still arrives. Redirecting rather than dropping it
+ * keeps any link anyone already has, and keeps one canonical URL for anything that indexes
+ * the page. Done in the app rather than in proxy labels because Coolify rewrites those on
+ * every deploy, and a redirect that survives exactly until the next deploy is worse than
+ * none. Unset, nothing redirects, which is what a local or private deployment wants.
+ */
+const CANONICAL_HOST = process.env.GURU_CANONICAL_HOST;
+
+/**
+ * Where a request should be sent instead, or nothing if it is already in the right place.
+ *
+ * Pure, because the failure mode is a redirect loop that takes the site down completely and
+ * that is not something to find out in production. The port is stripped before comparing:
+ * a Host header carries one and the configured name does not.
+ */
+export function redirectTarget(host: string | undefined, url: string | undefined, canonical: string | undefined) {
+  const h = String(host ?? "").split(":")[0];
+  if (!canonical || !h || h === canonical) return undefined;
+  return `https://${canonical}${url ?? "/"}`;
+}
+
 createServer(async (req, res) => {
+  // Before anything else, including auth: an old host should not prompt for a password to
+  // reach a page it is only going to be sent away from.
+  const moved = redirectTarget(req.headers.host, req.url, CANONICAL_HOST);
+  if (moved) {
+    res.writeHead(301, { location: moved });
+    return void res.end();
+  }
+
   // Resolved once per request and attached to whatever HTML goes back, so a guest's first
   // page view is what issues the id rather than their first question. Without that the
   // cookie would arrive on the 302 after an ask and the very first request of every visit

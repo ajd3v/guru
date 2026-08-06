@@ -44,6 +44,10 @@ services:
       # from everyone, operator included, so the public page offers only Find and Ask. The
       # routes still exist and still refuse strangers on their own; this draws no doors.
       - GURU_DEMO=${GURU_DEMO:-}
+      # The one hostname this deployment answers to. Every other host that reaches it gets a
+      # 301 here, path and query intact, so an old name keeps working without becoming a
+      # second canonical URL. Unset, nothing redirects.
+      - GURU_CANONICAL_HOST=${GURU_CANONICAL_HOST:-}
       # Any OpenAI-compatible endpoint. The model ids are optional and the per-provider
       # defaults in src/llm.ts apply when they are unset, which includes being set to the
       # empty string, since `${VAR:-}` below writes one whether or not VAR exists.
