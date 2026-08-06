@@ -52,10 +52,10 @@ node src/cli.ts ask "what is the self?"
 node src/cli.ts find "quieting a restless mind"
 ```
 
-Drop `--limit` for the whole starter library. That is 50 books and about **70 minutes** of CPU,
-because every chunk is embedded locally, so it is worth knowing before you start it rather
-than after. The first five books are already four traditions, which is enough to see whether
-the cross-tradition answers are what you want.
+Drop `--limit` for the whole starter library. That is 123 books and **hours** of CPU, because
+every chunk is embedded locally, so it is worth knowing before you start it rather than after.
+The first five books are already four traditions, which is enough to see whether the
+cross-tradition answers are what you want.
 
 `node src/cli.ts add "Author - Title.pdf"` adds your own books. The `Author - Title` filename
 is used in preference to the file's own metadata, because a catalogue record makes a poor
@@ -116,8 +116,9 @@ questions, and still export their own data, which is their ask history rather th
 
 `docker-compose.yml` builds one image and runs it twice, as `serve` and as `worker`. They
 share a volume because the worker writes into the reader's database. On first boot the
-entrypoint builds the starter library once onto the volume, which takes about 70 minutes for
-50 books on 8 cores, and it is rebuilt when the book list or the extractor changes.
+entrypoint builds the starter library once onto the volume, hours of CPU at 123 books, and it
+is rebuilt when the book list or the extractor changes. Only the first build blocks: a rebuild
+runs in the background and the old shelf keeps answering until it is ready.
 
 Set `GURU_URL` to the public URL, and the model provider variables from `.env.example`.
 

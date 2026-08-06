@@ -82,15 +82,15 @@ async function add(path: string, pageOffset: number, withContext: boolean) {
 export const STARTER_DIR = "data/starter";
 
 /**
- * `limit` takes the first N books instead of all fifty.
+ * `limit` takes the first N books instead of the whole manifest.
  *
- * The whole library is about seventy minutes of CPU before the first question can be asked,
+ * The whole library is hours of CPU before the first question can be asked,
  * which is the right cost for a real shelf and the wrong one for finding out whether you want
  * it. The manifest opens with the Tao Te Ching, the Gita, the Dhammapada and the Upanishads,
  * so the first handful is already several traditions and the cross-tradition answers this
  * exists for work at five books.
  *
- * Not for the eval, which needs the whole corpus: the case set is generated against all fifty
+ * Not for the eval, which needs the whole corpus: the case set is generated against every book
  * and scoring a subset silently changes which cases are in corpus.
  */
 export async function fetchStarter(limit = Infinity) {
@@ -131,8 +131,8 @@ async function starter(withContext: boolean, limit = Infinity) {
   let done = 0;
   for (const path of paths) {
     await add(path, 0, withContext);
-    // Fifty books is long enough that silence reads as a hang. The count is the only way to
-    // tell "still working" from "stuck on a book that will not parse".
+    // A shelf this size is long enough that silence reads as a hang. The count is the only way
+    // to tell "still working" from "stuck on a book that will not parse".
     console.error(`  ${++done}/${paths.length} books`);
   }
 }
