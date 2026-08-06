@@ -12,10 +12,11 @@ try {
 }
 
 import assert from "node:assert";
+import SqliteDatabase from "better-sqlite3";
 import { execFileSync } from "node:child_process";
 import { createServer, type IncomingMessage } from "node:http";
 import { authenticate, basicAuthUser, isLibrarian, toWebRequest } from "./auth.ts";
-import { createReadStream, createWriteStream, existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
@@ -132,14 +133,35 @@ function render(answer: string) {
     // the plainer comma. Doing it any earlier would have to guess.
     const cleaned = quoted ? line.replace(/^&gt; ?/, "") : plainDashes(line.replace(/^[.,;:]\s*/, ""));
     // A prose line with no word in it is left over from splicing, usually a lone dash or the
-    // tail of punctuation from a sentence a quotation already carried away. It used to render
-    // as an empty paragraph, which was invisible until the paragraphus gave it a red mark and
-    // a line of its own.
+    // tail of punctuation from a sentence a quotation already carried away.
     if (!quoted && !/[\p{L}\p{N}]/u.test(cleaned)) continue;
     buf.push(cleaned);
   }
   flush();
   return out.join("\n");
+}
+
+/**
+ * The day's passage, chosen deterministically from the calendar so every visitor sees the
+ * same one and it changes at midnight UTC. Pure so the selfcheck can hold it still.
+ */
+export function pickDailyOffset(count: number, date: Date) {
+  if (count <= 0) return 0;
+  const key = date.getUTCFullYear() * 372 + date.getUTCMonth() * 31 + (date.getUTCDate() - 1);
+  return key % count;
+}
+
+/**
+ * A chunk is sized for retrieval, not for reading aloud, so the day's passage is trimmed to
+ * whole sentences and a length a person actually reads: cut at the last sentence end before
+ * the cap, and if the text has no sentence end at all, at the cap with an ellipsis.
+ */
+export function trimPassage(text: string, cap = 420) {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (t.length <= cap) return t;
+  const head = t.slice(0, cap);
+  const end = Math.max(head.lastIndexOf(". "), head.lastIndexOf("! "), head.lastIndexOf("? "));
+  return end > cap * 0.4 ? head.slice(0, end + 1) : head.trimEnd() + "…";
 }
 
 // Same convention as `cli.ts selfcheck` and `ingest.py --selfcheck`: assert, then exit before
@@ -190,7 +212,7 @@ if (process.argv.includes("--selfcheck")) {
   // it fires at module scope, which is the only place it can run before serving a request.
   const boot = (env: Record<string, string>) =>
     execFileSync(process.execPath, ["-e", "import('./src/auth.ts')"], {
-      env: { ...process.env, NODE_ENV: "production", CLERK_SECRET_KEY: "", GURU_ORIGINS: "", GURU_SINGLE_USER: "", ...env },
+      env: { ...process.env, NODE_ENV: "production", CLERK_SECRET_KEY: "", GURU_ORIGINS: "", GURU_SINGLE_USER: "", GURU_GUEST: "", ...env },
       stdio: "pipe",
     });
   assert.throws(() => boot({}), /CLERK_SECRET_KEY is required/, "production with no auth must refuse to boot");
@@ -217,6 +239,20 @@ if (process.argv.includes("--selfcheck")) {
     () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "nopassword" }),
     /not user:password/,
     "an entry with no password must refuse to boot",
+  );
+  // The reading room's name is a filename too, and it must never shadow a real reader.
+  assert.throws(
+    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:hunter2", GURU_GUEST: "not a name" }),
+    /GURU_GUEST is not a usable username/,
+  );
+  assert.throws(
+    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:hunter2", GURU_GUEST: "reader" }),
+    /must not match/,
+    "the guest must not be able to shadow a credentialed reader",
+  );
+  assert.doesNotThrow(
+    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:hunter2", GURU_GUEST: "guest" }),
+    "a reading room alongside real readers must boot",
   );
 
   // The credential check itself. Wrong password, wrong scheme, and absent header must all
@@ -245,60 +281,95 @@ if (process.argv.includes("--selfcheck")) {
   // Uploads are capped while streaming, not from content-length, because the header is the
   // client's word. A body that keeps going must be cut off and its partial file removed.
   const tmp = mkdtempSync(join(tmpdir(), "guru-up-"));
-  const body = async function* (n: number) {
+  const genBody = async function* (n: number) {
     for (let i = 0; i < n; i++) yield Buffer.alloc(1024);
   };
   const small = join(tmp, "ok.bin");
-  assert.equal(await receive(body(4) as any, small, 8 * 1024), 4096);
+  assert.equal(await receive(genBody(4) as any, small, 8 * 1024), 4096);
   assert.equal(statSync(small).size, 4096);
 
   const over = join(tmp, "over.bin");
-  await assert.rejects(receive(body(64) as any, over, 8 * 1024), /too large/);
+  await assert.rejects(receive(genBody(64) as any, over, 8 * 1024), /too large/);
   assert.equal(existsSync(over), false, "an over-cap upload left its partial file behind");
   rmSync(tmp, { recursive: true, force: true });
 
-  console.error("server selfcheck ok");
-  process.exit(0);
+  // The day's passage is a pure function of the calendar, so every visitor shares it, it
+  // rolls at midnight UTC, and yesterday's differs from today's.
+  assert.equal(pickDailyOffset(0, new Date("2026-08-06T12:00:00Z")), 0, "an empty shelf must not divide by zero");
+  const a = pickDailyOffset(14803, new Date("2026-08-06T00:00:01Z"));
+  assert.equal(a, pickDailyOffset(14803, new Date("2026-08-06T23:59:59Z")), "same day, same passage");
+  assert.notEqual(a, pickDailyOffset(14803, new Date("2026-08-07T00:00:01Z")), "a new day turns the page");
+  // Trimming keeps whole sentences and never mid-word; unpunctuated text gets an ellipsis.
+  {
+    // Cuts land on a sentence end once one exists past the 40% floor; never mid-word.
+    const t = trimPassage(("A stone sits in the raked gravel. ").repeat(30).trim());
+    assert.ok(t.length <= 420 && t.endsWith("."), "cut lands on a sentence end: " + JSON.stringify(t.slice(-30)));
+  }
+  assert.match(trimPassage("word ".repeat(200)), /…$/);
+  assert.equal(trimPassage("short and whole."), "short and whole.");
+
+  // No exit here: the PAGE assertions further down must run too. This block used to exit,
+  // which left every selfcheck below it dead code that always "passed".
 }
 
 const jobs = openJobs();
 
 /**
- * One page, set like a book rather than a chat window.
- *
- * The typographic decision that drives the rest: quotations are the product and the model's
- * prose is connective tissue, so the usual hierarchy is inverted. Passages are set larger and
- * in full ink; the sentences linking them are smaller and quieter.
- *
- * The mark is concentric rings, one centre, many circles around it, which is the thing this
- * does, and deliberately belongs to no tradition. Nothing is fetched: no webfont, no script
- * from anywhere, so the page renders whole on the first byte.
+ * The operator's usage log: who asked what, when, in one queryable file. This reverses the
+ * old stance that question text is never stored, so the /export note says so plainly and
+ * every reader deserves to be told. Failures are swallowed: the log must never take an
+ * answer down with it.
  */
-// `librarian` decides whether the two controls that move books are drawn at all. It is only
-// the chrome; the routes refuse the request themselves.
-const PAGE = (body = "", librarian = true) => `<!doctype html>
+const logdb = new SqliteDatabase(process.env.GURU_LOG_DB ?? "data/log.db");
+logdb.pragma("journal_mode = WAL");
+logdb.exec("create table if not exists log (at text default (datetime('now')), user text, event text, q text)");
+const logStmt = logdb.prepare("insert into log (user, event, q) values (?, ?, ?)");
+const logEvent = (user: string, event: string, q: string) => {
+  try {
+    logStmt.run(user, event, q);
+  } catch {}
+};
+
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/**
+ * One page, set like a garden rather than a chat window.
+ *
+ * The typographic decision that drives the rest is unchanged: quotations are the product and
+ * the model's prose is connective tissue, so passages are set larger and in full ink and the
+ * sentences linking them are smaller and quieter.
+ *
+ * The dress is a garden's. Washi ground, sumi ink, moss for the marks of structure, and one
+ * vermilion seal, spent once, the way a painter stamps a finished sheet. The mark is an ensō,
+ * the circle drawn in a single breath and left open, which suits a program whose whole
+ * discipline is knowing where to stop. Nothing is fetched: no webfont, no script from
+ * anywhere, so the page renders whole on the first byte.
+ */
+// `librarian` decides whether the controls that move books are drawn; `guest` strips the
+// chrome a shared reading room must not offer. Both are chrome only; the routes refuse for
+// themselves.
+const PAGE = (body = "", librarian = true, guest = false) => `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>guru</title>
+<meta name="theme-color" content="#f3efe3">
+<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+<link rel="apple-touch-icon" href="/icon-180.png">
 <style>
   :root {
-    --paper: #f6f3ec; --ink: #23211c; --quiet: #7d776b; --rule: #ddd7c9; --field: #eae5d9;
-    /* Rubric. Scribes across the Latin and Islamic book traditions kept a second, red ink for
-       the parts that tell you where you are: headings, section breaks, the openings of things.
-       It was never colour for its own sake, it was the structure of the page made visible. So
-       it is spent here only on what marks structure, the mark, the drop cap that opens the
-       summary, the paragraphus between passages, and the citation under a quotation. Nowhere
-       in the body text, which stays one ink, as it would in a book. */
-    --rubric: #9d3b1f;
+    /* Washi, sumi, and moss. The green does the work rubric used to do, marking structure
+       and never colouring body text; vermilion remains, but only as the seal, stamped once. */
+    --paper: #f3efe3; --ink: #26241d; --quiet: #7d7a6c; --rule: #ddd6c2; --field: #eae4d2;
+    --moss: #6f8264; --seal: #b5472e;
     /* Old-style serifs, in order of how good they look. No webfont: a page about patient
        reading should not wait on a network round trip to show its first line. */
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", "Book Antiqua", Georgia, serif;
     --small: ui-monospace, "SF Mono", "IBM Plex Mono", "DejaVu Sans Mono", monospace;
   }
   @media (prefers-color-scheme: dark) {
-    /* Vermilion on a dark ground goes muddy and loses its edge, so the rubric is lifted
-       toward the orange the same pigment takes by lamplight rather than kept at its paper value. */
-    :root { --paper: #14130f; --ink: #e6e1d5; --quiet: #8b8578; --rule: #2e2b24; --field: #1d1b16;
-            --rubric: #c8663d; }
+    /* The garden at night. Moss lifts toward jade so it still reads as green against the
+       dark; the seal warms the way vermilion does by lamplight. */
+    :root { --paper: #14150f; --ink: #e4e1d2; --quiet: #8a8878; --rule: #2b2e23; --field: #1c1e15;
+            --moss: #8fa583; --seal: #cf6a45; }
   }
   * { box-sizing: border-box; }
   body {
@@ -310,107 +381,89 @@ const PAGE = (body = "", librarian = true) => `<!doctype html>
   }
   .sheet { max-width: 36rem; margin: 0 auto; }
 
-  header { text-align: center; margin-bottom: clamp(2.5rem, 7vh, 4.5rem); }
-  .mark { width: 72px; height: 48px; fill: none; stroke: currentColor; stroke-width: 1; color: var(--quiet); }
-  /* The two circles drift a hair apart and back, about the rate of slow breathing, so the
-     overlap opens and closes. Eleven seconds is long enough that you notice it only if you
-     stop and watch, which is the correct amount of attention for a mark to ask for. */
-  .mark circle { opacity: .5; animation: drift 11s ease-in-out infinite; }
-  .mark circle:nth-of-type(2) { animation-direction: alternate-reverse; }
-  .mark .almond { fill: var(--rubric); stroke: none; opacity: .9; animation: kindle 11s ease-in-out infinite; }
-  @keyframes drift { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(1.6px); } }
-  .mark circle:nth-of-type(1) { animation-name: driftback; }
-  @keyframes driftback { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-1.6px); } }
-  @keyframes kindle { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+  header { text-align: center; margin-bottom: clamp(2.5rem, 7vh, 4.5rem); animation: rise .8s ease-out both; }
+  /* The ensō breathes at the pace of slow breathing, ink flooding and thinning. Eleven
+     seconds is long enough that you notice only if you stop and watch, which is the correct
+     amount of attention for a mark to ask for. The seal does not move; seals never do. */
+  .mark { width: 64px; height: 64px; }
+  .mark .enso { fill: var(--ink); opacity: .8; animation: breathe-ink 11s ease-in-out infinite; }
+  .mark .seal { fill: var(--seal); }
+  @keyframes breathe-ink { 0%, 100% { opacity: .8; } 50% { opacity: .55; } }
   @keyframes breathe { 0%, 100% { opacity: .25; } 50% { opacity: .7; } }
-  @media (prefers-reduced-motion: reduce) {
-    .mark circle, .mark .almond { animation: none; opacity: .55; }
-    .mark .almond { opacity: .9; }
-  }
+  @media (prefers-reduced-motion: reduce) { .mark .enso { animation: none; } }
 
   h1 { margin: .9rem 0 .3rem; font-size: 1.5rem; font-weight: 400; letter-spacing: .34em;
        text-indent: .34em; text-transform: lowercase; }
   .tagline { margin: 0; color: var(--quiet); font-size: .9375rem; font-style: italic; text-wrap: balance; }
-  /* The waiting line and the answer arrive on the same slow rise, so the page composes itself
-     in one movement instead of several things popping in. */
-  header { animation: rise .8s ease-out both; }
 
   /* The question sits on a ruled line, like writing on a page, not inside a widget. */
   .ask { display: flex; gap: .75rem; align-items: baseline;
-         border-bottom: 1px solid var(--rule); padding-bottom: .5rem; margin-bottom: 3.5rem; }
+         border-bottom: 1px solid var(--rule); padding-bottom: .5rem; margin-bottom: 3rem; }
   .ask input { flex: 1; min-width: 0; border: 0; background: transparent; color: inherit;
                font: italic 1.125rem/1.6 var(--serif); padding: .3rem 0; }
   .ask input::placeholder { color: var(--quiet); opacity: .8; }
   .ask input:focus { outline: none; }
-  .ask:focus-within { border-bottom-color: var(--ink); }
+  .ask:focus-within { border-bottom-color: var(--moss); }
   .ask button { border: 0; background: none; color: var(--quiet); cursor: pointer;
                 font: .75rem/1 var(--small); letter-spacing: .18em; text-transform: uppercase; }
-  .ask button:hover { color: var(--ink); }
+  .ask button:hover { color: var(--moss); }
 
   h2 { font-size: 1.25rem; font-weight: 400; font-style: italic; color: var(--quiet);
        margin: 0 0 2rem; text-wrap: balance; }
 
-  /* Inverted hierarchy: the passage is the payload, the prose around it is scaffolding. */
-  /* A quoted passage is set off the way a manuscript sets one off: a rule in the margin rather
-     than a box around it, so the page stays a page. The rule is rubric because it is doing the
-     job rubric did, telling you where somebody else's words start and stop. */
+  /* Inverted hierarchy: the passage is the payload, the prose around it is scaffolding. The
+     margin rule is moss now, a reed laid beside somebody else's words. */
   blockquote { position: relative; margin: 2.5rem 0; padding-left: 1.4rem; }
   blockquote::before {
     content: ""; position: absolute; left: 0; top: .34em; bottom: .34em; width: 2px;
-    background: var(--rubric); opacity: .5;
+    background: var(--moss); opacity: .6;
   }
   blockquote p { margin: 0; font-size: 1.1875rem; line-height: 1.62; text-wrap: pretty; }
   blockquote p::before { content: "\\201C"; margin-left: -.42em; }
   blockquote p::after { content: "\\201D"; }
-  /* Not rubricated, though it was at first. A citation follows every quotation, so colouring
-     it put three lines of red under each passage and made the accent the loudest thing on the
-     page, which inverts the point of a second ink. The margin rule already says where the
-     quotation is. Rubric stays on the four things that appear once: the mark, the initial,
-     that rule, and the paragraphus. */
-  /* Set in the book face, not the monospace one. Half these titles are Gutenberg catalogue
-     entries ("The Song Celestial; Or, Bhagavad-Gîtâ (from the Mahâbhârata) / Being a discourse
-     between Arjuna...") and monospace is the widest face there is, so a locator ran to three
-     lines under a two-line quotation and shouted louder than the passage. An italic serif fits
-     roughly a third more per line and is what a citation looks like in a printed book anyway.
-     Shortening the titles themselves was the other option and was rejected: cutting that one
-     at its semicolon leaves "The Song Celestial", dropping the name a reader would recognise. */
+  /* Set in the book face; half these titles are Gutenberg catalogue entries and the mono
+     face ran a locator to three lines. A tap opens the page the citation points at. */
   cite { display: block; margin-top: .55rem; color: var(--quiet); opacity: .85;
          font: italic .8125rem/1.45 var(--serif); letter-spacing: 0; text-wrap: pretty; }
-  /* The paragraphus, the mark a scribe put where one thought ended and the next began, before
-     the indented paragraph was invented to do the same job with white space. Between passages
-     it says these are separate findings rather than one argument running on. */
+  .answer cite { cursor: pointer; }
+  .answer cite:hover { color: var(--moss); opacity: 1; }
+  .context { white-space: pre-wrap; margin: .75rem 0 0; padding: .75rem 1rem;
+             background: var(--field); border: 1px solid var(--rule); border-radius: 2px;
+             font-size: .8125rem; line-height: 1.7; max-height: 18rem; overflow: auto; }
+  .context mark { background: transparent; box-shadow: inset 0 -0.45em rgba(111,130,100,.3); color: inherit; }
+  /* Between passages, three stones in the gravel where the paragraphus used to stand. */
   blockquote + p:not(:empty)::before {
-    content: "\\00B6"; color: var(--rubric); opacity: .55; font-size: .8em;
-    margin-right: .5em; vertical-align: .05em;
+    content: "\\00B7 \\00B7 \\00B7"; color: var(--moss); opacity: .8; letter-spacing: .3em;
+    margin-right: .6em; font-size: .9em;
   }
   .answer > p { color: var(--quiet); font-size: .9375rem; text-wrap: pretty; }
 
-  /* The model's own summary: larger and set in the page's voice, with a rule under it, so it
-     reads as an editor's standfirst rather than as anything quoted from a book. */
+  /* The model's own summary: an editor's standfirst, ruled off, never dressed as a book. */
   .synopsis { margin: 0 0 2.5rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--rule);
               font-size: 1.0625rem; line-height: 1.7; text-wrap: pretty; }
-  /* The initial. In a manuscript the enlarged opening letter tells you the text starts here,
-     and it is the one place the page is allowed to be beautiful for its own sake. It sits on
-     the summary rather than on a quotation on purpose: illuminating somebody else's sentence
-     would dress up a passage this program is only borrowing. Two lines deep, not six, because
-     the summary is often two sentences and a taller cap would leave it hanging in air. */
-  .synopsis::first-letter {
-    float: left; font-size: 3.1em; line-height: .82; padding: .06em .12em 0 0;
-    color: var(--rubric); font-weight: 400;
-  }
   .note { color: var(--quiet); font-size: .8125rem; }
   .note a { color: inherit; text-underline-offset: .2em; }
   details { margin-top: 2.5rem; }
   summary { cursor: pointer; font: .6875rem/1.6 var(--small); letter-spacing: .12em;
             text-transform: uppercase; list-style: none; }
   summary::-webkit-details-marker { display: none; }
-  summary::before { content: "+ "; }
+  summary::before { content: "+ "; color: var(--moss); }
   details[open] summary::before { content: "\\2212 "; }
   summary:hover { color: var(--ink); }
   ul.shelf { list-style: none; padding: 0; margin: 3rem 0 0; }
   ul.shelf li { padding: .35rem 0; border-bottom: 1px solid var(--rule); font-size: .875rem;
                 color: var(--quiet); text-wrap: pretty; }
   ul.shelf li:last-child { border-bottom: 0; }
+
+  /* Today's passage: the garden's one arranged stone, above the fold before any question. */
+  .daily { margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--rule); }
+  .daily .note::before { content: ""; display: inline-block; width: .5em; height: .5em;
+                         background: var(--seal); margin-right: .6em; vertical-align: baseline; }
+  .daily blockquote { margin: 1.25rem 0 0; }
+
+  /* Stacked question-and-answer entries, newest on top, ruled apart like a ledger. */
+  .qa { padding-top: 2rem; border-top: 1px solid var(--rule); margin-top: 2rem; }
+  .qa:first-child { padding-top: 0; border-top: 0; margin-top: 0; }
 
   footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--rule);
            display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; align-items: center; }
@@ -422,62 +475,150 @@ const PAGE = (body = "", librarian = true) => `<!doctype html>
                          font: .6875rem/1.6 var(--small); letter-spacing: .12em; text-transform: uppercase; }
   footer button:hover, .file:hover { color: var(--ink); }
   .file input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-  /* The waiting line breathes at the same slow rate as the mark, so the page has one pulse
-     rather than two competing ones. */
   .waiting { animation: breathe 3.2s ease-in-out infinite; }
   .waiting::after { content: "\\2026"; }
   .answer, h2 { animation: rise .5s ease-out both; }
-  @media (prefers-reduced-motion: reduce) { .answer, h2 { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .answer, h2, header { animation: none; } }
   @keyframes rise { from { opacity: 0; transform: translateY(.4rem); } to { opacity: 1; transform: none; } }
 </style>
 <div class="sheet">
 <header>
-  <!-- Vesica piscis: two circles overlapping by a radius, the almond between them picked out
-       in rubric. It is the one contemplative figure that is nobody's insignia, turning up as
-       the mandorla in Christian painting, in Islamic pattern work and in Buddhist mandalas
-       alike, which suits a shelf holding all three. It also happens to draw what the page
-       does, a reader and a book overlapping, with the answer only in the part they share. -->
-  <svg class="mark" viewBox="0 0 96 64" aria-hidden="true">
-    <!-- The lens itself. Centres 26 apart with r=26 put the crossings at y 9.5 and 54.5, and
-         both arcs take sweep=1: reversing direction is what makes the second one bulge back. -->
-    <path class="almond" d="M48 9.5A26 26 0 0 1 48 54.5A26 26 0 0 1 48 9.5Z"/>
-    <circle cx="35" cy="32" r="26"/>
-    <circle cx="61" cy="32" r="26"/>
+  <!-- The ensō: one stroke, left open. Drawn as a filled ring whose outer edge is a circle
+       and whose inner edge is pulled off-centre, so the stroke swells where a loaded brush
+       lands and thins where it lifts, with the opening at the lift. The seal sits low and
+       right, small and square, the one vermilion on the sheet. -->
+  <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+    <path class="enso" d="M 39.8 7.6
+      A 26 26 0 1 0 56.4 41.5
+      l -2.5 -1.2
+      A 23.2 23.2 0 1 1 40.9 10.3 Z"/>
+    <rect class="seal" x="47" y="47" width="7" height="7"/>
   </svg>
   <h1>guru</h1>
   <p class="tagline">Nothing said here is mine to say.</p>
 </header>
 <form class="ask" method="post" action="/ask">
-  <input name="q" maxlength="${MAX_QUERY}" placeholder="Ask your library&hellip;" autofocus>
+  <input name="q" maxlength="${MAX_QUERY}" placeholder="Ask ${guest ? "the library" : "your library"}&hellip;" autofocus>
+  <button class="alt" formaction="/find" title="Passages only, no composed answer">Find</button>
   <button>Ask</button>
 </form>
-<div id="out">${body}</div>
+<div id="out"><div id="hist"></div>${body}</div>
 <footer>
-  ${librarian
-    ? `<label class="file">Add a book
+  ${guest
+    ? `<span class="note">You are reading as a guest. Find is open to everyone; asking needs a reader's account.</span>`
+    : `${librarian
+        ? `<label class="file">Add a book
     <input type="file" accept=".pdf,.epub" id="f"></label>
-  <span class="note" id="s"></span>`
-    : ""}
-  <a class="note" href="/export">Export</a>
+  <span class="note" id="s"></span>
+  <a class="note" href="/export">Export</a>`
+        : ""}
   <form method="post" action="/delete">
     <input name="confirm" placeholder="type DELETE">
     <button>Delete all</button>
-  </form>
+  </form>`}
 </footer>
 </div>
 <script>
   // Progressive enhancement: without this the form posts normally and the page renders the
-  // whole answer at once. With it, the waiting line says how many passages were found while
-  // the answer is still being composed, and the answer replaces it when it is written.
-  const form = document.querySelector("form.ask"), out = document.getElementById("out");
+  // whole answer at once. With it, answers stack newest-first and stay on the page.
+  //
+  // History is per device, in localStorage, newest first. Deliberately not on the server:
+  // what the operator's log holds is announced at /export, and this owes the reader the
+  // same page they left.
+  const form = document.querySelector("form.ask"), hist = document.getElementById("hist");
+  const KEY = "guru-history";
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } };
+  // Fifty answers is more page than anyone scrolls and localStorage has a quota; the tail
+  // falls off silently. Saving can also fail outright (private mode), and history is not
+  // worth breaking the answer over.
+  const save = (h) => { try { localStorage.setItem(KEY, JSON.stringify(h.slice(0, 50))); } catch {} };
+  // The stored html came from this server's own renderer, so re-inserting it is the same
+  // trust decision the live path already makes. The question is text and is set as text.
+  const entry = (q, html) => {
+    const a = document.createElement("article");
+    a.className = "qa";
+    a.innerHTML = "<h2></h2>" + html;
+    a.querySelector("h2").textContent = q;
+    return a;
+  };
+  let past = load();
+  for (const p of past) hist.appendChild(entry(p.q, p.html));
+
+  const clear = document.createElement("p");
+  clear.innerHTML = '<a href="#" class="note">clear history</a>';
+  clear.firstChild.onclick = (ev) => {
+    ev.preventDefault();
+    past = [];
+    save(past);
+    hist.replaceChildren();
+    clear.remove();
+  };
+  if (past.length) hist.after(clear);
+
+  // A tapped citation opens the page it points at, right under the quotation, with the
+  // quoted words marked. Delegated from the container so restored history entries work too.
+  document.getElementById("out").addEventListener("click", async (ev) => {
+    const c = ev.target.closest(".answer cite");
+    if (!c) return;
+    const open = c.parentElement.querySelector(".context");
+    if (open) { open.remove(); return; }
+    // "Title, with, commas, Author, p. 58-60": locator and author are the last two parts.
+    const parts = c.textContent.split(", ");
+    if (parts.length < 3) return;
+    const title = parts.slice(0, -2).join(", ");
+    const pageNo = (parts[parts.length - 1].match(/\\d+/) || [])[0];
+    if (!pageNo) return;
+    let d;
+    try {
+      const r = await fetch("/context?title=" + encodeURIComponent(title) + "&page=" + pageNo);
+      d = await r.json();
+    } catch { return; }
+    if (!d.text) return;
+    const div = document.createElement("div");
+    div.className = "context";
+    div.textContent = d.text;
+    // Mark the quoted words, tolerant of the whitespace differences chunking introduces.
+    const quote = (c.parentElement.querySelector("p") || {}).textContent || "";
+    const words = quote.trim().split(/\\s+/);
+    if (words.length > 3) {
+      try {
+        const pat = words.map((w) => w.replace(/[.*+?^$()|[\\]\\\\{}]/g, "\\\\$&")).join("\\\\s+");
+        div.innerHTML = div.innerHTML.replace(new RegExp(pat), (s) => "<mark>" + s + "</mark>");
+      } catch {}
+    }
+    c.after(div);
+    div.querySelector("mark")?.scrollIntoView({ block: "nearest" });
+  });
+
   form.addEventListener("submit", async (e) => {
     const q = form.q.value.trim();
     if (!q) return;
     e.preventDefault();
 
-    out.innerHTML = '<h2></h2><p class="note waiting">searching your library</p>';
-    out.querySelector("h2").textContent = q;
-    const waiting = () => out.querySelector(".waiting");
+    // Two submit buttons, one form: Find retrieves passages with no model in the loop.
+    if (e.submitter && e.submitter.getAttribute("formaction") === "/find") {
+      const cur = entry(q, '<p class="note waiting">searching the shelves</p>');
+      hist.prepend(cur);
+      form.q.value = "";
+      try {
+        const r = await fetch("/find", {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ q }),
+        });
+        const d = await r.json();
+        cur.innerHTML = "<h2></h2>" + d.html;
+        cur.querySelector("h2").textContent = q;
+        past.unshift({ q, html: d.html, t: Date.now() });
+        save(past);
+      } catch { const w = cur.querySelector(".waiting"); if (w) w.textContent = "could not reach the server"; }
+      return;
+    }
+
+    const cur = entry(q, '<p class="note waiting">searching your library</p>');
+    hist.prepend(cur);
+    form.q.value = "";
+    const waiting = () => cur.querySelector(".waiting");
 
     let res;
     try {
@@ -512,8 +653,10 @@ const PAGE = (body = "", librarian = true) => `<!doctype html>
         // answer, which has not been written yet, so the server sends the list with it.
         if (name === "passages" && waiting()) waiting().textContent = data.text + ", composing an answer";
         if (name === "answer") {
-          out.innerHTML = '<h2></h2>' + data.html;
-          out.querySelector("h2").textContent = q;
+          cur.innerHTML = "<h2></h2>" + data.html;
+          cur.querySelector("h2").textContent = q;
+          past.unshift({ q, html: data.html, t: Date.now() });
+          save(past);
         }
       }
     }
@@ -538,7 +681,7 @@ const PAGE = (body = "", librarian = true) => `<!doctype html>
 
 // Second selfcheck block, because PAGE is defined below the first one and a const cannot be
 // read before it exists. The controls are chrome: a reader who has seen the page once knows
-// both URLs, so the routes refuse the request themselves and this only stops drawing buttons
+// the URLs, so the routes refuse the request themselves and this only stops drawing buttons
 // that would 403.
 if (process.argv.includes("--selfcheck")) {
   assert.match(PAGE("", true), /Add a book/);
@@ -546,6 +689,21 @@ if (process.argv.includes("--selfcheck")) {
   assert.doesNotMatch(PAGE("", false), /href="\/export"/);
   assert.match(PAGE("", false), /action="\/delete"/, "a reader may still delete their own library");
   assert.doesNotMatch(PAGE("", false), /getElementById\("f"\)\.onchange/, "no handler for an absent picker");
+  // The reading room. A guest sees no door that moves books or destroys a shared shelf.
+  for (const gone of [/Add a book/, /href="\/export"/, /action="\/delete"/]) {
+    assert.doesNotMatch(PAGE("", true, true), gone, `guest chrome must not offer ${gone}`);
+  }
+  assert.match(PAGE("", true, true), /reading as a guest/);
+  assert.match(PAGE("", true, true), /formaction="\/find"/, "Find stays open to guests");
+  // History renders into its own container above the server-rendered body (the shelf), so
+  // past answers stack without displacing it. The body must stay inside #out for the
+  // non-JS POST path, which renders the whole answer server-side.
+  assert.match(PAGE("SHELF"), /<div id="out"><div id="hist"><\/div>SHELF<\/div>/);
+  assert.match(PAGE(""), /localStorage/, "history lives in the reader's browser");
+  assert.match(PAGE(""), /guru-history/, "history is namespaced to guru");
+
+  console.error("server selfcheck ok");
+  process.exit(0);
 }
 
 /** What the reader has, and what is still being read in. */
@@ -578,9 +736,76 @@ function shelf(user: string) {
   );
 }
 
+/** Today's passage: one stone from the reader's own garden, arranged by the calendar. */
+function dailyPassage(user: string) {
+  const db = userLibrary(user);
+  const n = (db.prepare("select count(*) n from chunks where length(text) between 240 and 1200").get() as { n: number }).n;
+  if (!n) {
+    db.close();
+    return "";
+  }
+  const row = db
+    .prepare(
+      "select c.text t, c.page_start ps, b.title, b.author from chunks c join books b on c.book_id = b.id " +
+        "where length(c.text) between 240 and 1200 order by c.id limit 1 offset ?",
+    )
+    .get(pickDailyOffset(n, new Date())) as { t: string; ps: string; title: string; author: string } | undefined;
+  db.close();
+  if (!row) return "";
+  const now = new Date();
+  return (
+    `<section class="daily"><p class="note">Today's passage · ${MONTH_NAMES[now.getUTCMonth()]} ${now.getUTCDate()}</p>` +
+    `<blockquote><p>${escape(trimPassage(row.t))}</p>` +
+    `<cite>${escape(row.title)}, ${escape(row.author)}, p. ${escape(String(row.ps))}</cite></blockquote></section>`
+  );
+}
+
 createServer(async (req, res) => {
   const send = (code: number, html: string) =>
     res.writeHead(code, { "content-type": "text/html; charset=utf-8" }).end(html);
+
+  // Installable-web-app plumbing, before authentication on purpose: Safari fetches the
+  // manifest and icons without credentials, and /login is how credentials arrive at all.
+  // None of it exposes a word of any library.
+  if (req.method === "GET" && req.url === "/manifest.webmanifest") {
+    res.writeHead(200, { "content-type": "application/manifest+json", "cache-control": "public, max-age=86400" });
+    return void res.end(
+      JSON.stringify({
+        name: "guru",
+        short_name: "guru",
+        description: "A study companion for your own library that never misquotes.",
+        start_url: "/",
+        display: "standalone",
+        background_color: "#14150f",
+        theme_color: "#f3efe3",
+        icons: [{ src: "/icon-512.png", sizes: "512x512", type: "image/png" }],
+      }),
+    );
+  }
+  if (req.method === "GET" && (req.url === "/icon-180.png" || req.url === "/icon-512.png")) {
+    try {
+      const png = readFileSync(join("assets", req.url.slice(1)));
+      res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=604800" });
+      return void res.end(png);
+    } catch {
+      return void res.writeHead(404, { "content-type": "text/plain" }).end("not found");
+    }
+  }
+  // The magic link: valid credentials in the query become a year-long cookie and a clean
+  // redirect, so an installed web app never shows a password prompt. The credential is
+  // checked by the exact same timing-safe path as the Basic header. The URL does pass
+  // through proxy logs, which is the price of a link a person can simply tap; rotate the
+  // password if a link ever leaks.
+  if (req.method === "GET" && req.url?.startsWith("/login")) {
+    const u = new URL(req.url, "http://x");
+    const b64 = Buffer.from(`${u.searchParams.get("u") ?? ""}:${u.searchParams.get("p") ?? ""}`).toString("base64");
+    if (!basicAuthUser(`Basic ${b64}`)) return send(401, PAGE("<p>That link is not valid.</p>", false, true));
+    res.writeHead(302, {
+      location: "/",
+      "set-cookie": `guru=${b64}; Max-Age=31536000; Path=/; HttpOnly; Secure; SameSite=Lax`,
+    });
+    return void res.end();
+  }
 
   const auth = await authenticate(req);
   if (auth.kind === "respond") {
@@ -588,19 +813,77 @@ createServer(async (req, res) => {
     return res.writeHead(auth.status, Object.fromEntries(auth.headers)).end();
   }
   const user = auth.userId;
+  const guest = auth.guest === true;
 
   // Both doors that move books rather than answers. Enforced on the routes, not by hiding the
   // controls: the upload is a plain PUT and the export a plain GET, so anyone who has seen the
-  // page once can call them again by hand.
-  const librarian = isLibrarian(user);
-  const page = (html = "") => PAGE(html, librarian);
+  // page once can call them again by hand. A guest is never a librarian whatever the env says,
+  // because the reading room's shelf belongs to the operator, not to whoever walked in.
+  const librarian = !guest && isLibrarian(user);
+  const page = (html = "") => PAGE(html, librarian, guest);
 
-  if (req.method === "GET" && req.url === "/") return send(200, page(shelf(user)));
+  if (req.method === "GET" && req.url === "/") return send(200, page(dailyPassage(user) + shelf(user)));
+
+  // The page a citation lives on, for reading a quotation in its surroundings. Title and
+  // page arrive from the client's parse of the citation line; an unknown pair is just an
+  // empty result, not an error worth a page.
+  if (req.method === "GET" && req.url?.startsWith("/context")) {
+    const u = new URL(req.url, "http://x");
+    const title = u.searchParams.get("title") ?? "";
+    const p = Number(u.searchParams.get("page"));
+    logEvent(user, "context", `${title}, p. ${p}`);
+    let row: { t: string; ps: string; pe: string } | undefined;
+    if (title && Number.isFinite(p)) {
+      const db = userLibrary(user);
+      // Longest covering chunk: overlap means two chunks can span the page, and the longer
+      // one carries more of the surroundings, which is the whole point here.
+      row = db
+        .prepare(
+          "select c.text t, c.page_start ps, c.page_end pe from chunks c join books b on c.book_id = b.id " +
+            "where b.title = ? and cast(c.page_start as integer) <= ? and cast(c.page_end as integer) >= ? " +
+            "order by length(c.text) desc limit 1",
+        )
+        .get(title, p, p) as { t: string; ps: string; pe: string } | undefined;
+      db.close();
+    }
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    return void res.end(
+      JSON.stringify(row ? { text: row.t, page_start: row.ps, page_end: row.pe } : { text: "" }),
+    );
+  }
+
+  // Retrieval without composition: hybrid search only, no answer model in the loop, so it
+  // costs next to nothing per use and stays open to guests.
+  if (req.method === "POST" && req.url === "/find") {
+    const q = new URLSearchParams(await body(req)).get("q")?.trim() ?? "";
+    if (!q) return send(400, page("<p>Ask something.</p>"));
+    if (q.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>"));
+    logEvent(user, "find", q);
+    const db = userLibrary(user);
+    const hits = (await search(db, q)).slice(0, 8);
+    db.close();
+    const items = hits
+      .map(
+        (h) =>
+          `<blockquote><p>${escape(h.text.length > 500 ? h.text.slice(0, 500) + "…" : h.text)}</p>` +
+          `<cite>${escape(cite(h).slice(1, -1))}</cite></blockquote>`,
+      )
+      .join("");
+    const html = items
+      ? `<p class="note">Passages only; no answer was composed.</p><div class="answer">${items}</div>`
+      : "<p>Nothing in the library reads close to that.</p>";
+    if ((req.headers.accept ?? "").includes("application/json")) {
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      return void res.end(JSON.stringify({ html }));
+    }
+    return send(200, page(`<h2>${escape(q)}</h2>${html}`));
+  }
 
   if (req.method === "PUT" && req.url?.startsWith("/upload")) {
     const text = (code: number, msg: string) =>
       res.writeHead(code, { "content-type": "text/plain; charset=utf-8" }).end(msg);
 
+    if (guest) return text(403, "The reading room's shelf is fixed. Sign in to keep a library of your own.");
     if (!librarian) return text(403, "Only the librarian can add books to this library.");
 
     const name = new URL(req.url, "http://x").searchParams.get("name") ?? "";
@@ -632,10 +915,12 @@ createServer(async (req, res) => {
   // GDPR, and cheap because a reader is one file: their books, chunks, and usage all travel
   // together. WAL is checkpointed first or the copy arrives missing its most recent writes.
   if (req.method === "GET" && req.url === "/export") {
+    // The reading room is a shared identity; there is nothing in it that is any one
+    // visitor's to take. A signed-in reader's own library is a different matter, below.
+    if (guest) return send(403, page("<p>The reading room keeps nothing that is yours to export. Sign in for a library of your own.</p>"));
     // A reader who cannot add books has nothing of their own in the file. The corpus is the
-    // librarian's, and `asks` holds timestamps and no question text, so what is actually
-    // theirs is a list of when they asked something. That is what they get, rather than a
-    // 403 on the word "export" while the data protection right it exists for goes unserved.
+    // librarian's, so what is actually theirs is their usage. Questions are logged with the
+    // username so the operator can review usage, and this file says so rather than hiding it.
     if (!librarian) {
       const db = userLibrary(user);
       const asks = (db.prepare("select at from asks order by at").all() as { at: string }[]).map((r) => r.at);
@@ -644,7 +929,7 @@ createServer(async (req, res) => {
         "content-type": "application/json; charset=utf-8",
         "content-disposition": `attachment; filename="guru-${user}.json"`,
       });
-      return void res.end(JSON.stringify({ user, asks, note: "Questions are not stored, only when they were asked. The books are the librarian's." }, null, 2));
+      return void res.end(JSON.stringify({ user, asks, note: "Questions are logged with your username so the operator can review usage. The books are the librarian's." }, null, 2));
     }
     const db = userLibrary(user);
     db.pragma("wal_checkpoint(TRUNCATE)");
@@ -657,6 +942,8 @@ createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && req.url === "/delete") {
+    // The reading room is shared; its shelf stays, whoever is passing through.
+    if (guest) return send(403, page("<p>The reading room is shared, so its shelf stays. Sign in for a library of your own.</p>"));
     const form = new URLSearchParams(await body(req));
     // Irreversible and one request away from the ask form, so it takes a deliberate word
     // rather than a bare POST.
@@ -672,9 +959,16 @@ createServer(async (req, res) => {
 
   if (req.method !== "POST" || req.url !== "/ask") return send(404, page("<p>Not found.</p>"));
 
+  // Composed answers cost real model calls per question, so the shared room reads and
+  // searches free of charge and the asking is what an account is for.
+  if (guest) {
+    return send(403, page("<p>Reading and Find are open to everyone. A composed answer costs the librarian money per question, so asking needs a reader's account.</p>"));
+  }
+
   const query = new URLSearchParams(await body(req)).get("q")?.trim() ?? "";
   if (!query) return send(400, page("<p>Ask something.</p>"));
   if (query.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>"));
+  logEvent(user, "ask", query);
 
   try {
     const db = userLibrary(user);
@@ -725,7 +1019,7 @@ createServer(async (req, res) => {
     const { answer, synopsis, dropped, declined } = await ask(query, hits);
     // A decline means nothing retrieved bore on the question, so listing what was read under
     // "Passages consulted" would claim a relevance the answer just denied.
-    const shelf = declined ? "" : consulted;
+    const shelfNote = declined ? "" : consulted;
     const note = dropped
       ? `<p class="note">${dropped} claim${dropped > 1 ? "s" : ""} dropped: the quotation could not be verified.</p>`
       : "";
@@ -735,9 +1029,9 @@ createServer(async (req, res) => {
     const composed = `${lead}<div class="answer">${render(answer)}</div>`;
 
     if (!streaming) {
-      return send(200, page(`<h2>${escape(query)}</h2>${composed}${shelf}${note}`));
+      return send(200, page(`<h2>${escape(query)}</h2>${composed}${shelfNote}${note}`));
     }
-    emit("answer", { html: composed + shelf + note });
+    emit("answer", { html: composed + shelfNote + note });
     res.end();
   } catch (err) {
     // The pipeline calls an upstream model. A failure there is not the reader's fault and

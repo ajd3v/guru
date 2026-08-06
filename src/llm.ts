@@ -577,7 +577,15 @@ export async function ask(query: string, hits: Hit[]) {
   if (/^\s*NOT COVERED:/i.test(draft)) {
     return {
       // Quote-free by design, so this is the model's own prose and safe to repunctuate.
-      answer: plainDashes(draft.replace(/^\s*NOT COVERED:\s*/i, "").trim()),
+      // The contract is one sentence, and the model sometimes declines and then answers
+      // anyway. Everything after the decline would ship as the raw draft, no splicing and
+      // no verifier. Enforce the contract instead of trusting it: keep the first paragraph,
+      // and strip any id tokens even there, because a decline is quote-free by design.
+      answer: plainDashes(
+        (draft.replace(/^\s*NOT COVERED:\s*/i, "").split(/\n\s*\n/)[0] ?? "")
+          .replace(/\[?\bP\d+S\d+\b[\]\s,]*/g, "")
+          .trim(),
+      ),
       // A decline is the model's own words already; a synopsis of nothing would be noise.
       synopsis: "",
       // Nothing here bore on the question, so the caller must not list the passages under a

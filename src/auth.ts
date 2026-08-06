@@ -12,7 +12,7 @@ import { createClerkClient, type ClerkClient } from "@clerk/backend";
  * them by hand is how people end up in a redirect loop.
  */
 export type Auth =
-  | { kind: "user"; userId: string }
+  | { kind: "user"; userId: string; guest?: boolean }
   | { kind: "respond"; status: number; headers: Headers };
 
 const SECRET = process.env.CLERK_SECRET_KEY;
@@ -77,6 +77,28 @@ if (PRODUCTION && SECRET && !AUTHORIZED_PARTIES.length) {
 if (PRODUCTION && SINGLE_USER && !BASIC_AUTH.length) {
   throw new Error("GURU_BASIC_AUTH (user:password) is required alongside GURU_SINGLE_USER in production");
 }
+/**
+ * A `guru` cookie carrying the same base64 user:password a Basic header would, set by the
+ * server's /login route for installed web apps, where the browser's own auth prompt is
+ * somewhere between ugly and unreachable. Same bytes, same timing-safe comparison as the
+ * header path; only the envelope differs.
+ */
+export function cookieCredential(cookie: string | undefined) {
+  const m = cookie?.match(/(?:^|;\s*)guru=([A-Za-z0-9+/=%]+)/);
+  return m ? `Basic ${decodeURIComponent(m[1])}` : undefined;
+}
+
+/**
+ * The shared reading-room identity, when the deployment offers one.
+ *
+ * With GURU_GUEST set, a request that presents no credential at all becomes this reader:
+ * one shared library cloned from the starter, so the public can read and search. A
+ * credential that is present but wrong still gets a 401, because a typo must never
+ * silently demote a real reader into the reading room. The server decides which routes a
+ * guest may use; this only names them.
+ */
+const GUEST = process.env.GURU_GUEST;
+
 /** The username half of `user:password`, or "" if there is no password to separate it from. */
 function username(cred: string) {
   const at = cred.indexOf(":");
@@ -91,6 +113,14 @@ for (const cred of BASIC_AUTH) {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(username(cred))) {
     throw new Error(`GURU_BASIC_AUTH entry is not user:password with a usable username: ${JSON.stringify(cred.slice(0, 12))}…`);
   }
+}
+// The guest name becomes a filename too, and it must never shadow a real reader: a
+// credential list containing the guest name would make "who is this" ambiguous.
+if (GUEST && !/^[A-Za-z0-9_-]{1,64}$/.test(GUEST)) {
+  throw new Error("GURU_GUEST is not a usable username");
+}
+if (GUEST && BASIC_AUTH.some((c) => username(c) === GUEST)) {
+  throw new Error("GURU_GUEST must not match a GURU_BASIC_AUTH username");
 }
 
 let clerk: ClerkClient | undefined;
@@ -165,8 +195,12 @@ export async function authenticate(req: IncomingMessage): Promise<Auth> {
     // first person's.
     if (!BASIC_AUTH.length) return { kind: "user", userId: SINGLE_USER };
 
-    const user = basicAuthUser(req.headers.authorization);
+    const credential = req.headers.authorization ?? cookieCredential(req.headers.cookie);
+    const user = basicAuthUser(credential);
     if (!user) {
+      // No credential at all, and a reading room is open: the visitor is the guest. A wrong
+      // credential still 401s, so a typo never silently demotes a reader.
+      if (GUEST && !credential) return { kind: "user", userId: GUEST, guest: true };
       return {
         kind: "respond",
         status: 401,

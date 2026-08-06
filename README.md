@@ -7,6 +7,11 @@ no claim.
 Ask it a question and it answers out of books you own, in their words rather than its own.
 A model that cannot find an answer in your shelf says so instead of writing one.
 
+**The reading room is open at [guru.alanj.dev](https://guru.alanj.dev).** As a guest you can
+read today's passage and search the starter shelf, fifty public-domain books across
+traditions, with no account and no model in the loop. Composed answers cost the librarian
+real model calls per question, so asking needs a reader's account.
+
 See [SPEC.md](SPEC.md) for the design and the measured numbers.
 
 ## How it refuses to misquote
@@ -161,3 +166,7 @@ first N books.)
 ## Licence
 
 ISC. See [LICENSE](LICENSE).
+
+Built by [Alan De Vaney](https://alanj.dev). The same engine runs
+[a-private-project](https://github.com/ajd3v/a-private-project), a study companion for
+A.A. literature, by swapping the library and nothing else.
