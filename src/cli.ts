@@ -102,16 +102,27 @@ export async function fetchStarter(limit = Infinity) {
   const books = Number.isFinite(limit) ? all.slice(0, limit) : all;
   mkdirSync(STARTER_DIR, { recursive: true });
   const paths: string[] = [];
+  const missed: string[] = [];
   for (const b of books) {
     const path = join(STARTER_DIR, `${b.author} - ${b.title}.epub`);
     if (!existsSync(path)) {
+      // Not every catalogue entry is a text. Gutenberg 20679 is a LibriVox recording of James
+      // Allen filed under the same title and author as the book, and it has no epub at any
+      // quality, so this threw on book 111 of 124 and lost the whole shelf. One absent edition
+      // is not worth a failed rebuild, so it is reported and skipped. The build still refuses
+      // to publish an empty library, which is the failure that actually matters.
       const res = await fetch(`https://www.gutenberg.org/ebooks/${b.gutenberg}.epub3.images`);
-      if (!res.ok) throw new Error(`gutenberg ${b.gutenberg}: ${res.status}`);
+      if (!res.ok) {
+        console.error(`skipping ${b.title}: gutenberg ${b.gutenberg} returned ${res.status}`);
+        missed.push(`${b.gutenberg} ${b.title}`);
+        continue;
+      }
       writeFileSync(path, Buffer.from(await res.arrayBuffer()));
       console.error(`fetched ${b.title}`);
     }
     paths.push(path);
   }
+  if (missed.length) console.error(`${missed.length} of ${books.length} unavailable: ${missed.join(", ")}`);
   return paths;
 }
 

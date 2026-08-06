@@ -32,6 +32,10 @@ build_starter() {
   # empty library. Only `serve` builds now, but the unique name keeps that failure impossible
   # rather than merely unlikely.
   tmp="$STARTER.building.$$"
+  # The name is unique per container, so a build that died left its partial database on the
+  # volume for ever and the next one picked a different name rather than reusing it. Nothing
+  # reads these, they are just tens of megabytes each accumulating behind a failed deploy.
+  rm -f "$STARTER".building.*
   rm -f "$tmp" "$tmp-wal" "$tmp-shm"
   GURU_DB="$tmp" node src/cli.ts starter
 
