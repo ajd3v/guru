@@ -495,7 +495,9 @@ const PAGE = (body = "", librarian = true, guest = false) => `<!doctype html>
     <rect class="seal" x="47" y="47" width="7" height="7"/>
   </svg>
   <h1>guru</h1>
-  <p class="tagline">Nothing said here is mine to say.</p>
+  <!-- Shakkei, borrowed scenery: a garden composes the landscape beyond its wall into its
+       own view without ever owning it. This does the same with books. -->
+  <p class="tagline">A garden of borrowed words.</p>
 </header>
 <form class="ask" method="post" action="/ask">
   <input name="q" maxlength="${MAX_QUERY}" placeholder="Ask ${guest ? "the library" : "your library"}&hellip;" autofocus>
