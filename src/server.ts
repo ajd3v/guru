@@ -43,6 +43,16 @@ const ACCEPTED = [".pdf", ".epub"];
 const MAX_ASKS = Number(process.env.GURU_MAX_ASKS ?? 40);
 
 /**
+ * Composed answers a guest may have, per address, ever.
+ *
+ * Five is enough to form a real opinion: ask something the shelf covers well, something it
+ * covers badly, and something it does not cover at all, and the decline is the interesting
+ * one. It is not a daily allowance, because a reading room that resets every midnight is a
+ * free tier, and this is a demonstration.
+ */
+const GUEST_ASKS = Number(process.env.GURU_GUEST_ASKS ?? 5);
+
+/**
  * Stream the body to disk, refusing to buffer it.
  *
  * The cap is checked per chunk rather than against content-length: the header is a claim by
@@ -139,29 +149,6 @@ function render(answer: string) {
   }
   flush();
   return out.join("\n");
-}
-
-/**
- * The day's passage, chosen deterministically from the calendar so every visitor sees the
- * same one and it changes at midnight UTC. Pure so the selfcheck can hold it still.
- */
-export function pickDailyOffset(count: number, date: Date) {
-  if (count <= 0) return 0;
-  const key = date.getUTCFullYear() * 372 + date.getUTCMonth() * 31 + (date.getUTCDate() - 1);
-  return key % count;
-}
-
-/**
- * A chunk is sized for retrieval, not for reading aloud, so the day's passage is trimmed to
- * whole sentences and a length a person actually reads: cut at the last sentence end before
- * the cap, and if the text has no sentence end at all, at the cap with an ellipsis.
- */
-export function trimPassage(text: string, cap = 420) {
-  const t = text.replace(/\s+/g, " ").trim();
-  if (t.length <= cap) return t;
-  const head = t.slice(0, cap);
-  const end = Math.max(head.lastIndexOf(". "), head.lastIndexOf("! "), head.lastIndexOf("? "));
-  return end > cap * 0.4 ? head.slice(0, end + 1) : head.trimEnd() + "…";
 }
 
 // Same convention as `cli.ts selfcheck` and `ingest.py --selfcheck`: assert, then exit before
@@ -293,21 +280,6 @@ if (process.argv.includes("--selfcheck")) {
   assert.equal(existsSync(over), false, "an over-cap upload left its partial file behind");
   rmSync(tmp, { recursive: true, force: true });
 
-  // The day's passage is a pure function of the calendar, so every visitor shares it, it
-  // rolls at midnight UTC, and yesterday's differs from today's.
-  assert.equal(pickDailyOffset(0, new Date("2026-08-06T12:00:00Z")), 0, "an empty shelf must not divide by zero");
-  const a = pickDailyOffset(14803, new Date("2026-08-06T00:00:01Z"));
-  assert.equal(a, pickDailyOffset(14803, new Date("2026-08-06T23:59:59Z")), "same day, same passage");
-  assert.notEqual(a, pickDailyOffset(14803, new Date("2026-08-07T00:00:01Z")), "a new day turns the page");
-  // Trimming keeps whole sentences and never mid-word; unpunctuated text gets an ellipsis.
-  {
-    // Cuts land on a sentence end once one exists past the 40% floor; never mid-word.
-    const t = trimPassage(("A stone sits in the raked gravel. ").repeat(30).trim());
-    assert.ok(t.length <= 420 && t.endsWith("."), "cut lands on a sentence end: " + JSON.stringify(t.slice(-30)));
-  }
-  assert.match(trimPassage("word ".repeat(200)), /…$/);
-  assert.equal(trimPassage("short and whole."), "short and whole.");
-
   // No exit here: the PAGE assertions further down must run too. This block used to exit,
   // which left every selfcheck below it dead code that always "passed".
 }
@@ -330,7 +302,29 @@ const logEvent = (user: string, event: string, q: string) => {
   } catch {}
 };
 
-const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+// Guest allowance, counted per address in the same file as the log so there is one thing to
+// back up. Unlike the log, a failure here must NOT be swallowed: a quota that silently stops
+// counting is an open bar.
+logdb.exec("create table if not exists guest_quota (ip text primary key, n integer not null default 0, first_at text default (datetime('now')), last_at text)");
+const quotaGet = logdb.prepare("select n from guest_quota where ip = ?");
+const quotaBump = logdb.prepare(
+  "insert into guest_quota (ip, n, last_at) values (?, 1, datetime('now')) " +
+    "on conflict(ip) do update set n = n + 1, last_at = datetime('now') returning n",
+);
+
+/**
+ * The visitor's address, as observed by our own proxy.
+ *
+ * Traefik APPENDS the peer it saw to any X-Forwarded-For the client sent, so the last entry
+ * is the one our infrastructure observed and the earlier ones are the client's to invent.
+ * Taking the last is what makes the quota worth having. With no header at all we are not
+ * behind the proxy, so the socket is the truth.
+ */
+function clientAddress(req: IncomingMessage) {
+  const xff = req.headers["x-forwarded-for"];
+  const chain = (Array.isArray(xff) ? xff.join(",") : xff ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return chain.length ? chain[chain.length - 1] : (req.socket.remoteAddress ?? "unknown");
+}
 
 /**
  * One page, set like a garden rather than a chat window.
@@ -340,10 +334,10 @@ const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "Ju
  * sentences linking them are smaller and quieter.
  *
  * The dress is a garden's. Washi ground, sumi ink, moss for the marks of structure, and one
- * vermilion seal, spent once, the way a painter stamps a finished sheet. The mark is an ensō,
- * the circle drawn in a single breath and left open, which suits a program whose whole
- * discipline is knowing where to stop. Nothing is fetched: no webfont, no script from
- * anywhere, so the page renders whole on the first byte.
+ * vermilion bead, spent once. The mark is an eclipse: one body passes in front of another and
+ * what reaches you is the light around its edge, which is the whole arrangement here. The
+ * model occludes; the books are what you actually read. Nothing is fetched: no webfont, no
+ * script from anywhere, so the page renders whole on the first byte.
  */
 // `librarian` decides whether the controls that move books are drawn; `guest` strips the
 // chrome a shared reading room must not offer. Both are chrome only; the routes refuse for
@@ -382,15 +376,15 @@ const PAGE = (body = "", librarian = true, guest = false) => `<!doctype html>
   .sheet { max-width: 36rem; margin: 0 auto; }
 
   header { text-align: center; margin-bottom: clamp(2.5rem, 7vh, 4.5rem); animation: rise .8s ease-out both; }
-  /* The ensō breathes at the pace of slow breathing, ink flooding and thinning. Eleven
-     seconds is long enough that you notice only if you stop and watch, which is the correct
-     amount of attention for a mark to ask for. The seal does not move; seals never do. */
+  /* The corona brightens and dims on the pace of slow breathing. Eleven seconds is long
+     enough that you notice only if you stop and watch, which is the correct amount of
+     attention for a mark to ask for. The bead does not move; it is the fixed point. */
   .mark { width: 64px; height: 64px; }
-  .mark .enso { fill: var(--ink); opacity: .8; animation: breathe-ink 11s ease-in-out infinite; }
-  .mark .seal { fill: var(--seal); }
-  @keyframes breathe-ink { 0%, 100% { opacity: .8; } 50% { opacity: .55; } }
+  .mark .corona { fill: var(--ink); opacity: .82; animation: breathe-ink 11s ease-in-out infinite; }
+  .mark .bead { fill: var(--seal); }
+  @keyframes breathe-ink { 0%, 100% { opacity: .82; } 50% { opacity: .58; } }
   @keyframes breathe { 0%, 100% { opacity: .25; } 50% { opacity: .7; } }
-  @media (prefers-reduced-motion: reduce) { .mark .enso { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .mark .corona { animation: none; } }
 
   h1 { margin: .9rem 0 .3rem; font-size: 1.5rem; font-weight: 400; letter-spacing: .34em;
        text-indent: .34em; text-transform: lowercase; }
@@ -455,12 +449,6 @@ const PAGE = (body = "", librarian = true, guest = false) => `<!doctype html>
                 color: var(--quiet); text-wrap: pretty; }
   ul.shelf li:last-child { border-bottom: 0; }
 
-  /* Today's passage: the garden's one arranged stone, above the fold before any question. */
-  .daily { margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--rule); }
-  .daily .note::before { content: ""; display: inline-block; width: .5em; height: .5em;
-                         background: var(--seal); margin-right: .6em; vertical-align: baseline; }
-  .daily blockquote { margin: 1.25rem 0 0; }
-
   /* Stacked question-and-answer entries, newest on top, ruled apart like a ledger. */
   .qa { padding-top: 2rem; border-top: 1px solid var(--rule); margin-top: 2rem; }
   .qa:first-child { padding-top: 0; border-top: 0; margin-top: 0; }
@@ -483,16 +471,15 @@ const PAGE = (body = "", librarian = true, guest = false) => `<!doctype html>
 </style>
 <div class="sheet">
 <header>
-  <!-- The ensō: one stroke, left open. Drawn as a filled ring whose outer edge is a circle
-       and whose inner edge is pulled off-centre, so the stroke swells where a loaded brush
-       lands and thins where it lifts, with the opening at the lift. The seal sits low and
-       right, small and square, the one vermilion on the sheet. -->
+  <!-- The eclipse. A ring drawn as two subpaths under evenodd, the inner circle pushed down
+       and right so the corona thins toward the bottom-right and thickens opposite, the way a
+       disc slightly off-centre lets more light past one side. The bead sits where the ring
+       runs thinnest, the last point of light before totality. -->
   <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
-    <path class="enso" d="M 39.8 7.6
-      A 26 26 0 1 0 56.4 41.5
-      l -2.5 -1.2
-      A 23.2 23.2 0 1 1 40.9 10.3 Z"/>
-    <rect class="seal" x="47" y="47" width="7" height="7"/>
+    <path class="corona" fill-rule="evenodd"
+      d="M 5 32 A 27 27 0 1 1 59 32 A 27 27 0 1 1 5 32 Z
+         M 11 33.5 A 23 23 0 1 1 57 33.5 A 23 23 0 1 1 11 33.5 Z"/>
+    <circle class="bead" cx="51.5" cy="46.5" r="3"/>
   </svg>
   <h1>guru</h1>
   <!-- Shakkei, borrowed scenery: a garden composes the landscape beyond its wall into its
@@ -507,7 +494,7 @@ const PAGE = (body = "", librarian = true, guest = false) => `<!doctype html>
 <div id="out"><div id="hist"></div>${body}</div>
 <footer>
   ${guest
-    ? `<span class="note">You are reading as a guest. Find is open to everyone; asking needs a reader's account.</span>`
+    ? `<span class="note">You are reading as a guest, with ${GUEST_ASKS} composed answers to spend. Find is free and uncounted.</span>`
     : `${librarian
         ? `<label class="file">Add a book
     <input type="file" accept=".pdf,.epub" id="f"></label>
@@ -696,6 +683,7 @@ if (process.argv.includes("--selfcheck")) {
     assert.doesNotMatch(PAGE("", true, true), gone, `guest chrome must not offer ${gone}`);
   }
   assert.match(PAGE("", true, true), /reading as a guest/);
+  assert.match(PAGE("", true, true), /composed answers to spend/, "a guest is told what they have");
   assert.match(PAGE("", true, true), /formaction="\/find"/, "Find stays open to guests");
   // History renders into its own container above the server-rendered body (the shelf), so
   // past answers stack without displacing it. The body must stay inside #out for the
@@ -703,6 +691,24 @@ if (process.argv.includes("--selfcheck")) {
   assert.match(PAGE("SHELF"), /<div id="out"><div id="hist"><\/div>SHELF<\/div>/);
   assert.match(PAGE(""), /localStorage/, "history lives in the reader's browser");
   assert.match(PAGE(""), /guru-history/, "history is namespaced to guru");
+  // The eclipse replaced the old circle mark; the bead is the one vermilion on the sheet.
+  assert.match(PAGE(""), /class="corona"/);
+  assert.match(PAGE(""), /class="bead"/);
+  assert.doesNotMatch(PAGE(""), /enso/, "the old mark is gone");
+  // Today's passage is gone; the front page is the shelf and the question.
+  assert.doesNotMatch(PAGE(""), /Today.s passage/);
+
+  // The address the quota counts is the one OUR proxy observed, which is the last entry in
+  // the chain. A client that invents a header must not be able to mint itself new visitors.
+  const addr = (h: Record<string, unknown>, socket = "10.0.0.9") =>
+    clientAddress({ headers: h, socket: { remoteAddress: socket } } as any);
+  assert.equal(addr({ "x-forwarded-for": "203.0.113.7" }), "203.0.113.7");
+  assert.equal(
+    addr({ "x-forwarded-for": "1.2.3.4, 203.0.113.7" }),
+    "203.0.113.7",
+    "a spoofed leading entry must not become the identity",
+  );
+  assert.equal(addr({}), "10.0.0.9", "with no proxy in front, the socket is the truth");
 
   console.error("server selfcheck ok");
   process.exit(0);
@@ -735,30 +741,6 @@ function shelf(user: string) {
       ? `<details class="note"><summary>${shelved.length} books on your shelf</summary>` +
         `<ul class="shelf">${shelved.join("")}</ul></details>`
       : "")
-  );
-}
-
-/** Today's passage: one stone from the reader's own garden, arranged by the calendar. */
-function dailyPassage(user: string) {
-  const db = userLibrary(user);
-  const n = (db.prepare("select count(*) n from chunks where length(text) between 240 and 1200").get() as { n: number }).n;
-  if (!n) {
-    db.close();
-    return "";
-  }
-  const row = db
-    .prepare(
-      "select c.text t, c.page_start ps, b.title, b.author from chunks c join books b on c.book_id = b.id " +
-        "where length(c.text) between 240 and 1200 order by c.id limit 1 offset ?",
-    )
-    .get(pickDailyOffset(n, new Date())) as { t: string; ps: string; title: string; author: string } | undefined;
-  db.close();
-  if (!row) return "";
-  const now = new Date();
-  return (
-    `<section class="daily"><p class="note">Today's passage · ${MONTH_NAMES[now.getUTCMonth()]} ${now.getUTCDate()}</p>` +
-    `<blockquote><p>${escape(trimPassage(row.t))}</p>` +
-    `<cite>${escape(row.title)}, ${escape(row.author)}, p. ${escape(String(row.ps))}</cite></blockquote></section>`
   );
 }
 
@@ -824,7 +806,7 @@ createServer(async (req, res) => {
   const librarian = !guest && isLibrarian(user);
   const page = (html = "") => PAGE(html, librarian, guest);
 
-  if (req.method === "GET" && req.url === "/") return send(200, page(dailyPassage(user) + shelf(user)));
+  if (req.method === "GET" && req.url === "/") return send(200, page(shelf(user)));
 
   // The page a citation lives on, for reading a quotation in its surroundings. Title and
   // page arrive from the client's parse of the citation line; an unknown pair is just an
@@ -961,16 +943,30 @@ createServer(async (req, res) => {
 
   if (req.method !== "POST" || req.url !== "/ask") return send(404, page("<p>Not found.</p>"));
 
-  // Composed answers cost real model calls per question, so the shared room reads and
-  // searches free of charge and the asking is what an account is for.
+  // A guest gets a handful of composed answers, counted per address, so the room can
+  // actually be judged rather than just looked at. Search stays free and uncounted.
   if (guest) {
-    return send(403, page("<p>Reading and Find are open to everyone. A composed answer costs the librarian money per question, so asking needs a reader's account.</p>"));
+    const ip = clientAddress(req);
+    const used = (quotaGet.get(ip) as { n: number } | undefined)?.n ?? 0;
+    if (used >= GUEST_ASKS) {
+      return send(
+        429,
+        page(
+          `<p>That is ${GUEST_ASKS} composed answers, which is what the reading room offers. ` +
+            `Find still works and costs nothing, so the shelf is still open to search. ` +
+            `For a library of your own, <a href="mailto:alandevaney@gmail.com">ask for an account</a>.</p>`,
+        ),
+      );
+    }
   }
 
   const query = new URLSearchParams(await body(req)).get("q")?.trim() ?? "";
   if (!query) return send(400, page("<p>Ask something.</p>"));
   if (query.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>"));
   logEvent(user, "ask", query);
+  // Counted before the work and after validation: the model calls happen whether or not the
+  // pipeline finds anything, and a failed question that refunds its slot is a free retry loop.
+  if (guest) quotaBump.run(clientAddress(req));
 
   try {
     const db = userLibrary(user);
