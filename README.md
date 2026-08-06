@@ -1,4 +1,4 @@
-# ◍ guru
+# <img src="mark.svg" alt="" height="30"> guru
 
 A study companion for your own multi-tradition spiritual library that never misquotes.
 Every substantive claim is a verbatim quote cited with title, author, and page. No citation,

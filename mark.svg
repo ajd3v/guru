@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 64" width="96" height="64" role="img" aria-label="guru">
+  <!-- The same vesica piscis the app draws in its header: two circles overlapping by a
+       radius, with the almond between them in rubric.
+
+       One file rather than a light and a dark variant. GitHub can switch between two images
+       with <picture>, but a static mark that reads on both grounds is less to keep in step,
+       so the colours are chosen to sit between the two: the outline is the mid-tone the page
+       already uses for quiet text, and the rubric is halfway between its paper and lamplight
+       values. No <style> block and no animation, because both are stripped when an SVG is
+       loaded as an image. -->
+  <g fill="none" stroke="#857f72" stroke-width="1.5">
+    <path d="M48 9.5A26 26 0 0 1 48 54.5A26 26 0 0 1 48 9.5Z" fill="#b3502c" stroke="none"/>
+    <circle cx="35" cy="32" r="26"/>
+    <circle cx="61" cy="32" r="26"/>
+  </g>
+</svg>
