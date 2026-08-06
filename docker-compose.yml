@@ -40,6 +40,10 @@ services:
       - GURU_GUEST=${GURU_GUEST:-}
       - GURU_GUEST_ASKS=${GURU_GUEST_ASKS:-5}
       - GURU_GUEST_DEVICES=${GURU_GUEST_DEVICES:-4}
+      # A showcase rather than a workspace: hides "Add a book", "Export" and "Delete all"
+      # from everyone, operator included, so the public page offers only Find and Ask. The
+      # routes still exist and still refuse strangers on their own; this draws no doors.
+      - GURU_DEMO=${GURU_DEMO:-}
       # Any OpenAI-compatible endpoint. The model ids are optional and the per-provider
       # defaults in src/llm.ts apply when they are unset, which includes being set to the
       # empty string, since `${VAR:-}` below writes one whether or not VAR exists.

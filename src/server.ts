@@ -54,6 +54,20 @@ const MAX_ASKS = Number(process.env.GURU_MAX_ASKS ?? 40);
 const GUEST_ASKS = Number(process.env.GURU_GUEST_ASKS ?? 5);
 
 /**
+ * A deployment that is a showcase rather than a workspace.
+ *
+ * The public instance is something to be tried, not operated: the shelf is fixed and the
+ * only interesting verbs are Find and Ask. Drawing "Add a book", "Export" and "Delete all"
+ * on it invites a visitor to reach for controls that are not theirs, and puts a destructive
+ * one within a typed word of the ask box on a page strangers are meant to poke at.
+ *
+ * Chrome only, and deliberately so. The routes already refuse for themselves, which is what
+ * makes them safe; this only stops drawing doors. The operator keeps every one of them by
+ * hand, and any deployment that does not set this keeps the buttons too.
+ */
+const DEMO = process.env.GURU_DEMO === "1" || process.env.GURU_DEMO === "true";
+
+/**
  * Stream the body to disk, refusing to buffer it.
  *
  * The cap is checked per chunk rather than against content-length: the header is a claim by
@@ -432,9 +446,10 @@ function clientAddress(req: IncomingMessage) {
  * script from anywhere, so the page renders whole on the first byte.
  */
 // `librarian` decides whether the controls that move books are drawn; `guest` strips the
-// chrome a shared reading room must not offer. Both are chrome only; the routes refuse for
-// themselves.
-const PAGE = (body = "", librarian = true, guest = false) => `<!doctype html>
+// chrome a shared reading room must not offer; `demo` strips them from everybody, operator
+// included, because a showcase is for reading. All three are chrome only; the routes refuse
+// for themselves.
+const PAGE = (body = "", librarian = true, guest = false, demo = DEMO) => `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>guru</title>
 <meta name="theme-color" content="#f3efe3">
@@ -587,7 +602,9 @@ const PAGE = (body = "", librarian = true, guest = false) => `<!doctype html>
 <footer>
   ${guest
     ? `<span class="note">You are reading as a guest, with ${GUEST_ASKS} composed answers to spend. Find is free and uncounted.</span>`
-    : `${librarian
+    : demo
+      ? `<span class="note">A fixed shelf, open to read and search.</span>`
+      : `${librarian
         ? `<label class="file">Add a book
     <input type="file" accept=".pdf,.epub" id="f"></label>
   <span class="note" id="s"></span>
@@ -769,7 +786,11 @@ if (process.argv.includes("--selfcheck")) {
   assert.doesNotMatch(PAGE("", false), /Add a book/);
   assert.doesNotMatch(PAGE("", false), /href="\/export"/);
   assert.match(PAGE("", false), /action="\/delete"/, "a reader may still delete their own library");
-  assert.doesNotMatch(PAGE("", false), /getElementById\("f"\)\.onchange/, "no handler for an absent picker");
+  // The uploader wires itself only if the picker exists, so an absent one is inert. The
+  // assertion that used to sit here looked for `getElementById("f").onchange`, which this
+  // file has never contained, so it could not fail. Test the guard that does the work.
+  assert.match(PAGE("", true), /if \(picker\) picker\.onchange/, "the uploader is guarded on the picker");
+  assert.doesNotMatch(PAGE("", false), /type="file"/, "a reader who cannot add books gets no picker");
   // The reading room. A guest sees no door that moves books or destroys a shared shelf.
   for (const gone of [/Add a book/, /href="\/export"/, /action="\/delete"/]) {
     assert.doesNotMatch(PAGE("", true, true), gone, `guest chrome must not offer ${gone}`);
@@ -777,6 +798,16 @@ if (process.argv.includes("--selfcheck")) {
   assert.match(PAGE("", true, true), /reading as a guest/);
   assert.match(PAGE("", true, true), /composed answers to spend/, "a guest is told what they have");
   assert.match(PAGE("", true, true), /formaction="\/find"/, "Find stays open to guests");
+
+  // A showcase deployment draws none of it, for anyone. The operator still has every route;
+  // this only stops putting a destructive control a typed word away from the ask box on a
+  // page whose whole purpose is that strangers poke at it.
+  for (const gone of [/Add a book/, /href="\/export"/, /action="\/delete"/, /type="file"/]) {
+    assert.doesNotMatch(PAGE("", true, false, true), gone, `a demo must not draw ${gone}`);
+  }
+  assert.match(PAGE("", true, false, true), /A fixed shelf/, "and says why the controls are absent");
+  // Off by default: a private deployment is a workspace and keeps its controls.
+  assert.match(PAGE("", true, false, false), /Add a book/, "not a demo unless it says so");
   // History renders into its own container above the server-rendered body (the shelf), so
   // past answers stack without displacing it. The body must stay inside #out for the
   // non-JS POST path, which renders the whole answer server-side.
