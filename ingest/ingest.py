@@ -251,6 +251,30 @@ def sample_pdf(path=None):
     return path
 
 
+def pdf_meta(path):
+    """{"pages": N} for the page-streaming endpoints. N=0 on anything unreadable."""
+    import fitz
+    try:
+        with fitz.open(path) as doc:
+            return {"pages": len(doc)}
+    except Exception:
+        return {"pages": 0}
+
+
+def render_page(path, n, dpi=144):
+    """One page as PNG bytes, rendered at `dpi` (144 ~= a crisp phone screen). None if
+    the page doesn't exist or the file won't open, so the server answers 404, never 500."""
+    import fitz
+    try:
+        with fitz.open(path) as doc:
+            if not (1 <= n <= len(doc)):
+                return None
+            zoom = dpi / 72
+            return doc[n - 1].get_pixmap(matrix=fitz.Matrix(zoom, zoom)).tobytes("png")
+    except Exception:
+        return None
+
+
 def selfcheck():
     path = sample_pdf()
     r = ingest(path)
@@ -263,6 +287,12 @@ def selfcheck():
     joined = " ".join(c["text"] for c in r["chunks"])
     assert all(f"Page {i}." in joined for i in (1, 2, 3)), "lost a page"
     assert ingest(path, page_offset=10)["chunks"][0]["page_start"] == 11, "offset knob broken"
+
+    assert pdf_meta(path) == {"pages": 4}
+    assert pdf_meta("/no/such.pdf") == {"pages": 0}
+    png = render_page(path, 4)
+    assert png and png[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
+    assert render_page(path, 99) is None, "out-of-range page should be None"
     print("selfcheck ok:", len(r["chunks"]), "chunks", file=sys.stderr)
 
 
@@ -271,6 +301,16 @@ if __name__ == "__main__":
         selfcheck()
     elif "--sample" in sys.argv:
         print(sample_pdf(sys.argv[sys.argv.index("--sample") + 1]))
+    elif "--meta" in sys.argv:
+        i = sys.argv.index("--meta")
+        json.dump(pdf_meta(sys.argv[i + 1]), sys.stdout)
+    elif "--render" in sys.argv:
+        i = sys.argv.index("--render")
+        n, dpi = int(sys.argv[i + 2]), int(sys.argv[i + 3]) if len(sys.argv) > i + 3 else 144
+        png = render_page(sys.argv[i + 1], n, dpi)
+        if png is None:
+            raise SystemExit(1)
+        sys.stdout.buffer.write(png)
     else:
         path, offset = parse_args(sys.argv[1:])
         if not path:

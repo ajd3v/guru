@@ -35,7 +35,7 @@ export function open(path: string) {
   db.exec(`
     create table if not exists books (
       id integer primary key,
-      title text, author text, source text unique, paginated integer
+      title text, author text, source text unique, paginated integer, pdf blob
     );
     create table if not exists chunks (
       id integer primary key,
@@ -50,6 +50,13 @@ export function open(path: string) {
     );
     create index if not exists asks_by_day on asks (at);
   `);
+  // A library file created before the `pdf` column existed keeps its own table as-is:
+  // `create table if not exists` above is a no-op on it. Add the column once, quietly.
+  try {
+    db.exec("alter table books add column pdf blob");
+  } catch {
+    // already there
+  }
   return db;
 }
 
@@ -116,12 +123,17 @@ export function userLibrary(userId: string, dir = process.env.GURU_USER_DIR ?? "
  * `contexts` are the LLM-situated versions of each chunk. They are indexed but never
  * stored: quotes must verify against the author's words, not the contextualizer's.
  */
-export async function addBook(db: Database.Database, book: Book, contexts?: string[]) {
+export async function addBook(
+  db: Database.Database,
+  book: Book,
+  contexts?: string[],
+  pdf?: Buffer,
+) {
   const indexed = book.chunks.map((c, i) => contexts?.[i] ?? c.text);
   const vectors = await embed(indexed);
 
   const insertBook = db.prepare(
-    "insert or replace into books (title, author, source, paginated) values (?,?,?,?)",
+    "insert or replace into books (title, author, source, paginated, pdf) values (?,?,?,?,?)",
   );
   const insertChunk = db.prepare(
     "insert into chunks (book_id, chunk_id, text, page_start, page_end) values (?,?,?,?,?)",
@@ -152,8 +164,9 @@ export async function addBook(db: Database.Database, book: Book, contexts?: stri
       deleteBook.run(prior.id);
     }
 
-    const bookId = insertBook.run(book.title, book.author, book.source, book.paginated ? 1 : 0)
-      .lastInsertRowid as number;
+    const bookId = insertBook.run(
+      book.title, book.author, book.source, book.paginated ? 1 : 0, pdf ?? null,
+    ).lastInsertRowid as number;
     book.chunks.forEach((c, i) => {
       const id = insertChunk.run(
         bookId, c.chunk_id, c.text, String(c.page_start), String(c.page_end),
@@ -215,6 +228,15 @@ export async function search(db: Database.Database, query: string, k = CANDIDATE
 
   const byId = new Map(rows.map((r) => [r.id, r]));
   return top.map(([id, score]) => ({ ...byId.get(id), score })).filter((h) => h.id);
+}
+
+/** The stored source PDF for a book, by title, or undefined if it has none (EPUB, or ingested
+ * before this column existed). Bytes only: the caller materializes them to disk for rendering. */
+export function bookPdf(db: Database.Database, title: string): { id: number; pdf: Buffer } | undefined {
+  const row = db.prepare("select id, pdf from books where title = ?").get(title) as
+    | { id: number; pdf: Buffer | null }
+    | undefined;
+  return row?.pdf ? { id: row.id, pdf: row.pdf } : undefined;
 }
 
 /** How guru cites: [Title, Author, p. N], or chapter/paragraph when the source has no pages. */

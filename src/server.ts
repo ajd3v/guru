@@ -17,12 +17,12 @@ import { execFileSync } from "node:child_process";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import { authenticate, basicAuthUser, isLibrarian, toWebRequest } from "./auth.ts";
-import { createReadStream, createWriteStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { askedToday, cite, libraryPath, recordAsk, search, userLibrary } from "./store.ts";
+import { askedToday, bookPdf, cite, libraryPath, recordAsk, search, userLibrary } from "./store.ts";
 import { ask, expandQuery, plainDashes, rerank } from "./llm.ts";
 import { countActive, enqueue, listJobs, openJobs } from "./jobs.ts";
 
@@ -33,6 +33,26 @@ const MAX_UPLOAD = Number(process.env.GURU_MAX_UPLOAD ?? 100 * 1024 * 1024);
 /** Fair-use cap from SPEC.md, counted against books already held plus books in flight. */
 const MAX_BOOKS = Number(process.env.GURU_MAX_BOOKS ?? 50);
 const ACCEPTED = [".pdf", ".epub"];
+
+const PY = ".venv/bin/python";
+const SIDECAR = "ingest/ingest.py";
+/** Materialized copies of stored PDFs, one file per book, so poppler-less fitz has a real path
+ * to open. Same sidecar-subprocess boundary as ingest: never render a PDF in the server's own
+ * process. Filenames are book ids, not reader input, so there is nothing here to path-traverse. */
+const PDF_CACHE = process.env.GURU_PDF_CACHE ?? "data/pdf-cache";
+
+/** The reader's copy of a book's PDF on disk, written once and reused by size (a re-ingest of
+ * the same title overwrites it). undefined when the book has no stored PDF (EPUB, or missing). */
+function materializePdf(db: SqliteDatabase.Database, user: string, title: string): string | undefined {
+  const row = bookPdf(db, title);
+  if (!row) return undefined;
+  const path = join(PDF_CACHE, `${user}-${row.id}.pdf`);
+  if (!existsSync(path) || statSync(path).size !== row.pdf.length) {
+    mkdirSync(PDF_CACHE, { recursive: true });
+    writeFileSync(path, row.pdf);
+  }
+  return path;
+}
 
 /**
  * Questions per reader per UTC day.
@@ -532,6 +552,7 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO) => `<!doc
              background: var(--field); border: 1px solid var(--rule); border-radius: 2px;
              font-size: .8125rem; line-height: 1.7; max-height: 18rem; overflow: auto; }
   .context mark { background: transparent; box-shadow: inset 0 -0.45em rgba(111,130,100,.3); color: inherit; }
+  .context .pdf-page { display: block; max-width: 100%; margin-top: .6rem; border-radius: 2px; }
   /* Between passages, three stones in the gravel where the paragraphus used to stand. */
   blockquote + p:not(:empty)::before {
     content: "\\00B7 \\00B7 \\00B7"; color: var(--moss); opacity: .8; letter-spacing: .3em;
@@ -686,6 +707,29 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO) => `<!doc
     }
     c.after(div);
     div.querySelector("mark")?.scrollIntoView({ block: "nearest" });
+
+    // The real page, only fetched if the reader asks: a citation the model never quoted
+    // this session should not cost anyone a page render they will not look at.
+    try {
+      const m = await (await fetch("/pdf-meta?title=" + encodeURIComponent(title))).json();
+      if (m.available) {
+        const link = document.createElement("a");
+        link.href = "#";
+        link.className = "note";
+        link.textContent = "view page image";
+        link.onclick = (e2) => {
+          e2.preventDefault();
+          if (div.querySelector("img")) return;
+          const img = document.createElement("img");
+          img.className = "pdf-page";
+          img.loading = "lazy";
+          img.alt = title + ", p. " + pageNo;
+          img.src = "/pdf-page?title=" + encodeURIComponent(title) + "&page=" + pageNo;
+          div.append(img);
+        };
+        div.append(link);
+      }
+    } catch {}
   });
 
   form.addEventListener("submit", async (e) => {
@@ -1020,6 +1064,46 @@ createServer(async (req, res) => {
     return void res.end(
       JSON.stringify(row ? { text: row.t, page_start: row.ps, page_end: row.pe } : { text: "" }),
     );
+  }
+
+  // Whether a citation's book has its original PDF on file, and how many pages, so the
+  // client only offers "view page image" where a page can actually be streamed.
+  if (req.method === "GET" && req.url?.startsWith("/pdf-meta")) {
+    const title = new URL(req.url, "http://x").searchParams.get("title") ?? "";
+    const db = userLibrary(user);
+    const path = title ? materializePdf(db, user, title) : undefined;
+    db.close();
+    let pages = 0;
+    if (path) {
+      try {
+        pages = JSON.parse(execFileSync(PY, [SIDECAR, "--meta", path], { encoding: "utf8" })).pages ?? 0;
+      } catch {
+        // corrupt PDF, missing fitz, whatever — no pages, no link shown
+      }
+    }
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    return void res.end(JSON.stringify({ available: pages > 0, pages }));
+  }
+
+  // One rendered page, streamed on demand: the reader who taps "view page image" pulls a
+  // few hundred KB for that page, not the whole PDF the answer happened to cite.
+  if (req.method === "GET" && req.url?.startsWith("/pdf-page")) {
+    const u = new URL(req.url, "http://x");
+    const title = u.searchParams.get("title") ?? "";
+    const n = Number(u.searchParams.get("page"));
+    const db = userLibrary(user);
+    const path = title ? materializePdf(db, user, title) : undefined;
+    db.close();
+    const fail = () => res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("page unavailable");
+    if (!path || !Number.isInteger(n) || n < 1) return void fail();
+    let png: Buffer;
+    try {
+      png = execFileSync(PY, [SIDECAR, "--render", path, String(n)], { maxBuffer: 32 * 1024 * 1024 });
+    } catch {
+      return void fail();
+    }
+    res.writeHead(200, { "content-type": "image/png", "cache-control": "private, max-age=3600" });
+    return void res.end(png);
   }
 
   // Retrieval without composition: hybrid search only, no answer model in the loop, so it

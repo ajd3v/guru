@@ -22,7 +22,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert";
-import { addBook, askedToday, cite, open, recordAsk, search, userLibrary, type Book } from "./store.ts";
+import { addBook, askedToday, bookPdf, cite, open, recordAsk, search, userLibrary, type Book } from "./store.ts";
 import {
   claim,
   countActive,
@@ -43,6 +43,12 @@ function extract(path: string, pageOffset = 0): Book {
   const args = [SIDECAR, path, ...(pageOffset ? ["--page-offset", String(pageOffset)] : [])];
   const out = execFileSync(PY, args, { maxBuffer: 256 * 1024 * 1024, encoding: "utf8" });
   return JSON.parse(out);
+}
+
+/** The source PDF's own bytes, kept alongside the extracted text so pages can be streamed
+ * on demand later (see server.ts's /pdf-page). EPUBs have no page images, so undefined. */
+function pdfBytes(path: string): Buffer | undefined {
+  return path.toLowerCase().endsWith(".pdf") ? readFileSync(path) : undefined;
 }
 
 function db() {
@@ -71,7 +77,7 @@ async function add(path: string, pageOffset: number, withContext: boolean) {
   }
   const book = extract(path, pageOffset);
   const contexts = withContext ? await contextualize(book, book.chunks) : undefined;
-  await addBook(db(), book, contexts);
+  await addBook(db(), book, contexts, pdfBytes(path));
   console.log(
     `added: ${book.title}, ${book.author} (${book.chunks.length} chunks` +
       `${withContext ? ", contextualized" : ""})`,
@@ -188,7 +194,7 @@ async function worker() {
       // The sidecar names the source after the file it read, which here is a generated
       // upload path that is unique every time, so re-uploading a book would add a second
       // copy instead of replacing the first. Key on what the reader actually sent.
-      await addBook(userLibrary(job.user_id), { ...book, source: job.filename });
+      await addBook(userLibrary(job.user_id), { ...book, source: job.filename }, undefined, pdfBytes(job.path));
       finish(queue, job.id);
       console.error(`ingested ${book.title} for ${job.user_id} (${book.chunks.length} chunks)`);
     } catch (err) {
@@ -211,7 +217,11 @@ async function selfcheck() {
   }).trim();
 
   const conn = open(join(dir, "library.db"));
-  await addBook(conn, extract(pdf));
+  await addBook(conn, extract(pdf), undefined, readFileSync(pdf));
+
+  // The source PDF travels with the book, for on-demand page streaming (see /pdf-page).
+  assert.deepEqual(bookPdf(conn, "Yoga Sutras")?.pdf, readFileSync(pdf));
+  assert.equal(bookPdf(conn, "no such book"), undefined);
 
   // The whole promise: ask for a known quote, get the page it is actually on.
   const hits = await search(conn, "Yoga is the stilling of the fluctuations of the mind");
