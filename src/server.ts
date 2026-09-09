@@ -109,6 +109,7 @@ async function body(req: IncomingMessage, limit = 64 * 1024) {
 
 async function receive(req: IncomingMessage, dest: string, limit: number) {
   const out = createWriteStream(dest);
+  const closed = new Promise<void>((resolve) => out.once("close", resolve));
   let size = 0;
   try {
     for await (const chunk of req) {
@@ -119,7 +120,10 @@ async function receive(req: IncomingMessage, dest: string, limit: number) {
     await new Promise<void>((resolve, reject) => out.end(() => resolve()).on("error", reject));
     return size;
   } catch (err) {
+    // Opening the file is asynchronous. Wait for close so it cannot appear after removal.
+    out.once("error", () => {});
     out.destroy();
+    await closed;
     await rm(dest, { force: true });
     throw err;
   }
@@ -334,9 +338,11 @@ if (process.argv.includes("--selfcheck")) {
   assert.equal(await receive(genBody(4) as any, small, 8 * 1024), 4096);
   assert.equal(statSync(small).size, 4096);
 
-  const over = join(tmp, "over.bin");
-  await assert.rejects(receive(genBody(64) as any, over, 8 * 1024), /too large/);
-  assert.equal(existsSync(over), false, "an over-cap upload left its partial file behind");
+  for (const limit of [0, 8 * 1024]) {
+    const over = join(tmp, `over-${limit}.bin`);
+    await assert.rejects(receive(genBody(64) as any, over, limit), /too large/);
+    assert.equal(existsSync(over), false, "an over-cap upload left its partial file behind");
+  }
   rmSync(tmp, { recursive: true, force: true });
 
   // No exit here: the PAGE assertions further down must run too. This block used to exit,
