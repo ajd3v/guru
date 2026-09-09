@@ -21,7 +21,8 @@
 # looks like a backup until the day it is needed.
 set -euo pipefail
 
-[ -f "$HOME/.guru-backup.env" ] && . "$HOME/.guru-backup.env"
+BACKUP_ENV="${GURU_BACKUP_ENV:-$HOME/.guru-backup.env}"
+[ -f "$BACKUP_ENV" ] && . "$BACKUP_ENV"
 
 # The staging directory lives on the volume itself, so no volume name is needed here.
 DIR="${GURU_BACKUP_DIR:-/home/deploy/backups}"

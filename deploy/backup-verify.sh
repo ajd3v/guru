@@ -13,7 +13,8 @@
 # Worth running monthly from cron alongside the backup itself.
 set -euo pipefail
 
-[ -f "$HOME/.guru-backup.env" ] && . "$HOME/.guru-backup.env"
+BACKUP_ENV="${GURU_BACKUP_ENV:-$HOME/.guru-backup.env}"
+[ -f "$BACKUP_ENV" ] && . "$BACKUP_ENV"
 DIR="${GURU_BACKUP_DIR:-/home/deploy/backups}"
 
 ARCHIVE="${1:-$(ls -t "$DIR"/guru-*.tar.gz 2>/dev/null | head -1)}"

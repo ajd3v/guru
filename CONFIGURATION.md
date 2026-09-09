@@ -71,6 +71,6 @@ docker build -f engine/Dockerfile --build-arg ENGINE_DIR=engine -t field-notes .
 
 Set `GURU_PYTHON` if the Python environment is outside `.venv`. Data paths remain relative to the process working directory unless explicitly set. Source code and the ingest sidecar resolve from the engine directory.
 
-Backups accept `GURU_CONTAINER` to select an application container. Give each deployment its own `GURU_BACKUP_DIR`. Run both backup and restore verification before replacing a deployed engine version.
+Backups accept `GURU_CONTAINER` to select an application container. Give each deployment its own `GURU_BACKUP_DIR`. Set `GURU_BACKUP_ENV` to an application-specific environment file, or `/dev/null` to use only the current environment. Run both backup and restore verification before replacing a deployed engine version.
 
 Global logs and sign-in links require `GURU_OPERATORS`. When it is unset, an explicitly configured `GURU_LIBRARIAN` list supplies the operators. An empty list grants nobody access. Managing a personal library does not grant access to other readers. Browser history is scoped to the signed-in reader. Old unscoped browser history remains stored but is no longer displayed.
