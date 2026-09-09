@@ -8,7 +8,8 @@ try {
   // no .env, or a runtime without loadEnvFile. Env vars may still be set externally
 }
 
-import { profile, PYTHON as PY, SIDECAR } from "./profile.ts";
+import { profile, PYTHON as PY, SIDECAR, broaden } from "./profile.ts";
+import { excerpt } from "./excerpt.ts";
 import { fetchStarter } from "./starter.ts";
 export { fetchStarter } from "./starter.ts";
 import { execFileSync } from "node:child_process";
@@ -96,21 +97,22 @@ async function starter(withContext: boolean, limit = Infinity) {
   }
 }
 
-/**
- * The retrieval stack, measured on 90 eval cases (recall@5):
- *   search alone 20% · +rerank 37% · +HyDE 59%
- * HyDE is what raises the recall ceiling; rerank then promotes almost everything
- * search found. Both are needed. Neither alone gets close.
- */
+/** Ask adds model query expansion and reranking to the local search. */
 async function retrieve(query: string) {
-  return rerank(query, await search(db(), await expandQuery(query)));
+  const conn = db();
+  try {
+    return await rerank(query, await search(conn, await expandQuery(query), undefined, { literalQuery: query }));
+  } finally { conn.close(); }
 }
 
 async function find(query: string) {
-  for (const hit of await retrieve(query)) {
-    console.log(`\n${cite(hit)}  score ${hit.score.toFixed(4)}`);
-    console.log(hit.text.slice(0, 300).replace(/\n/g, " "));
-  }
+  const conn = db();
+  try {
+    for (const hit of (await search(conn, broaden(query), undefined, { literalQuery: query })).slice(0, 8)) {
+      console.log(`\n${cite(hit)}  score ${hit.score.toFixed(4)}`);
+      console.log(excerpt(hit.text, query, 500).replace(/\n/g, " "));
+    }
+  } finally { conn.close(); }
 }
 
 async function ask(query: string) {

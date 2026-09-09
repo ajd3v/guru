@@ -13,6 +13,7 @@ try {
 
 import { profile, ENGINE_ROOT, PYTHON as PY, SIDECAR, broaden } from "./profile.ts";
 import { datedReading, monthDayIn, MONTHS } from "./reading.ts";
+import { excerpt } from "./excerpt.ts";
 import assert from "node:assert";
 import SqliteDatabase from "better-sqlite3";
 import { execFileSync } from "node:child_process";
@@ -1183,12 +1184,12 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     if (q.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>"));
     logEvent(user, "find", q);
     const db = userLibrary(user);
-    const hits = (await search(db, broaden(q))).slice(0, 8);
+    const hits = (await search(db, broaden(q), undefined, { literalQuery: q })).slice(0, 8);
     db.close();
     const items = hits
       .map(
         (h) =>
-          `<blockquote><p>${escape(h.text.length > 500 ? h.text.slice(0, 500) + "…" : h.text)}</p>` +
+          `<blockquote><p>${escape(excerpt(h.text, q, 500))}</p>` +
           `${citationMarkup(h)}</blockquote>`,
       )
       .join("");
@@ -1367,7 +1368,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
 
     if (profile.showQuota) emit("quota", { text: `${Math.max(0, MAX_ASKS - askedToday(db))} of ${MAX_ASKS} questions left today` });
     emit("stage", { text: "searching your library" });
-    const hits = await rerank(query, await search(db, await expandQuery(query)));
+    const hits = await rerank(query, await search(db, await expandQuery(query), undefined, { literalQuery: query }));
     if (!hits.length) {
       logOutcome(logId, "no passages");
       const none = "<p>No supporting passage was found for this question.</p>";

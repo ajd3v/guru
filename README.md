@@ -22,6 +22,7 @@ finding it outdoors; Okakura, Nitobe and Hearn on the Japanese inner life. Every
 resolved against Gutenberg rather than recalled.
 
 See [CONFIGURATION.md](CONFIGURATION.md) to run another library on the same engine.
+[RETRIEVAL.md](RETRIEVAL.md) records the current local search measurements.
 [SPEC.md](SPEC.md) contains historical design notes and measurements.
 
 ## How it refuses to misquote
@@ -102,7 +103,7 @@ list of `user:password`:
 
 ```sh
 GURU_SINGLE_USER=reader
-GURU_BASIC_AUTH=ada:secret,lin:other
+GURU_BASIC_AUTH=ada:replace-with-a-long-password,lin:use-a-different-long-password
 ```
 
 The username that matches is the reader's id, so each one gets `data/users/<username>.db`.
@@ -159,15 +160,16 @@ bad for the search stage's reasons.
 ```sh
 GURU_DB=data/eval.db node src/cli.ts starter   # once, to build the eval corpus
 node eval/run.ts                               # hybrid search only, offline and free
+node eval/compare.ts --output /tmp/retrieval.json # paired local search comparison
 node eval/run.ts --hyde --rerank               # the full stack
 node eval/answers.ts --cache data/answer-cases.json --limit 30
 ```
 
 `eval/run.ts` scores whether the right passage reaches the top 5. `eval/answers.ts` scores
-what happens next, and is deliberately not an LLM judge: the cases carry the gold passage, so
-"did the answer quote a sentence from it" is a fact. It freezes the retrieved passages to a
-file so two models can be compared against identical input, since retrieval is stochastic and
-otherwise each model gets a different set of cases.
+whether a rendered quotation contains the case's expected source span. Neither score proves
+that the answer supports the reader's intended claim. The answer evaluation freezes retrieved
+passages so models can be compared against the same input. The paired retrieval check records
+excluded cases and the corpus identity. Model-based runs can incur provider charges.
 
 Subsets are not interchangeable. The eval's `--limit` strides through the case file rather than
 taking a prefix, because the file is ordered by book and a prefix is one author's cases. Two

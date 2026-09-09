@@ -55,7 +55,7 @@ if (!frozen.length) {
   for (const c of cases) {
     // Only cases whose answer is actually in this corpus, judged exactly the way a hit is.
     if (!corpus.some((t) => t.includes(flat(c.expect)))) continue;
-    const candidates = await search(db, await expandQuery(c.query));
+    const candidates = await search(db, await expandQuery(c.query), undefined, { literalQuery: c.query });
     // A case whose answer search never found says nothing about the reranker.
     if (!candidates.some((h) => flat(h.text).includes(flat(c.expect)))) continue;
     frozen.push({ query: c.query, expect: c.expect, candidates });

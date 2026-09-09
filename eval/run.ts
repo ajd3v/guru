@@ -69,7 +69,7 @@ for (const c of cases) {
   bySource[src] ??= { n: 0, top: 0 };
   bySource[src].n++;
 
-  const fused = await search(db, useHyde ? await expandQuery(c.query) : broaden(c.query));
+  const fused = await search(db, useHyde ? await expandQuery(c.query) : broaden(c.query), undefined, { literalQuery: c.query });
   const inFused = rankOf(fused, c.expect);
   const final = useRerank ? await rerank(c.query, fused) : fused.slice(0, 5);
   const inTop = rankOf(final, c.expect);

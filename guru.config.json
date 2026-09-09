@@ -5,6 +5,11 @@
   "tagline": "A garden of borrowed words.",
   "description": "A study companion for your own library that never misquotes.",
   "library": "starter/library.json",
-  "evaluation": ["eval/cases.json", "eval/cases.generated.json"],
-  "sourceRegister": "classic works of philosophy or scripture"
+  "evaluation": [
+    "eval/cases.json",
+    "eval/cases.generated.json",
+    "eval/cases.reader.json"
+  ],
+  "sourceRegister": "classic works of philosophy or scripture",
+  "vectorWeight": 2
 }

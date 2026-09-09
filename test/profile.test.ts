@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { broaden, loadProfile, profile } from "../src/profile.ts";
-import { loadCases, sampleCases, quotesExpected, readFrozen, writeFrozen } from "../eval/corpus.ts";
+import { loadCases, sampleCases, quotesExpected, readFrozen, writeFrozen, caseSplit } from "../eval/corpus.ts";
 import { isOperator } from "../src/auth.ts";
 import { open } from "../src/store.ts";
 import { datedReading, monthDayIn } from "../src/reading.ts";
@@ -25,6 +25,9 @@ try {
   assert.equal(p.evaluation[0], join(directory, "cases.json"));
   assert.equal(p.sourceRegister, "field guides");
   assert.equal(p.cookieName, "field-notes");
+  assert.equal(p.vectorWeight, 1);
+  assert.equal(load({ vectorWeight: 2 }).vectorWeight, 2);
+  for (const vectorWeight of [0, -1, 11, "2", null]) assert.throws(() => load({ vectorWeight }), /vectorWeight/);
   assert.equal(broaden("Where are the beetles?", p.queryExpansions), "Where are the beetles? insects");
   assert.equal(broaden("a lady-bird", p.queryExpansions), "a lady-bird insects");
   assert.equal(broaden("beetleskin", p.queryExpansions), "beetleskin");
@@ -35,6 +38,8 @@ try {
   assert.throws(() => load({ typo: true }), /Unknown/);
   assert.throws(() => load({ dailyReading: { book: "Notebook", label: "Today", timezone: "wrong" } }));
   assert.equal(loadCases().length, profile.evaluation.flatMap((f) => JSON.parse(readFileSync(f, "utf8"))).length);
+  assert.equal(caseSplit({ query: "birds", expect: "birds", split: "holdout" }), "holdout");
+  assert(loadCases().filter((c) => c.source === "reader-holdout").every((c) => caseSplit(c) === "holdout"));
   assert.deepEqual(sampleCases([0, 1, 2, 3, 4, 5], 2), [0, 3]);
   assert.throws(() => sampleCases([], 0), /positive integer/);
   assert.equal(quotesExpected("> The birds arrive in winter. [Writer, Notebook, p. 2]", "The insects arrive in summer."), false);

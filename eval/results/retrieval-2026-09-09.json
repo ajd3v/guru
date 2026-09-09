@@ -1,0 +1,148 @@
+{
+  "date": "2026-09-09",
+  "scope": "Local span retrieval and preview visibility. No composed answers scored.",
+  "measurements": [
+    {
+      "profile": "guru",
+      "identity": {
+        "version": 1,
+        "profile": "a215e07fde95b220a5c9583f4cbcbc3327f2d23ca198a7f13b6fd1986612fc49",
+        "corpus": "55f873643c6b44742f95d0d166b82b080267c56d11e44e862f014c88c9c3803a",
+        "cases": "dfd2e1f2ed7c76898160842f5640ee03b5989b4a6ec1ec483ad94b48b57855a5"
+      },
+      "split": "all",
+      "selected": 163,
+      "engine": {
+        "baseRevision": "5797caf1da8c02c6c7b7fa28e524aa5355270a03",
+        "filesHash": "911c7df93a68699a0e26a6208561cda00742c75633b0ef027b75ec008ae9b840",
+        "method": "weighted-rrf-source-phrases-excerpt-v1"
+      },
+      "embedding": {
+        "model": "Xenova/bge-base-en-v1.5",
+        "dimensions": 768
+      },
+      "runtime": "v26.7.0",
+      "indexes": "90d7ebaa4c2660b9e418118ce3b3ae2c2f8646650304c26bedb2f26bb99de668",
+      "eligible": 163,
+      "excluded": 0,
+      "candidates": 60,
+      "baseline": {
+        "vectorWeight": 1,
+        "preview": "prefix",
+        "hit5": 38,
+        "hitCandidates": 92,
+        "visible5": 19,
+        "visibleCandidates": 46,
+        "mrr5": 0.15194274028629853,
+        "searchMs": 4415.365037999991
+      },
+      "candidate": {
+        "vectorWeight": 2,
+        "preview": "excerpt",
+        "hit5": 43,
+        "hitCandidates": 97,
+        "visible5": 31,
+        "visibleCandidates": 65,
+        "mrr5": 0.1703476482617587,
+        "searchMs": 4469.502780000008
+      },
+      "visibility": {
+        "budget": 700,
+        "prefix": 77,
+        "excerpt": 102,
+        "gained": 40,
+        "lost": 15
+      },
+      "snapshot": "reference",
+      "books": 14,
+      "chunks": 3331,
+      "partitions": {
+        "dev": {
+          "selected": 72,
+          "eligible": 72,
+          "excluded": 0,
+          "baselineTop5": 17,
+          "candidateTop5": 20
+        },
+        "holdout": {
+          "selected": 91,
+          "eligible": 91,
+          "excluded": 0,
+          "baselineTop5": 21,
+          "candidateTop5": 23
+        }
+      }
+    },
+    {
+      "profile": "guru",
+      "identity": {
+        "version": 1,
+        "profile": "a215e07fde95b220a5c9583f4cbcbc3327f2d23ca198a7f13b6fd1986612fc49",
+        "corpus": "ae154389624067b204be37b401555e92d0b9e4a914fbc834e897dd9fbc15c4e7",
+        "cases": "dfd2e1f2ed7c76898160842f5640ee03b5989b4a6ec1ec483ad94b48b57855a5"
+      },
+      "split": "all",
+      "selected": 163,
+      "engine": {
+        "baseRevision": "5797caf1da8c02c6c7b7fa28e524aa5355270a03",
+        "filesHash": "911c7df93a68699a0e26a6208561cda00742c75633b0ef027b75ec008ae9b840",
+        "method": "weighted-rrf-source-phrases-excerpt-v1"
+      },
+      "embedding": {
+        "model": "Xenova/bge-base-en-v1.5",
+        "dimensions": 768
+      },
+      "runtime": "v26.7.0",
+      "indexes": "3d1984cc6a8584ef9b2b01a2856cf90b28897b7c893889e171a4750c62b26057",
+      "eligible": 163,
+      "excluded": 0,
+      "candidates": 60,
+      "baseline": {
+        "vectorWeight": 1,
+        "preview": "prefix",
+        "hit5": 15,
+        "hitCandidates": 56,
+        "visible5": 6,
+        "visibleCandidates": 32,
+        "mrr5": 0.06431492842535788,
+        "searchMs": 17202.08247199995
+      },
+      "candidate": {
+        "vectorWeight": 2,
+        "preview": "excerpt",
+        "hit5": 18,
+        "hitCandidates": 57,
+        "visible5": 16,
+        "visibleCandidates": 42,
+        "mrr5": 0.0731083844580777,
+        "searchMs": 17134.998306999933
+      },
+      "visibility": {
+        "budget": 700,
+        "prefix": 78,
+        "excerpt": 102,
+        "gained": 39,
+        "lost": 15
+      },
+      "snapshot": "deployed-starter-copy",
+      "books": 123,
+      "chunks": 35036,
+      "partitions": {
+        "dev": {
+          "selected": 72,
+          "eligible": 72,
+          "excluded": 0,
+          "baselineTop5": 7,
+          "candidateTop5": 7
+        },
+        "holdout": {
+          "selected": 91,
+          "eligible": 91,
+          "excluded": 0,
+          "baselineTop5": 8,
+          "candidateTop5": 11
+        }
+      }
+    }
+  ]
+}

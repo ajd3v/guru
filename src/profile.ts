@@ -23,6 +23,7 @@ export type Profile = {
   sourceRegister: string;
   queryExpansions: { terms: string[]; append: string }[];
   maxQuotesPerBook: number;
+  vectorWeight: number;
   starterMode: "automatic" | "managed";
   assets: string;
   styles?: string;
@@ -39,7 +40,7 @@ export type Profile = {
 
 const defaults = {
   shortName: "", tagline: "", description: "A study companion for your library.",
-  sourceRegister: "the works in this library", queryExpansions: [], maxQuotesPerBook: 1,
+  sourceRegister: "the works in this library", queryExpansions: [], maxQuotesPerBook: 1, vectorWeight: 1,
   starterMode: "automatic", assets: "assets", themeColor: "#f3efe3", backgroundColor: "#14150f",
   showControls: true, showQuota: false,
 };
@@ -62,6 +63,7 @@ export function loadProfile(path: string): Profile {
     throw new Error("Profile requires evaluation files for its own corpus");
   }
   if (!Number.isInteger(p.maxQuotesPerBook) || p.maxQuotesPerBook < 0 || p.maxQuotesPerBook > 20) throw new Error("Invalid maxQuotesPerBook");
+  if (typeof p.vectorWeight !== "number" || !Number.isFinite(p.vectorWeight) || p.vectorWeight <= 0 || p.vectorWeight > 10) throw new Error("Invalid vectorWeight");
   if (!["automatic", "managed"].includes(p.starterMode)) throw new Error("Invalid starterMode");
   for (const key of ["showControls", "showQuota"]) if (typeof p[key] !== "boolean") throw new Error(`Invalid ${key}`);
   for (const key of ["themeColor", "backgroundColor"]) if (!/^#[0-9a-f]{6}$/i.test(p[key])) throw new Error(`Invalid ${key}`);

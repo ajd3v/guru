@@ -1,0 +1,86 @@
+[
+  {
+    "query": "How can I pause when someone insults me?",
+    "expect": "Try, therefore, in the first place, not to be bewildered by appearances.",
+    "book": "The Enchiridion",
+    "source": "reader-holdout",
+    "split": "holdout"
+  },
+  {
+    "query": "What does the Dhammapada suggest when my thoughts keep wandering?",
+    "expect": "a tamed mind brings happiness",
+    "book": "Dhammapada, a Collection of Verses; Being One of the Canonical Books of the Buddhists",
+    "source": "reader-holdout",
+    "split": "holdout"
+  },
+  {
+    "query": "I want to start an overwhelming project. Does the Tao offer a small first action?",
+    "expect": "the journey of a thousand li commenced with a single step",
+    "book": "The Tao Teh King, or the Tao and its Characteristics",
+    "source": "reader-holdout",
+    "split": "holdout"
+  },
+  {
+    "query": "If work succeeds, should I keep treating it as proof of my importance?",
+    "expect": "The work is accomplished, and there is no resting in it",
+    "book": "The Tao Teh King, or the Tao and its Characteristics",
+    "source": "reader-holdout",
+    "split": "holdout"
+  },
+  {
+    "query": "I keep thinking about being wronged. What does the Dhammapada say this does to hatred?",
+    "expect": "those who harbour such thoughts hatred will never cease",
+    "book": "Dhammapada, a Collection of Verses; Being One of the Canonical Books of the Buddhists",
+    "source": "reader-holdout",
+    "split": "holdout"
+  },
+  {
+    "query": "Can I love my children without deciding what they must think?",
+    "expect": "You may give them your love but not your thoughts",
+    "book": "The Prophet",
+    "source": "reader-holdout",
+    "split": "holdout"
+  },
+  {
+    "query": "How does Walden describe simplifying day-to-day demands?",
+    "expect": "Simplify, simplify.",
+    "book": "Walden, and On The Duty Of Civil Disobedience",
+    "source": "reader-holdout",
+    "split": "holdout"
+  },
+  {
+    "query": "Where should I look before criticizing other people?",
+    "expect": "Look well unto thyself, and beware that thou judge not the doings of others.",
+    "book": "The Imitation of Christ",
+    "source": "reader-holdout",
+    "split": "holdout"
+  },
+  {
+    "query": "What does Emerson say to trust when others disapprove?",
+    "expect": "integrity of your own mind",
+    "book": "Essays by Ralph Waldo Emerson",
+    "source": "reader-holdout",
+    "split": "holdout"
+  },
+  {
+    "query": "Does As a Man Thinketh connect thoughts to one's character?",
+    "expect": "mind is the master-weaver, both of the inner garment of character",
+    "book": "As a man thinketh",
+    "source": "reader-holdout",
+    "split": "holdout"
+  },
+  {
+    "query": "How does Meditations suggest using the limited time I have?",
+    "expect": "we must endeavour to gain the present time with best discretion and justice",
+    "book": "Meditations",
+    "source": "reader-holdout",
+    "split": "holdout"
+  },
+  {
+    "query": "What does the Prophet say about trying to make my children just like me?",
+    "expect": "You may strive to be like them, but seek not to make them like you.",
+    "book": "The Prophet",
+    "source": "reader-holdout",
+    "split": "holdout"
+  }
+]

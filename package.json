@@ -6,6 +6,7 @@
     "test": "node test/run.ts",
     "serve": "node src/server.ts",
     "eval": "node eval/run.ts",
+    "eval:compare": "node eval/compare.ts",
     "eval:gen": "node eval/generate.ts",
     "worker": "node src/cli.ts worker",
     "eval:answers": "node eval/answers.ts",

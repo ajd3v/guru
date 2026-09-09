@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type Database from "better-sqlite3";
 import { profile, PROFILE_PATH } from "../src/profile.ts";
 
-export type Case = { query: string; expect: string; book?: string; source?: string };
+export type Case = { query: string; expect: string; book?: string; source?: string; split?: "dev" | "holdout" };
 export function loadCases(handOnly = false): Case[] {
   const files = handOnly ? profile.evaluation.slice(0, 1) : profile.evaluation;
   const cases = files.flatMap((file, index) => {
@@ -11,11 +11,17 @@ export function loadCases(handOnly = false): Case[] {
     if (!Array.isArray(value)) throw new Error(`Invalid evaluation cases: ${file}`);
     return value.map((c) => {
       if (!c || typeof c.query !== "string" || !c.query.trim() || typeof c.expect !== "string" || !c.expect.trim()) throw new Error(`Invalid evaluation case: ${file}`);
-      return { ...c, source: index === 0 ? "hand" : "gen" } as Case;
+      if (c.source !== undefined && (typeof c.source !== "string" || !c.source.trim())) throw new Error(`Invalid evaluation source: ${file}`);
+      if (c.split !== undefined && !["dev", "holdout"].includes(c.split)) throw new Error(`Invalid evaluation split: ${file}`);
+      return { ...c, source: c.source ?? (index === 0 ? "hand" : "gen") } as Case;
     });
   });
   if (!cases.length) throw new Error("No evaluation cases configured");
   return cases;
+}
+
+export function caseSplit(c: Case): "dev" | "holdout" {
+  return c.split ?? (createHash("sha256").update(c.query).digest()[0] % 2 ? "holdout" : "dev");
 }
 
 export function sampleCases<T>(cases: T[], limit: number): T[] {
@@ -25,7 +31,7 @@ export function sampleCases<T>(cases: T[], limit: number): T[] {
   return Array.from({ length: limit }, (_, i) => cases[Math.floor(i * cases.length / limit)]);
 }
 
-function identity(db: Database.Database) {
+export function corpusIdentity(db: Database.Database) {
   const hash = createHash("sha256");
   for (const row of db.prepare("select b.id, b.title, b.author, b.source, c.id chunk_id, c.text, c.page_start, c.page_end from books b join chunks c on c.book_id = b.id order by b.id, c.id").iterate()) hash.update(JSON.stringify(row));
   return {
@@ -38,14 +44,14 @@ function identity(db: Database.Database) {
 export function readFrozen<T>(file: string, db: Database.Database, kind: string): T[] {
   if (!file || !existsSync(file)) return [];
   const saved = JSON.parse(readFileSync(file, "utf8"));
-  const current = identity(db);
+  const current = corpusIdentity(db);
   if (!saved || saved.kind !== kind || Object.entries(current).some(([key, value]) => saved[key] !== value) || !Array.isArray(saved.items)) {
     throw new Error("Frozen evaluation cache does not match this profile and corpus. Use a new cache path.");
   }
   return saved.items;
 }
 export function writeFrozen<T>(file: string, db: Database.Database, kind: string, items: T[]) {
-  if (file) writeFileSync(file, JSON.stringify({ ...identity(db), kind, items }));
+  if (file) writeFileSync(file, JSON.stringify({ ...corpusIdentity(db), kind, items }));
 }
 
 export function quotesExpected(answer: string, expected: string) {

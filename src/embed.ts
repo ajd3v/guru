@@ -28,6 +28,7 @@ const MODEL = MODELS[(process.env.GURU_EMBED ?? "bge-base") as keyof typeof MODE
 if (!MODEL) throw new Error(`GURU_EMBED must be one of: ${Object.keys(MODELS).join(", ")}`);
 
 export const DIM = MODEL.dim;
+export const MODEL_ID = MODEL.id;
 
 /**
  * Roughly where the model's 512-token window falls on English prose, measured rather than
@@ -45,10 +46,14 @@ let warned = false;
 // write, and it gets the process OOM-killed somewhere north of a few hundred chunks.
 const BATCH = 32;
 
-let extractor: any;
+let extractor: Promise<any> | undefined;
 
 export async function embed(texts: string[], kind: "passage" | "query" = "passage") {
-  extractor ??= await pipeline("feature-extraction", MODEL.id);
+  extractor ??= pipeline("feature-extraction", MODEL.id).catch((error) => {
+    extractor = undefined;
+    throw error;
+  });
+  const model = await extractor;
   const input = kind === "query" ? texts.map((t) => MODEL.queryPrefix + t) : texts;
 
   // Say so, once, rather than let a third of every chunk vanish without a word.
@@ -64,7 +69,7 @@ export async function embed(texts: string[], kind: "passage" | "query" = "passag
 
   const vectors: Float32Array[] = [];
   for (let i = 0; i < input.length; i += BATCH) {
-    const out = await extractor(input.slice(i, i + BATCH), {
+    const out = await model(input.slice(i, i + BATCH), {
       pooling: MODEL.pooling,
       normalize: true,
     });

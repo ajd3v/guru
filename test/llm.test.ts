@@ -79,6 +79,13 @@ assert.equal((await rerank("q", hits, 5)).length, 0, "an explicit NONE empties t
 replies = ["none of them are relevant"];
 assert.equal((await rerank("q", hits, 5)).length, 0, "the same verdict in prose reads the same");
 assert.equal(stats.rerankNone - before, 2, "the floor is counted separately from a failure");
+replies = ["NONE"];
+assert.deepEqual(await rerank("q", [hits[0]]), [], "a lone irrelevant passage can be rejected");
+replies = ["0"];
+assert.deepEqual(await rerank("q", [hits[0]]), [hits[0]], "a lone relevant passage survives");
+const callsBeforeEmpty = seen.length;
+assert.deepEqual(await rerank("q", []), []);
+assert.equal(seen.length, callsBeforeEmpty, "an empty library needs no model call");
 
 // A reply that cannot be read is still a malfunction, and that case is unchanged: it falls
 // back to the unranked order rather than telling the reader their library is silent.
@@ -214,8 +221,15 @@ replies = ["[P0S0] [P0S1]"];
 const completePassage = await ask("q", [passage]);
 assert(completePassage.answer.includes("The name that can be named"), "one passage may include adjacent sentences");
 const gap = hit(1, "This first sentence contains a claim with more than forty characters. Never. This last sentence contains a different claim with more than forty characters.");
-replies = ["[P0S0] [P0S1]"];
+replies = ["[P0S0] [P0S2]"];
 assert(!(await ask("q", [gap])).answer.includes("This last sentence"), "omitted sentences must not be silently joined across");
+
+seen.length = 0;
+replies = ["[P0S0]"];
+const brief = await ask("What should I do?", [hit(1, "I. Be still.")]);
+assert(brief.answer.includes("> Be still."), "short source answers must remain selectable");
+assert(!brief.answer.includes("> I."), "section numbering is not offered as a sentence");
+assert(JSON.stringify(seen[0].messages).includes('Laozi'), "selection includes source metadata");
 
 server.close();
 console.error("llm stub tests ok");

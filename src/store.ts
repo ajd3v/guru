@@ -1,4 +1,4 @@
-import "./profile.ts";
+import { profile } from "./profile.ts";
 import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
@@ -191,38 +191,62 @@ function ftsQuery(q: string) {
   return tokens.map((t) => `"${t}"`).join(" OR ");
 }
 
-/**
- * How many candidates reach the reranker. Measured on 151 cases, the correct chunk is
- * within depth 20 for 41% of questions but within depth 100 for 63%, and the reranker
- * promotes nearly everything it is shown. Depth is therefore the cheapest recall there is.
- */
+/** Number of passages passed to the reranker. Larger sets need more model calls. */
 export const CANDIDATES = Number(process.env.GURU_CANDIDATES ?? 60);
+export const VECTOR_WEIGHT = Number(process.env.GURU_VECTOR_WEIGHT ?? profile.vectorWeight);
+if (!Number.isInteger(CANDIDATES) || CANDIDATES < 1 || CANDIDATES > 1000) throw new Error("GURU_CANDIDATES must be an integer from 1 to 1000");
+if (!Number.isFinite(VECTOR_WEIGHT) || VECTOR_WEIGHT <= 0 || VECTOR_WEIGHT > 10) throw new Error("GURU_VECTOR_WEIGHT must be greater than zero and at most 10");
+
+type SearchOptions = { vectorWeight?: number; exactPhrases?: boolean; literalQuery?: string };
 
 /** Hybrid BM25 + vector, fused with reciprocal rank. */
-export async function search(db: Database.Database, query: string, k = CANDIDATES): Promise<Hit[]> {
+export async function search(db: Database.Database, query: string, k = CANDIDATES, options: SearchOptions = {}): Promise<Hit[]> {
+  if (!Number.isInteger(k) || k < 1 || k > 1000) throw new Error("Search limit must be an integer from 1 to 1000");
+  const weight = options.vectorWeight ?? VECTOR_WEIGHT;
+  if (!Number.isFinite(weight) || weight <= 0 || weight > 10) throw new Error("Invalid vector weight");
+  const match = ftsQuery(query);
+  if (!match) return [];
   const RRF_K = 60;
   // Fuse from deeper lists than we return. RRF ranks an item that is mediocre in both
   // halves above one that is first in a single half, so a shallow fetch loses exact hits.
   const depth = k * 3;
   const scores = new Map<number, number>();
-  const fuse = (ids: number[]) =>
-    ids.forEach((id, rank) => scores.set(id, (scores.get(id) ?? 0) + 1 / (RRF_K + rank + 1)));
+  const fuse = (ids: number[], weight = 1) =>
+    ids.forEach((id, rank) => scores.set(id, (scores.get(id) ?? 0) + weight / (RRF_K + rank + 1)));
 
-  const match = ftsQuery(query);
-  if (match) {
-    fuse(
-      db.prepare("select rowid as id from chunks_fts where chunks_fts match ? order by rank limit ?")
-        .all(match, depth)
-        .map((r: any) => r.id),
-    );
-  }
+  fuse(
+    db.prepare("select rowid as id from chunks_fts where chunks_fts match ? order by rank limit ?")
+      .all(match, depth)
+      .map((r: any) => r.id),
+  );
 
   const [vector] = await embed([query], "query");
   fuse(
-    db.prepare("select rowid as id from chunks_vec where embedding match ? and k = ?")
+    db.prepare("select rowid as id from chunks_vec where embedding match ? and k = ? order by distance")
       .all(Buffer.from(vector.buffer), BigInt(depth))
       .map((r: any) => r.id),
+    weight,
   );
+
+  // Quotation marks express a literal phrase lookup. Keep exact matches ahead of paraphrases.
+  if (options.exactPhrases !== false) {
+    const phrases = [...(options.literalQuery ?? query).matchAll(/["\u201c]([^"\u201d\n]+)["\u201d]/g)]
+      .map((m) => m[1].toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter((words) => words.length >= 2);
+    if (phrases.length) {
+      const phraseQuery = phrases.map((words) => `"${words.join(" ")}"`).join(" AND ");
+      const exact = db.prepare("select rowid id from chunks_fts where chunks_fts match ? order by rank").iterate(phraseQuery) as Iterable<{ id: number }>;
+      const source = db.prepare("select text from chunks where id = ?");
+      let rank = 0;
+      for (const { id } of exact) {
+        // The search index may include generated context. Literal priority requires source words.
+        const row = source.get(id) as { text: string } | undefined;
+        const words = ` ${(row?.text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).join(" ")} `;
+        if (!phrases.every((phrase) => words.includes(` ${phrase.join(" ")} `))) continue;
+        scores.set(id, 1 + 1 / (RRF_K + ++rank));
+        if (rank === k) break;
+      }
+    }
+  }
 
   if (!scores.size) return [];
   const top = [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, k);

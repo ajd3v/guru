@@ -90,7 +90,7 @@ if (frozen.length) console.error(`Loaded ${frozen.length} frozen answer cases`);
 
 if (!frozen.length) {
   for (const c of cases) {
-    const hits: Hit[] = await rerank(c.query, await search(db, await expandQuery(c.query)));
+    const hits: Hit[] = await rerank(c.query, await search(db, await expandQuery(c.query), undefined, { literalQuery: c.query }));
     if (hits.some((h) => flat(h.text).includes(flat(c.expect)))) {
       frozen.push({ query: c.query, expect: c.expect, hits });
     }

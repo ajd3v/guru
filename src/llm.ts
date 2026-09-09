@@ -1,5 +1,6 @@
 import { profile, broaden } from "./profile.ts";
 export { broaden } from "./profile.ts";
+import { excerpt } from "./excerpt.ts";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Chunk, Hit } from "./store.ts";
 import { cite } from "./store.ts";
@@ -268,10 +269,8 @@ export const stats = { rerankCalls: 0, rerankFallbacks: 0, rerankNone: 0 };
  * A local cross-encoder (bge-reranker-base) was tried here and reverted; see SPEC.md.
  */
 export async function rerank(query: string, hits: Hit[], k = 5): Promise<Hit[]> {
-  // ponytail: a lone candidate skips the floor, since one hit is already its own ranking.
-  // Hybrid search returns tens of candidates, so this is the empty-library case in practice.
-  // Judge it too if a one-book shelf ever starts answering questions it should decline.
-  if (hits.length <= 1) return hits;
+  // A lone candidate still needs a relevance decision.
+  if (!hits.length) return hits;
 
   if (hits.length > RERANK_BATCH) {
     const batches: Hit[][] = [];
@@ -291,11 +290,11 @@ export async function rerank(query: string, hits: Hit[], k = 5): Promise<Hit[]> 
 }
 
 async function rerankOne(query: string, hits: Hit[], k: number): Promise<Hit[]> {
-  if (hits.length <= 1) return hits;
+  if (!hits.length) return hits;
   // Snippet length trades against candidate count for a fixed prompt budget.
   const snippet = Number(process.env.GURU_SNIPPET ?? 700);
   const candidates = hits
-    .map((h, i) => `[${i}] ${cite(h)}\n${h.text.slice(0, snippet)}`)
+    .map((h, i) => `[${i}] ${cite(h)}\n${excerpt(h.text, query, snippet)}`)
     .join("\n\n---\n\n");
 
   // ponytail: numbers scraped from prose, not a JSON schema. Structured outputs don't
@@ -457,6 +456,7 @@ function catalogue(hits: Hit[]) {
   const byId = new Map<string, { text: string; hit: Hit; start: number; end: number }>();
   const lines: string[] = [];
   hits.forEach((hit, hi) => {
+    lines.push(`Source P${hi}: ${JSON.stringify({ title: hit.title, author: hit.author })}`);
     // Number sequentially over the sentences actually offered. Numbering by split index
     // and then skipping short ones leaves gaps (S0, S2, S5), and a model that assumes
     // contiguity cites ids that were never offered.
@@ -469,7 +469,7 @@ function catalogue(hits: Hit[]) {
       cursor = rawStart + raw.length;
       const text = raw.trim();
       const start = rawStart + raw.indexOf(text);
-      if (text.length < 40) return; // fragments and stray numbering aren't quotable
+      if ((text.match(/\p{L}/gu) ?? []).length < 2 || /^[IVXLCDM]+[.)]?$/i.test(text)) return;
       const id = `P${hi}S${++si}`;
       byId.set(id, { text, hit, start, end: start + text.length });
       lines.push(`[${id}] ${text}`);
