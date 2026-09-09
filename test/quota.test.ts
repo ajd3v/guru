@@ -17,11 +17,13 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { open } from "../src/store.ts";
 
 const PORT = 8952;
 const ASKS = 2;
 const DEVICES = 2;
 const dir = mkdtempSync(join(tmpdir(), "guru-quota-"));
+open(join(dir, "starter.db")).close();
 
 const srv = spawn("node", ["src/server.ts"], {
   stdio: ["ignore", "ignore", "ignore"],
@@ -30,6 +32,8 @@ const srv = spawn("node", ["src/server.ts"], {
     PORT: String(PORT),
     NODE_ENV: "development",
     GURU_DB: join(dir, "lib.db"),
+    GURU_STARTER: join(dir, "starter.db"),
+    GURU_JOBS_DB: join(dir, "jobs.db"),
     GURU_LOG_DB: join(dir, "log.db"),
     GURU_USER_DIR: join(dir, "users"),
     GURU_SINGLE_USER: "reader",
@@ -63,7 +67,9 @@ try {
 
   /** A browser that has never been here: takes whatever `gd` cookie it is handed. */
   const browser = async () => {
-    const c = (await fetch(base + "/")).headers.get("set-cookie");
+    const response = await fetch(base + "/");
+    assert.equal(response.status, 200, "isolated starter serves the guest page");
+    const c = response.headers.get("set-cookie");
     assert.ok(c?.startsWith("gd="), "a first visit is issued a device cookie");
     assert.match(c!, /HttpOnly/, "the id is not readable from script");
     return c!.split(";")[0];
