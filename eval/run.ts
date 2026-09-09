@@ -1,3 +1,5 @@
+import { loadCases, sampleCases, readFrozen, writeFrozen, quotesExpected } from "./corpus.ts";
+import { broaden } from "../src/profile.ts";
 // Retrieval eval over the starter library. Queries are paraphrases, never the source
 // wording, so a case only passes if retrieval worked on meaning.
 //
@@ -8,7 +10,7 @@
 // silently fall back to the Anthropic provider and measure a different backend
 // than the one under test.
 try {
-  process.loadEnvFile();
+  if (process.env.GURU_NO_DOTENV !== "1") process.loadEnvFile();
 } catch {
   // no .env; env vars may still be set externally
 }
@@ -31,19 +33,8 @@ type Case = { query: string; expect: string; source?: string };
 // to separate configurations. They are scored separately so drift between them is visible ,
 // if generated cases score much higher, they leaked vocabulary and the set is not measuring
 // what it claims to.
-const load = (f: string, source: string): Case[] => {
-  try {
-    return (JSON.parse(readFileSync(f, "utf8")) as Case[]).map((c) => ({ ...c, source }));
-  } catch {
-    return [];
-  }
-};
-const allCases = [
-  ...load("eval/cases.json", "hand"),
-  ...(process.argv.includes("--hand-only") ? [] : load("eval/cases.generated.json", "gen")),
-];
-const stride = Number.isFinite(LIMIT) ? Math.max(1, Math.floor(allCases.length / LIMIT)) : 1;
-const cases = stride > 1 ? allCases.filter((_, i) => i % stride === 0) : allCases;
+const allCases = loadCases(process.argv.includes("--hand-only"));
+const cases = sampleCases(allCases, LIMIT);
 
 const flat = (s: string) => s.replace(/\s+/g, " ");
 const rankOf = (hits: Hit[], expect: string) =>
@@ -60,6 +51,7 @@ const fusedAt: Record<number, number> = Object.fromEntries(DEPTHS.map((d) => [d,
 let topHits = 0;
 let mrr = 0;
 let scored = 0;
+let excluded = 0;
 const bySource: Record<string, { n: number; top: number }> = {};
 
 // Flattened corpus, so "is this case scoreable here?" is decided exactly the way a hit is
@@ -71,13 +63,13 @@ const corpus = (db.prepare("select text from chunks").all() as any[]).map((r) =>
 for (const c of cases) {
   if (scored >= LIMIT) break;
   const present = corpus.some((t) => t.includes(flat(c.expect)));
-  if (!present) continue;
+  if (!present) { excluded++; continue; }
   scored++;
   const src = c.source ?? "hand";
   bySource[src] ??= { n: 0, top: 0 };
   bySource[src].n++;
 
-  const fused = await search(db, useHyde ? await expandQuery(c.query) : c.query);
+  const fused = await search(db, useHyde ? await expandQuery(c.query) : broaden(c.query));
   const inFused = rankOf(fused, c.expect);
   const final = useRerank ? await rerank(c.query, fused) : fused.slice(0, 5);
   const inTop = rankOf(final, c.expect);
@@ -95,6 +87,8 @@ for (const c of cases) {
   );
 }
 
+console.log(`Selected ${cases.length} of ${allCases.length} cases. Excluded ${excluded} with no gold passage in this corpus.`);
+if (!scored) throw new Error("No eligible evaluation cases for this corpus");
 const pct = (n: number) => `${((n / scored) * 100).toFixed(0)}%`;
 if (scored <= 15 || process.argv.includes("--verbose")) console.log(rows.join("\n"));
 console.log(

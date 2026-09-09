@@ -6,23 +6,25 @@
 // Libraries are per-user files, resolved per request, so isolation is by filesystem rather
 // than by WHERE clause. Who the reader is comes from ./auth.ts and nowhere else.
 try {
-  process.loadEnvFile();
+  if (process.env.GURU_NO_DOTENV !== "1") process.loadEnvFile();
 } catch {
   // no .env; env vars may still be set externally
 }
 
+import { profile, ENGINE_ROOT, PYTHON as PY, SIDECAR, broaden } from "./profile.ts";
+import { datedReading, monthDayIn, MONTHS } from "./reading.ts";
 import assert from "node:assert";
 import SqliteDatabase from "better-sqlite3";
 import { execFileSync } from "node:child_process";
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
-import { authenticate, basicAuthUser, isLibrarian, toWebRequest } from "./auth.ts";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { authenticate, basicAuthUser, isLibrarian, isOperator, linkToken, tokenUser, readers, sessionCookie, toWebRequest } from "./auth.ts";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { askedToday, bookPdf, cite, libraryPath, recordAsk, search, userLibrary } from "./store.ts";
+import { askedToday, bookPdf, cite, libraryPath, recordAsk, search, userLibrary, type Hit } from "./store.ts";
 import { ask, expandQuery, plainDashes, rerank } from "./llm.ts";
 import { countActive, enqueue, listJobs, openJobs } from "./jobs.ts";
 
@@ -34,8 +36,6 @@ const MAX_UPLOAD = Number(process.env.GURU_MAX_UPLOAD ?? 100 * 1024 * 1024);
 const MAX_BOOKS = Number(process.env.GURU_MAX_BOOKS ?? 50);
 const ACCEPTED = [".pdf", ".epub"];
 
-const PY = ".venv/bin/python";
-const SIDECAR = "ingest/ingest.py";
 /** Materialized copies of stored PDFs, one file per book, so poppler-less fitz has a real path
  * to open. Same sidecar-subprocess boundary as ingest: never render a PDF in the server's own
  * process. Filenames are book ids, not reader input, so there is nothing here to path-traverse. */
@@ -43,15 +43,16 @@ const PDF_CACHE = process.env.GURU_PDF_CACHE ?? "data/pdf-cache";
 
 /** The reader's copy of a book's PDF on disk, written once and reused by size (a re-ingest of
  * the same title overwrites it). undefined when the book has no stored PDF (EPUB, or missing). */
-function materializePdf(db: SqliteDatabase.Database, user: string, title: string): string | undefined {
-  const row = bookPdf(db, title);
+function materializePdf(db: SqliteDatabase.Database, user: string, identity: string | number) {
+  const row = bookPdf(db, identity);
   if (!row) return undefined;
-  const path = join(PDF_CACHE, `${user}-${row.id}.pdf`);
+  const hash = createHash("sha256").update(row.pdf).digest("hex").slice(0, 20);
+  const path = join(PDF_CACHE, `${user}-${row.id}-${hash}.pdf`);
   if (!existsSync(path) || statSync(path).size !== row.pdf.length) {
     mkdirSync(PDF_CACHE, { recursive: true });
     writeFileSync(path, row.pdf);
   }
-  return path;
+  return { path, pageOffset: row.page_offset };
 }
 
 /**
@@ -85,7 +86,7 @@ const GUEST_ASKS = Number(process.env.GURU_GUEST_ASKS ?? 5);
  * makes them safe; this only stops drawing doors. The operator keeps every one of them by
  * hand, and any deployment that does not set this keeps the buttons too.
  */
-const DEMO = process.env.GURU_DEMO === "1" || process.env.GURU_DEMO === "true";
+const DEMO = !profile.showControls || process.env.GURU_DEMO === "1" || process.env.GURU_DEMO === "true";
 
 /**
  * Stream the body to disk, refusing to buffer it.
@@ -138,7 +139,11 @@ const escape = (s: string) =>
  * the sentence that follows it in one block, and a paragraph-level test then classifies the
  * whole thing as prose and renders a verbatim quotation as the model's own words.
  */
-function render(answer: string) {
+function citationMarkup(hit: Hit, label = escape(cite(hit).slice(1, -1))) {
+  return `<cite><button type="button" class="source" data-chunk="${hit.id}" data-book="${hit.book_id ?? ""}" data-page="${escape(String(hit.page_start))}" data-title="${escape(hit.title)}" aria-expanded="false">${label}</button></cite>`;
+}
+function render(answer: string, hits: Hit[] = []) {
+  const sources = new Map(hits.map((hit) => [escape(cite(hit).slice(1, -1)), hit]));
   const out: string[] = [];
   let buf: string[] = [];
   let quoting = false;
@@ -152,7 +157,7 @@ function render(answer: string) {
         const m = text.match(/^(.*?)\s*\[([^\]]+)\]\s*$/);
         out.push(
           m
-            ? `<blockquote><p>${m[1]}</p><cite>${m[2]}</cite></blockquote>`
+            ? `<blockquote><p>${m[1]}</p>${sources.has(m[2]) ? citationMarkup(sources.get(m[2])!, m[2]) : `<cite>${m[2]}</cite>`}</blockquote>`
             : `<blockquote><p>${text}</p></blockquote>`,
         );
       }
@@ -251,7 +256,7 @@ if (process.argv.includes("--selfcheck")) {
   // The guard that keeps that fallback off a public box. Loaded in a child process because
   // it fires at module scope, which is the only place it can run before serving a request.
   const boot = (env: Record<string, string>) =>
-    execFileSync(process.execPath, ["-e", "import('./src/auth.ts')"], {
+    execFileSync(process.execPath, ["-e", `import(${JSON.stringify(new URL("./auth.ts", import.meta.url).href)})`], {
       env: { ...process.env, NODE_ENV: "production", CLERK_SECRET_KEY: "", GURU_ORIGINS: "", GURU_SINGLE_USER: "", GURU_GUEST: "", ...env },
       stdio: "pipe",
     });
@@ -264,14 +269,14 @@ if (process.argv.includes("--selfcheck")) {
     "single-user without a password must refuse to boot in production",
   );
   assert.doesNotThrow(
-    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:hunter2" }),
+    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:correct-horse-battery" }),
     "single-user with a password must boot",
   );
 
   // A username that cannot be a filename would only fail on the request that first tried to
   // open its library, which is a 500 for the reader rather than a refusal to deploy.
   assert.throws(
-    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:hunter2,not a name:pw" }),
+    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:correct-horse-battery,not a name:pw" }),
     /not user:password/,
     "a username that is not a usable filename must refuse to boot",
   );
@@ -282,16 +287,16 @@ if (process.argv.includes("--selfcheck")) {
   );
   // The reading room's name is a filename too, and it must never shadow a real reader.
   assert.throws(
-    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:hunter2", GURU_GUEST: "not a name" }),
+    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:correct-horse-battery", GURU_GUEST: "not a name" }),
     /GURU_GUEST is not a usable username/,
   );
   assert.throws(
-    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:hunter2", GURU_GUEST: "reader" }),
+    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:correct-horse-battery", GURU_GUEST: "reader" }),
     /must not match/,
     "the guest must not be able to shadow a credentialed reader",
   );
   assert.doesNotThrow(
-    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:hunter2", GURU_GUEST: "guest" }),
+    () => boot({ GURU_SINGLE_USER: "reader", GURU_BASIC_AUTH: "reader:correct-horse-battery", GURU_GUEST: "guest" }),
     "a reading room alongside real readers must boot",
   );
 
@@ -348,12 +353,29 @@ const jobs = openJobs();
 const logdb = new SqliteDatabase(process.env.GURU_LOG_DB ?? "data/log.db");
 logdb.pragma("journal_mode = WAL");
 logdb.exec("create table if not exists log (at text default (datetime('now')), user text, event text, q text)");
-const logStmt = logdb.prepare("insert into log (user, event, q) values (?, ?, ?)");
+for (const column of ["flag", "outcome"]) {
+  if (!(logdb.pragma("table_info(log)") as { name: string }[]).some((c) => c.name === column)) logdb.exec(`alter table log add column ${column} text`);
+}
+const logStmt = logdb.prepare("insert into log (user, event, q, flag) values (?, ?, ?, ?)");
 const logEvent = (user: string, event: string, q: string) => {
-  try {
-    logStmt.run(user, event, q);
-  } catch {}
+  try { return Number(logStmt.run(user, event, q, suspicious(q)).lastInsertRowid); } catch { return 0; }
 };
+const logOutcome = (id: number, outcome: string) => {
+  try { logdb.prepare("update log set outcome = ? where rowid = ?").run(outcome, id); } catch {}
+};
+const suspicious = (q: string) => /\b(ignore|disregard|forget)\b.{0,40}\b(instructions?|prompt|rules|above)\b|\bsystem prompt\b|\bjailbreak\b|<\/?(question|system)>/i.test(q) ? "steering" : "";
+const failures = new Map<string, { count: number; until: number }>();
+function authFailed(ip: string) {
+  const now = Date.now();
+  for (const [key, value] of failures) if (value.until <= now) failures.delete(key);
+  const prior = failures.get(ip);
+  if (prior) prior.count++;
+  else if (failures.size < 10_000) failures.set(ip, { count: 1, until: now + 900_000 });
+}
+function blocked(ip: string) {
+  const value = failures.get(ip);
+  return !!value && value.count >= 10 && value.until > Date.now();
+}
 
 /**
  * The guest allowance, counted per browser and bounded per address.
@@ -469,10 +491,10 @@ function clientAddress(req: IncomingMessage) {
 // chrome a shared reading room must not offer; `demo` strips them from everybody, operator
 // included, because a showcase is for reading. All three are chrome only; the routes refuse
 // for themselves.
-const PAGE = (body = "", librarian = true, guest = false, demo = DEMO) => `<!doctype html>
+const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = "", reader = "") => `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>guru</title>
-<meta name="theme-color" content="#f3efe3">
+<title>${escape(profile.name)}</title>
+<meta name="theme-color" content="${profile.themeColor}">
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <style>
@@ -596,31 +618,43 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO) => `<!doc
   .answer, h2 { animation: rise .5s ease-out both; }
   @media (prefers-reduced-motion: reduce) { .answer, h2, header { animation: none; } }
   @keyframes rise { from { opacity: 0; transform: translateY(.4rem); } to { opacity: 1; transform: none; } }
+  .source { color: inherit; font: inherit; text-align: left; background: none; border: 0; padding: .25rem 0; cursor: pointer; }
+  .source:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--moss); outline-offset: 4px; }
+  .ask input:focus-visible { outline: 2px solid var(--moss); outline-offset: 4px; }
+  .reading { white-space: pre-wrap; }
+  .log-wrap { overflow-x: auto; }
+  table.log { border-collapse: collapse; font-size: .8125rem; width: 100%; }
+  .log th, .log td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--rule); }
+  .ask button { min-height: 44px; min-width: 44px; }
+  @media (prefers-reduced-motion: reduce) { .waiting { animation: none; } }
 </style>
-<div class="sheet">
+${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
+<div class="sheet" data-reader="${escape(reader)}">
 <header>
   <!-- The eclipse. A ring drawn as two subpaths under evenodd, the inner circle pushed down
        and right so the corona thins toward the bottom-right and thickens opposite, the way a
        disc slightly off-centre lets more light past one side. The bead sits where the ring
        runs thinnest, the last point of light before totality. -->
-  <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+  ${profile.mark ? '<img class="mark" src="/mark.svg" alt="">' : `<svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
     <path class="corona" fill-rule="evenodd"
       d="M 5 32 A 27 27 0 1 1 59 32 A 27 27 0 1 1 5 32 Z
          M 11 33.5 A 23 23 0 1 1 57 33.5 A 23 23 0 1 1 11 33.5 Z"/>
     <circle class="bead" cx="51.5" cy="46.5" r="3"/>
-  </svg>
-  <h1>guru</h1>
+  </svg>`}
+  <h1>${escape(profile.name)}</h1>
   <!-- Shakkei, borrowed scenery: a garden composes the landscape beyond its wall into its
        own view without ever owning it. This does the same with books. -->
-  <p class="tagline">A garden of borrowed words.</p>
+  <p class="tagline">${escape(profile.tagline)}</p>
 </header>
 <form class="ask" method="post" action="/ask">
-  <input name="q" maxlength="${MAX_QUERY}" placeholder="Ask ${guest ? "the library" : "your library"}&hellip;" autofocus>
+  <input name="q" aria-label="Question for your library" maxlength="${MAX_QUERY}" placeholder="Ask ${guest ? "the library" : "your library"}&hellip;" autofocus>
   <button class="alt" formaction="/find" title="Passages only, no composed answer">Find</button>
   <button>Ask</button>
 </form>
+<p class="note meta" role="status">${escape(meta)}</p>
 <div id="out"><div id="hist"></div>${body}</div>
 <footer>
+  <span class="note">Questions are stored for operator review. Browser history stays on this device.</span>
   ${guest
     ? `<span class="note">You are reading as a guest, with ${GUEST_ASKS} composed answers to spend. Find is free and uncounted.</span>`
     : demo
@@ -632,7 +666,7 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO) => `<!doc
   <a class="note" href="/export">Export</a>`
         : ""}
   <form method="post" action="/delete">
-    <input name="confirm" placeholder="type DELETE">
+    <input aria-label="Type DELETE to delete your library" name="confirm" placeholder="type DELETE">
     <button>Delete all</button>
   </form>`}
 </footer>
@@ -645,7 +679,8 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO) => `<!doc
   // what the operator's log holds is announced at /export, and this owes the reader the
   // same page they left.
   const form = document.querySelector("form.ask"), hist = document.getElementById("hist");
-  const KEY = "guru-history";
+  const KEY = ${JSON.stringify(profile.historyKey)} + ":" + document.querySelector(".sheet").dataset.reader;
+  if (document.getElementById("deleted")) { try { localStorage.removeItem(KEY); } catch {} }
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } };
   // Fifty answers is more page than anyone scrolls and localStorage has a quota; the tail
   // falls off silently. Saving can also fail outright (private mode), and history is not
@@ -680,22 +715,23 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO) => `<!doc
     const c = ev.target.closest(".answer cite");
     if (!c) return;
     const open = c.parentElement.querySelector(".context");
-    if (open) { open.remove(); return; }
-    // "Title, with, commas, Author, p. 58-60": locator and author are the last two parts.
-    const parts = c.textContent.split(", ");
-    if (parts.length < 3) return;
-    const title = parts.slice(0, -2).join(", ");
-    const pageNo = (parts[parts.length - 1].match(/\\d+/) || [])[0];
-    if (!pageNo) return;
+    if (open) { open.remove(); c.querySelector(".source")?.setAttribute("aria-expanded", "false"); return; }
+    const source = c.querySelector(".source");
+    if (!source) return;
+    const title = source.dataset.title;
+    const pageNo = source.dataset.page;
+    const sourceQuery = "chunk=" + encodeURIComponent(source.dataset.chunk);
+    source.setAttribute("aria-expanded", "true");
     let d;
     try {
-      const r = await fetch("/context?title=" + encodeURIComponent(title) + "&page=" + pageNo);
+      const r = await fetch("/context?" + sourceQuery);
       d = await r.json();
     } catch { return; }
     if (!d.text) return;
     const div = document.createElement("div");
     div.className = "context";
     div.textContent = d.text;
+    source.setAttribute("aria-expanded", "true");
     // Mark the quoted words, tolerant of the whitespace differences chunking introduces.
     const quote = (c.parentElement.querySelector("p") || {}).textContent || "";
     const words = quote.trim().split(/\\s+/);
@@ -711,7 +747,7 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO) => `<!doc
     // The real page, only fetched if the reader asks: a citation the model never quoted
     // this session should not cost anyone a page render they will not look at.
     try {
-      const m = await (await fetch("/pdf-meta?title=" + encodeURIComponent(title))).json();
+      const m = await (await fetch("/pdf-meta?book=" + encodeURIComponent(source.dataset.book))).json();
       if (m.available) {
         const link = document.createElement("a");
         link.href = "#";
@@ -724,7 +760,7 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO) => `<!doc
           img.className = "pdf-page";
           img.loading = "lazy";
           img.alt = title + ", p. " + pageNo;
-          img.src = "/pdf-page?title=" + encodeURIComponent(title) + "&page=" + pageNo;
+          img.src = "/pdf-page?book=" + encodeURIComponent(source.dataset.book) + "&page=" + encodeURIComponent(pageNo);
           div.append(img);
         };
         div.append(link);
@@ -791,6 +827,7 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO) => `<!doc
         const name = (frame.match(/^event: (.*)$/m) || [])[1];
         const data = JSON.parse((frame.match(/^data: (.*)$/m) || [])[1] || "{}");
         if (name === "stage" && waiting()) waiting().textContent = data.text;
+        if (name === "quota") document.querySelector(".meta").textContent = data.text;
         // Only the count is used here. Whether the passages are worth listing depends on the
         // answer, which has not been written yet, so the server sends the list with it.
         if (name === "passages" && waiting()) waiting().textContent = data.text + ", composing an answer";
@@ -825,6 +862,10 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO) => `<!doc
 // read before it exists. The controls are chrome: a reader who has seen the page once knows
 // the URLs, so the routes refuse the request themselves and this only stops drawing buttons
 // that would 403.
+const blankPage = PAGE();
+const codeHash = (tag: string) => createHash("sha256").update(blankPage.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1] ?? "").digest("base64");
+const CSP = `default-src 'self'; script-src 'sha256-${codeHash("script")}'; style-src 'self' 'sha256-${codeHash("style")}'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`;
+
 if (process.argv.includes("--selfcheck")) {
   assert.match(PAGE("", true), /Add a book/);
   assert.doesNotMatch(PAGE("", false), /Add a book/);
@@ -926,6 +967,18 @@ function shelf(user: string) {
   );
 }
 
+function reading(user: string) {
+  const settings = profile.dailyReading;
+  if (!settings) return "";
+  const db = userLibrary(user);
+  const rows = db.prepare("select c.id, c.book_id, c.chunk_id, c.text, c.page_start, c.page_end, b.title, b.author, b.paginated, c.text t, c.page_start ps from chunks c join books b on c.book_id = b.id where b.title = ?").all(settings.book) as (Hit & { t: string; ps: string })[];
+  db.close();
+  const { month, day } = monthDayIn(process.env.GURU_TZ ?? settings.timezone);
+  const entry = datedReading(rows, month, day);
+  if (!entry) return "";
+  return `<section class="reflection answer"><p class="note">${escape(settings.label)}, ${MONTHS[month]} ${day}</p><h2>${escape(entry.title)}</h2><blockquote class="reading"><p>${escape(entry.text)}</p>${citationMarkup(entry.row)}</blockquote></section>`;
+}
+
 /**
  * The host this deployment answers to. Everything else 301s here.
  *
@@ -956,7 +1009,12 @@ export function redirectTarget(host: string | undefined, url: string | undefined
   return `https://${canonical}${url ?? "/"}`;
 }
 
-createServer(async (req, res) => {
+const handleRequest = async (req: IncomingMessage, res: import("node:http").ServerResponse) => {
+  res.setHeader("content-security-policy", CSP);
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("referrer-policy", "no-referrer");
+  res.setHeader("cache-control", "private, no-store");
+  if (process.env.NODE_ENV === "production") res.setHeader("strict-transport-security", "max-age=31536000");
   // Before anything else, including auth: an old host should not prompt for a password to
   // reach a page it is only going to be sent away from.
   const moved = redirectTarget(req.headers.host, req.url, CANONICAL_HOST);
@@ -985,43 +1043,49 @@ createServer(async (req, res) => {
     res.writeHead(200, { "content-type": "application/manifest+json", "cache-control": "public, max-age=86400" });
     return void res.end(
       JSON.stringify({
-        name: "guru",
-        short_name: "guru",
-        description: "A study companion for your own library that never misquotes.",
+        name: profile.name,
+        short_name: profile.shortName,
+        description: profile.description,
         start_url: "/",
         display: "standalone",
-        background_color: "#14150f",
-        theme_color: "#f3efe3",
+        background_color: profile.backgroundColor,
+        theme_color: profile.themeColor,
         icons: [{ src: "/icon-512.png", sizes: "512x512", type: "image/png" }],
       }),
     );
   }
   if (req.method === "GET" && (req.url === "/icon-180.png" || req.url === "/icon-512.png")) {
     try {
-      const png = readFileSync(join("assets", req.url.slice(1)));
+      const png = readFileSync(join(profile.assets, req.url.slice(1)));
       res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=604800" });
       return void res.end(png);
     } catch {
       return void res.writeHead(404, { "content-type": "text/plain" }).end("not found");
     }
   }
-  // The magic link: valid credentials in the query become a year-long cookie and a clean
-  // redirect, so an installed web app never shows a password prompt. The credential is
-  // checked by the exact same timing-safe path as the Basic header. The URL does pass
-  // through proxy logs, which is the price of a link a person can simply tap; rotate the
-  // password if a link ever leaks.
-  if (req.method === "GET" && req.url?.startsWith("/login")) {
-    const u = new URL(req.url, "http://x");
-    const b64 = Buffer.from(`${u.searchParams.get("u") ?? ""}:${u.searchParams.get("p") ?? ""}`).toString("base64");
-    if (!basicAuthUser(`Basic ${b64}`)) return send(401, PAGE("<p>That link is not valid.</p>", false, true));
+  if (req.method === "GET" && (req.url === "/mark.svg" || req.url === "/theme.css")) {
+    const file = req.url === "/mark.svg" ? profile.mark : profile.styles;
+    if (!file) return void res.writeHead(404).end();
+    res.writeHead(200, { "content-type": req.url === "/mark.svg" ? "image/svg+xml" : "text/css; charset=utf-8" });
+    return void res.end(readFileSync(file));
+  }
+  const ip = clientAddress(req);
+  if (blocked(ip)) return send(429, PAGE("<p>Too many failed sign-ins. Try again later.</p>", false, true));
+  if (req.method === "GET" && new URL(req.url ?? "/", "http://local").pathname === "/login") {
+    const query = new URL(req.url!, "http://local").searchParams;
+    const name = query.get("u") ?? "";
+    const user = query.has("t") ? tokenUser(name, query.get("t") ?? "") : basicAuthUser(`Basic ${Buffer.from(`${name}:${query.get("p") ?? ""}`).toString("base64")}`);
+    if (!user) { authFailed(ip); return send(401, PAGE("<p>That link is not valid.</p>", false, true)); }
     res.writeHead(302, {
       location: "/",
-      "set-cookie": `guru=${b64}; Max-Age=31536000; Path=/; HttpOnly; Secure; SameSite=Lax`,
+      "set-cookie": `__Host-${profile.cookieName}=${user}.${linkToken(user)}; Max-Age=31536000; Path=/; HttpOnly; Secure; SameSite=Lax`,
     });
     return void res.end();
   }
+  if (["POST", "PUT", "DELETE"].includes(req.method ?? "") && req.headers["sec-fetch-site"] === "cross-site") return send(403, PAGE("<p>Request origin rejected.</p>", false, true));
 
   const auth = await authenticate(req);
+  if (auth.kind === "respond" && auth.status === 401 && (req.headers.authorization !== undefined || sessionCookie(req.headers.cookie) !== undefined)) authFailed(ip);
   if (auth.kind === "respond") {
     // Clerk's headers carry the session cookie and redirect target; forward them as given.
     return res.writeHead(auth.status, Object.fromEntries(auth.headers)).end();
@@ -1034,32 +1098,36 @@ createServer(async (req, res) => {
   // page once can call them again by hand. A guest is never a librarian whatever the env says,
   // because the reading room's shelf belongs to the operator, not to whoever walked in.
   const librarian = !guest && isLibrarian(user);
-  const page = (html = "") => PAGE(html, librarian, guest);
+  const page = (html = "", meta = "") => PAGE(html, librarian, guest, DEMO, meta, user);
 
-  if (req.method === "GET" && req.url === "/") return send(200, page(shelf(user)));
+  if (req.method === "GET" && req.url === "/") {
+    const db = userLibrary(user);
+    const left = Math.max(0, MAX_ASKS - askedToday(db));
+    db.close();
+    return send(200, page(reading(user) + shelf(user), profile.showQuota ? `${left} of ${MAX_ASKS} questions left today` : ""));
+  }
+  if (req.method === "GET" && new URL(req.url ?? "/", "http://local").pathname === "/log") {
+    if (guest || !isOperator(user)) return send(403, page("<p>Operator only.</p>"));
+    const query = new URL(req.url!, "http://local").searchParams;
+    const who = query.get("user");
+    const limit = Math.max(1, Math.min(2000, Number(query.get("limit")) || 200));
+    type Event = { at: string; user: string; event: string; q: string; outcome: string | null };
+    const rows = (who ? logdb.prepare("select * from log where user = ? order by rowid desc limit ?").all(who, limit) : logdb.prepare("select * from log order by rowid desc limit ?").all(limit)) as Event[];
+    const table = rows.map((r) => `<tr><td>${escape(r.at)}</td><td>${escape(r.user)}</td><td>${escape(r.event)}</td><td>${escape(r.q)}</td><td>${escape(r.outcome ?? "")}</td></tr>`).join("");
+    const links = readers().map((name) => `<li>${escape(name)} <a href="/login?u=${encodeURIComponent(name)}&amp;t=${linkToken(name)}">Sign-in link</a></li>`).join("");
+    return send(200, page(`<h2>Usage log</h2><div class="log-wrap"><table class="log"><thead><tr><th>Time</th><th>Reader</th><th>Action</th><th>Question</th><th>Outcome</th></tr></thead><tbody>${table}</tbody></table></div><details><summary>Reader links</summary><ul>${links}</ul></details>`));
+  }
 
   // The page a citation lives on, for reading a quotation in its surroundings. Title and
   // page arrive from the client's parse of the citation line; an unknown pair is just an
   // empty result, not an error worth a page.
   if (req.method === "GET" && req.url?.startsWith("/context")) {
     const u = new URL(req.url, "http://x");
-    const title = u.searchParams.get("title") ?? "";
-    const p = Number(u.searchParams.get("page"));
-    logEvent(user, "context", `${title}, p. ${p}`);
-    let row: { t: string; ps: string; pe: string } | undefined;
-    if (title && Number.isFinite(p)) {
-      const db = userLibrary(user);
-      // Longest covering chunk: overlap means two chunks can span the page, and the longer
-      // one carries more of the surroundings, which is the whole point here.
-      row = db
-        .prepare(
-          "select c.text t, c.page_start ps, c.page_end pe from chunks c join books b on c.book_id = b.id " +
-            "where b.title = ? and cast(c.page_start as integer) <= ? and cast(c.page_end as integer) >= ? " +
-            "order by length(c.text) desc limit 1",
-        )
-        .get(title, p, p) as { t: string; ps: string; pe: string } | undefined;
-      db.close();
-    }
+    const id = Number(u.searchParams.get("chunk"));
+    const db = userLibrary(user);
+    const row = Number.isSafeInteger(id) && id > 0 ? db.prepare("select text t, page_start ps, page_end pe from chunks where id = ?").get(id) as { t: string; ps: string; pe: string } | undefined : undefined;
+    db.close();
+    logEvent(user, "context", String(id));
     res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
     return void res.end(
       JSON.stringify(row ? { text: row.t, page_start: row.ps, page_end: row.pe } : { text: "" }),
@@ -1069,14 +1137,14 @@ createServer(async (req, res) => {
   // Whether a citation's book has its original PDF on file, and how many pages, so the
   // client only offers "view page image" where a page can actually be streamed.
   if (req.method === "GET" && req.url?.startsWith("/pdf-meta")) {
-    const title = new URL(req.url, "http://x").searchParams.get("title") ?? "";
+    const identity = Number(new URL(req.url, "http://x").searchParams.get("book"));
     const db = userLibrary(user);
-    const path = title ? materializePdf(db, user, title) : undefined;
+    const pdf = Number.isSafeInteger(identity) && identity > 0 ? materializePdf(db, user, identity) : undefined;
     db.close();
     let pages = 0;
-    if (path) {
+    if (pdf) {
       try {
-        pages = JSON.parse(execFileSync(PY, [SIDECAR, "--meta", path], { encoding: "utf8" })).pages ?? 0;
+        pages = JSON.parse(execFileSync(PY, [SIDECAR, "--meta", pdf.path], { encoding: "utf8" })).pages ?? 0;
       } catch {
         // corrupt PDF, missing fitz, whatever — no pages, no link shown
       }
@@ -1089,16 +1157,17 @@ createServer(async (req, res) => {
   // few hundred KB for that page, not the whole PDF the answer happened to cite.
   if (req.method === "GET" && req.url?.startsWith("/pdf-page")) {
     const u = new URL(req.url, "http://x");
-    const title = u.searchParams.get("title") ?? "";
-    const n = Number(u.searchParams.get("page"));
+    const identity = Number(u.searchParams.get("book"));
+    const printed = Number(u.searchParams.get("page"));
     const db = userLibrary(user);
-    const path = title ? materializePdf(db, user, title) : undefined;
+    const pdf = Number.isSafeInteger(identity) && identity > 0 ? materializePdf(db, user, identity) : undefined;
+    const n = printed - (pdf?.pageOffset ?? 0);
     db.close();
     const fail = () => res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("page unavailable");
-    if (!path || !Number.isInteger(n) || n < 1) return void fail();
+    if (!pdf || !Number.isInteger(n) || n < 1) return void fail();
     let png: Buffer;
     try {
-      png = execFileSync(PY, [SIDECAR, "--render", path, String(n)], { maxBuffer: 32 * 1024 * 1024 });
+      png = execFileSync(PY, [SIDECAR, "--render", pdf.path, String(n)], { maxBuffer: 32 * 1024 * 1024 });
     } catch {
       return void fail();
     }
@@ -1114,13 +1183,13 @@ createServer(async (req, res) => {
     if (q.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>"));
     logEvent(user, "find", q);
     const db = userLibrary(user);
-    const hits = (await search(db, q)).slice(0, 8);
+    const hits = (await search(db, broaden(q))).slice(0, 8);
     db.close();
     const items = hits
       .map(
         (h) =>
           `<blockquote><p>${escape(h.text.length > 500 ? h.text.slice(0, 500) + "…" : h.text)}</p>` +
-          `<cite>${escape(cite(h).slice(1, -1))}</cite></blockquote>`,
+          `${citationMarkup(h)}</blockquote>`,
       )
       .join("");
     const html = items
@@ -1181,18 +1250,35 @@ createServer(async (req, res) => {
       db.close();
       res.writeHead(200, {
         "content-type": "application/json; charset=utf-8",
-        "content-disposition": `attachment; filename="guru-${user}.json"`,
+        "content-disposition": `attachment; filename="${profile.id}-${user}.json"`,
       });
-      return void res.end(JSON.stringify({ user, asks, note: "Questions are logged with your username so the operator can review usage. The books are the librarian's." }, null, 2));
+      return void res.end(JSON.stringify({ user, asks, events: logdb.prepare("select at, event, q, flag, outcome from log where user = ? order by rowid").all(user), note: "Questions are logged with your username so the operator can review usage. The books are the librarian's." }, null, 2));
     }
-    const db = userLibrary(user);
-    db.pragma("wal_checkpoint(TRUNCATE)");
-    db.close();
-    res.writeHead(200, {
-      "content-type": "application/vnd.sqlite3",
-      "content-disposition": `attachment; filename="guru-${user}.db"`,
-    });
-    return void createReadStream(libraryPath(user)).pipe(res);
+    const directory = mkdtempSync(join(tmpdir(), "guru-export-"));
+    const snapshot = join(directory, "library.db");
+    try {
+      const db = userLibrary(user);
+      try { db.prepare("vacuum into ?").run(snapshot); } finally { db.close(); }
+      const copy = new SqliteDatabase(snapshot);
+      try {
+        copy.exec("drop table if exists reader_events; create table reader_events (at text, event text, q text, flag text, outcome text)");
+        const insert = copy.prepare("insert into reader_events values (?, ?, ?, ?, ?)");
+        const rows = logdb.prepare("select at, event, q, flag, outcome from log where user = ? order by rowid").all(user) as { at: string; event: string; q: string; flag: string | null; outcome: string | null }[];
+        copy.transaction(() => { for (const row of rows) insert.run(row.at, row.event, row.q, row.flag, row.outcome); })();
+      } finally { copy.close(); }
+      res.writeHead(200, {
+        "content-type": "application/vnd.sqlite3",
+        "content-disposition": `attachment; filename="${profile.id}-${user}.db"`,
+      });
+      const stream = createReadStream(snapshot);
+      const cleanup = () => rmSync(directory, { recursive: true, force: true });
+      stream.on("error", () => res.destroy()).on("close", cleanup);
+      res.on("close", () => stream.destroy());
+      return void stream.pipe(res);
+    } catch (error) {
+      rmSync(directory, { recursive: true, force: true });
+      throw error;
+    }
   }
 
   if (req.method === "POST" && req.url === "/delete") {
@@ -1205,10 +1291,12 @@ createServer(async (req, res) => {
 
     for (const j of listJobs(jobs, user, 1000)) await rm(j.path, { force: true });
     jobs.prepare("delete from jobs where user_id = ?").run(user);
+    logdb.prepare("delete from log where user = ?").run(user);
+    if (existsSync(PDF_CACHE)) for (const file of readdirSync(PDF_CACHE)) if (file.startsWith(`${user}-`)) await rm(join(PDF_CACHE, file), { force: true });
     // -wal and -shm hold data too; leaving them behind would seed the next database of the
     // same name with the deleted reader's writes.
     for (const suffix of ["", "-wal", "-shm"]) await rm(libraryPath(user) + suffix, { force: true });
-    return send(200, page("<p>Your library and its history are gone.</p>"));
+    return send(200, page('<p id="deleted">Your library and its question history are gone.</p>'));
   }
 
   if (req.method !== "POST" || req.url !== "/ask") return send(404, page("<p>Not found.</p>"));
@@ -1240,7 +1328,7 @@ createServer(async (req, res) => {
   const query = new URLSearchParams(await body(req)).get("q")?.trim() ?? "";
   if (!query) return send(400, page("<p>Ask something.</p>"));
   if (query.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>"));
-  logEvent(user, "ask", query);
+  const logId = logEvent(user, "ask", query);
   // Counted before the work and after validation: the model calls happen whether or not the
   // pipeline finds anything, and a failed question that refunds its slot is a free retry loop.
   if (guest) {
@@ -1277,10 +1365,12 @@ createServer(async (req, res) => {
       emit = (event, data) => void res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     }
 
+    if (profile.showQuota) emit("quota", { text: `${Math.max(0, MAX_ASKS - askedToday(db))} of ${MAX_ASKS} questions left today` });
     emit("stage", { text: "searching your library" });
     const hits = await rerank(query, await search(db, await expandQuery(query)));
     if (!hits.length) {
-      const none = "<p>Your library doesn't cover this.</p>";
+      logOutcome(logId, "no passages");
+      const none = "<p>No supporting passage was found for this question.</p>";
       if (!streaming) return send(200, page(none));
       emit("answer", { html: none });
       return void res.end();
@@ -1294,7 +1384,8 @@ createServer(async (req, res) => {
       `<ul class="shelf">${sources}</ul></details>`;
     emit("passages", { text: `reading ${hits.length} passage${hits.length > 1 ? "s" : ""}` });
 
-    const { answer, synopsis, dropped, declined } = await ask(query, hits);
+    const { answer, synopsis, dropped, declined, passages } = await ask(query, hits);
+    logOutcome(logId, declined ? "declined" : /^>/.test(answer) ? "answered" : "ungrounded");
     // A decline means nothing retrieved bore on the question, so listing what was read under
     // "Passages consulted" would claim a relevance the answer just denied.
     const shelfNote = declined ? "" : consulted;
@@ -1304,7 +1395,8 @@ createServer(async (req, res) => {
     // Set apart from the passages on purpose. It is the model's own summary, and the one
     // thing this page must never do is let its own prose look like somebody's book.
     const lead = synopsis ? `<p class="synopsis">${escape(synopsis)}</p>` : "";
-    const composed = `${lead}<div class="answer">${render(answer)}</div>`;
+    const content = passages.length ? passages.map((p) => `<blockquote><p>${escape(p.text)}</p>${citationMarkup(p.hit)}</blockquote>`).join("") : render(answer);
+    const composed = `${lead}<div class="answer">${content}</div>`;
 
     if (!streaming) {
       return send(200, page(`<h2>${escape(query)}</h2>${composed}${shelfNote}${note}`));
@@ -1325,4 +1417,11 @@ createServer(async (req, res) => {
       send(502, page(failed));
     }
   }
-}).listen(PORT, () => console.error(`guru on http://localhost:${PORT}`));
+};
+createServer((req, res) => {
+  void handleRequest(req, res).catch((error) => {
+    console.error("Request failed:", error instanceof Error ? error.message : "unknown error");
+    if (res.headersSent) return void res.destroy();
+    res.writeHead(error instanceof Error && error.message === "body too large" ? 413 : 500, { "content-type": "text/plain; charset=utf-8" }).end("Request could not be completed.");
+  });
+}).listen(PORT, process.env.HOST ?? "0.0.0.0", () => console.error(`${profile.id} on http://localhost:${PORT}`));

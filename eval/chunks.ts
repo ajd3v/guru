@@ -1,3 +1,5 @@
+import { loadCases, sampleCases, readFrozen, writeFrozen, quotesExpected } from "./corpus.ts";
+import { broaden } from "../src/profile.ts";
 // Chunk-size sweep. `ingest/ingest.py` calls this the single biggest retrieval lever and says
 // its value should be an eval result rather than a guess, and it has never been swept since
 // HyDE landed.
@@ -13,7 +15,7 @@
 //
 //   node eval/chunks.ts data/chunk-1000.db data/full.db data/chunk-3000.db
 try {
-  process.loadEnvFile();
+  if (process.env.GURU_NO_DOTENV !== "1") process.loadEnvFile();
 } catch {
   // no .env, and none is needed: nothing here calls a model.
 }
@@ -33,7 +35,7 @@ const load = (f: string) => {
     return [];
   }
 };
-const cases = [...load("eval/cases.json"), ...load("eval/cases.generated.json")];
+const cases = loadCases();
 
 const dbs = DBS.map((path) => {
   const db = open(path);
@@ -44,6 +46,7 @@ const dbs = DBS.map((path) => {
 
 // The common denominator. A case only counts if every configuration could possibly answer it.
 const common = cases.filter((c) => dbs.every((d) => d.corpus.some((t) => t.includes(flat(c.expect)))));
+if (!common.length) throw new Error("No evaluation cases shared by these corpora");
 const perDb = dbs.map((d) => cases.filter((c) => d.corpus.some((t) => t.includes(flat(c.expect)))).length);
 
 console.log(`\n${common.length} of ${cases.length} cases scoreable in all ${dbs.length} configurations`);

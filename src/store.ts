@@ -1,3 +1,4 @@
+import "./profile.ts";
 import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
@@ -16,11 +17,13 @@ export type Book = {
   author: string;
   source: string;
   paginated: boolean;
+  page_offset?: number;
   chunks: Chunk[];
 };
 
 export type Hit = Chunk & {
   id: number;
+  book_id?: number;
   title: string;
   author: string;
   paginated: number;
@@ -35,7 +38,7 @@ export function open(path: string) {
   db.exec(`
     create table if not exists books (
       id integer primary key,
-      title text, author text, source text unique, paginated integer, pdf blob
+      title text, author text, source text unique, paginated integer, pdf blob, page_offset integer not null default 0
     );
     create table if not exists chunks (
       id integer primary key,
@@ -56,6 +59,9 @@ export function open(path: string) {
     db.exec("alter table books add column pdf blob");
   } catch {
     // already there
+  }
+  if (!(db.pragma("table_info(books)") as { name: string }[]).some((c) => c.name === "page_offset")) {
+    db.exec("alter table books add column page_offset integer not null default 0");
   }
   return db;
 }
@@ -133,7 +139,7 @@ export async function addBook(
   const vectors = await embed(indexed);
 
   const insertBook = db.prepare(
-    "insert or replace into books (title, author, source, paginated, pdf) values (?,?,?,?,?)",
+    "insert or replace into books (title, author, source, paginated, pdf, page_offset) values (?,?,?,?,?,?)",
   );
   const insertChunk = db.prepare(
     "insert into chunks (book_id, chunk_id, text, page_start, page_end) values (?,?,?,?,?)",
@@ -165,7 +171,7 @@ export async function addBook(
     }
 
     const bookId = insertBook.run(
-      book.title, book.author, book.source, book.paginated ? 1 : 0, pdf ?? null,
+      book.title, book.author, book.source, book.paginated ? 1 : 0, pdf ?? null, book.page_offset ?? 0,
     ).lastInsertRowid as number;
     book.chunks.forEach((c, i) => {
       const id = insertChunk.run(
@@ -221,7 +227,7 @@ export async function search(db: Database.Database, query: string, k = CANDIDATE
   if (!scores.size) return [];
   const top = [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, k);
   const rows = db.prepare(`
-    select c.id, c.chunk_id, c.text, c.page_start, c.page_end, b.title, b.author, b.paginated
+    select c.id, c.book_id, c.chunk_id, c.text, c.page_start, c.page_end, b.title, b.author, b.paginated
     from chunks c join books b on b.id = c.book_id
     where c.id in (${top.map(() => "?").join(",")})
   `).all(...top.map(([id]) => id)) as any[];
@@ -232,11 +238,12 @@ export async function search(db: Database.Database, query: string, k = CANDIDATE
 
 /** The stored source PDF for a book, by title, or undefined if it has none (EPUB, or ingested
  * before this column existed). Bytes only: the caller materializes them to disk for rendering. */
-export function bookPdf(db: Database.Database, title: string): { id: number; pdf: Buffer } | undefined {
-  const row = db.prepare("select id, pdf from books where title = ?").get(title) as
-    | { id: number; pdf: Buffer | null }
-    | undefined;
-  return row?.pdf ? { id: row.id, pdf: row.pdf } : undefined;
+export function bookPdf(db: Database.Database, identity: string | number): { id: number; pdf: Buffer; page_offset: number } | undefined {
+  const rows = db.prepare(typeof identity === "number"
+    ? "select id, pdf, page_offset from books where id = ?"
+    : "select id, pdf, page_offset from books where title = ? limit 2").all(identity) as
+    { id: number; pdf: Buffer | null; page_offset: number }[];
+  return rows.length === 1 && rows[0].pdf ? rows[0] as { id: number; pdf: Buffer; page_offset: number } : undefined;
 }
 
 /** How guru cites: [Title, Author, p. N], or chapter/paragraph when the source has no pages. */
@@ -256,7 +263,7 @@ export function cite(h: Hit) {
   // chapter arrives as "CHAPTER XIX——THAT TO STUDY PHILOSOPHY IS TO LEARN TO DIE" and the
   // citation under a quotation reads with a typographic scar in it. A comma is what the
   // separator meant. Two or more, so a hyphenated word keeps its hyphen.
-  const where = h.paginated
+  const where = h.paginated && /^\d+$/.test(String(h.page_start)) && /^\d+$/.test(String(h.page_end))
     ? `p. ${h.page_start}${h.page_end !== h.page_start ? `-${h.page_end}` : ""}`
     : String(h.page_start)
         .replace(/["“”\[\]]/g, "")

@@ -19,7 +19,7 @@ DIR="${GURU_BACKUP_DIR:-/home/deploy/backups}"
 ARCHIVE="${1:-$(ls -t "$DIR"/guru-*.tar.gz 2>/dev/null | head -1)}"
 [ -n "$ARCHIVE" ] && [ -f "$ARCHIVE" ] || { echo "no backup archive found in $DIR" >&2; exit 1; }
 
-APP=$(docker ps --filter name=guru-kk72 --format '{{.Names}}' | head -1)
+APP="${GURU_CONTAINER:-$(docker ps --filter name=guru- --format '{{.Names}}' | head -1)}"
 IMAGE=$(docker inspect "$APP" --format '{{.Config.Image}}' 2>/dev/null || echo "")
 [ -n "$IMAGE" ] || { echo "guru image not found; is the app running?" >&2; exit 1; }
 

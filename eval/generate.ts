@@ -10,12 +10,12 @@
 // silently fall back to the Anthropic provider and measure a different backend
 // than the one under test.
 try {
-  process.loadEnvFile();
+  if (process.env.GURU_NO_DOTENV !== "1") process.loadEnvFile();
 } catch {
   // no .env; env vars may still be set externally
 }
 
-import { readFileSync } from "node:fs";
+import { complete, generationModel } from "../src/llm.ts";
 import { open } from "../src/store.ts";
 
 const DB = process.env.GURU_DB ?? "data/full.db";
@@ -48,6 +48,7 @@ const flat = (s: string) => s.replace(/\s+/g, " ").trim();
 
 // Stratify across books so one long book can't dominate the set.
 const books = db.prepare("select id, title from books").all() as any[];
+if (!books.length) throw new Error("Cannot generate evaluation cases from an empty corpus");
 const perBook = Math.ceil((WANT * 1.6) / books.length); // over-sample; many get rejected
 const sample: any[] = [];
 for (const b of books) {
@@ -68,16 +69,10 @@ for (let i = sample.length - 1; i > 0; i--) {
   [sample[i], sample[j]] = [sample[j], sample[i]];
 }
 
-const Anthropic = (await import("@anthropic-ai/sdk")).default;
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || "local" });
-// Generation quality decides eval quality, so this defaults to a stronger model than the
-// retrieval pipeline uses. Small/reasoning models here continue the passage instead of
-// answering, or burn the whole budget deliberating.
-const MODEL = process.env.GURU_GEN_MODEL ?? process.env.GURU_PIPELINE_MODEL ?? "claude-sonnet-5";
+const MODEL = generationModel();
 
 async function makeCase(chunk: any) {
-  const m = await client.messages
-    .stream({
+  const text = await complete({
       model: MODEL,
       max_tokens: 600,
       system:
@@ -91,21 +86,14 @@ async function makeCase(chunk: any) {
             `Write the question a curious reader would ask that this passage answers.\n` +
             `Rules:\n` +
             `- Ask it in plain modern English, the way someone would type it into a search box.\n` +
-            `- Do NOT reuse the passage's distinctive words. If it says "Tao", ask about "the way".\n` +
-            `  If it says "contrition", ask about "feeling sorry". Paraphrase everything.\n` +
+            `- Do NOT reuse the passage's distinctive words. Use a reader's own language.\n` +
             `- Then quote the single sentence from the passage that best answers it, copied exactly.\n\n` +
             `Reply in exactly this form and nothing else:\n` +
             `Q: <the question>\n` +
             `A: <the exact sentence from the passage>`,
         },
       ],
-    })
-    .finalMessage();
-
-  const text = m.content
-    .filter((b: any) => b.type === "text")
-    .map((b: any) => b.text)
-    .join("");
+    });
   const query = /^Q:\s*(.+)$/m.exec(text)?.[1]?.trim();
   const expect = /^A:\s*(.+)$/m.exec(text)?.[1]?.trim().replace(/^["“]|["”]$/g, "");
   if (!query || !expect || expect.length < 25) return { reason: "malformed" };
@@ -134,4 +122,5 @@ for (let i = 0; i < sample.length && cases.length < WANT; i += CONCURRENCY) {
 
 console.error(`\nrejections: ${JSON.stringify(rejects)}`);
 console.error(`mean overlap of accepted: ${(cases.reduce((a, c) => a + c.overlap, 0) / cases.length).toFixed(3)}`);
-console.log(JSON.stringify(cases, null, 1));
+if (!cases.length) throw new Error("No valid evaluation cases generated");
+console.log(JSON.stringify(cases.slice(0, WANT), null, 1));

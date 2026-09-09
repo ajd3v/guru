@@ -1,0 +1,57 @@
+import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { broaden, loadProfile, profile } from "../src/profile.ts";
+import { loadCases, sampleCases, quotesExpected, readFrozen, writeFrozen } from "../eval/corpus.ts";
+import { isOperator } from "../src/auth.ts";
+import { open } from "../src/store.ts";
+import { datedReading, monthDayIn } from "../src/reading.ts";
+
+assert.equal(isOperator("reader", []), false);
+assert.equal(isOperator("reader", ["operator"]), false);
+assert.equal(isOperator("operator", ["operator"]), true);
+
+const directory = mkdtempSync(join(tmpdir(), "guru-profile-"));
+try {
+  mkdirSync(join(directory, "assets"));
+  writeFileSync(join(directory, "library.json"), "[]");
+  writeFileSync(join(directory, "cases.json"), "[]");
+  const path = join(directory, "profile.json");
+  const value = { version: 1, id: "field-notes", name: "Field Notes", library: "library.json", evaluation: ["cases.json"], queryExpansions: [{ terms: ["beetles", "lady bird"], append: "insects" }], sourceRegister: "field guides", starterMode: "managed", maxQuotesPerBook: 3 };
+  const load = (changes = {}) => { writeFileSync(path, JSON.stringify({ ...value, ...changes })); return loadProfile(path); };
+  const p = load();
+  assert.equal(p.library, join(directory, "library.json"));
+  assert.equal(p.evaluation[0], join(directory, "cases.json"));
+  assert.equal(p.sourceRegister, "field guides");
+  assert.equal(p.cookieName, "field-notes");
+  assert.equal(broaden("Where are the beetles?", p.queryExpansions), "Where are the beetles? insects");
+  assert.equal(broaden("a lady-bird", p.queryExpansions), "a lady-bird insects");
+  assert.equal(broaden("beetleskin", p.queryExpansions), "beetleskin");
+  assert.throws(() => load({ maxQuotesPerBook: -1 }), /maxQuotesPerBook/);
+  assert.throws(() => load({ evaluation: [] }), /evaluation/);
+  assert.throws(() => load({ themeColor: "</style>" }), /themeColor/);
+  assert.throws(() => load({ cookieName: "bad;name" }), /cookieName/);
+  assert.throws(() => load({ typo: true }), /Unknown/);
+  assert.throws(() => load({ dailyReading: { book: "Notebook", label: "Today", timezone: "wrong" } }));
+  assert.equal(loadCases().length, profile.evaluation.flatMap((f) => JSON.parse(readFileSync(f, "utf8"))).length);
+  assert.deepEqual(sampleCases([0, 1, 2, 3, 4, 5], 2), [0, 3]);
+  assert.throws(() => sampleCases([], 0), /positive integer/);
+  assert.equal(quotesExpected("> The birds arrive in winter. [Writer, Notebook, p. 2]", "The insects arrive in summer."), false);
+  assert.equal(quotesExpected("> The insects arrive in summer. [Writer, Notebook, p. 2]", "The insects arrive in summer."), true);
+  const db = open(join(directory, "library.db"));
+  db.prepare("insert into books (title, author, source, paginated) values (?, ?, ?, 1)").run("Notebook", "Writer", "notebook.pdf");
+  db.prepare("insert into chunks (book_id, chunk_id, text, page_start, page_end) values (1, 0, ?, '1', '1')").run("One complete sentence about birds in the forest.");
+  const cache = join(directory, "frozen.json");
+  writeFrozen(cache, db, "answers", [{ query: "birds" }]);
+  assert.equal(readFrozen(cache, db, "answers").length, 1);
+  assert.throws(() => readFrozen(cache, db, "rerank"), /does not match/);
+  db.prepare("update chunks set text = ?").run("Another sentence in a changed source.");
+  assert.throws(() => readFrozen(cache, db, "answers"), /does not match/);
+  db.close();
+  const reading = datedReading([{ t: "AUGUST 5\nBIRDS\nThe birds arrive.\nAUGUST 6\nINSECTS\nThe insects arrive.", ps: "20" }], 7, 5);
+  assert.equal(reading?.text, "The birds arrive.");
+  assert.equal(datedReading([{ t: "AUGUST 15\nBIRDS\nWords.", ps: "20" }], 7, 5), undefined);
+  assert.deepEqual(monthDayIn("America/Los_Angeles", new Date("2026-08-05T03:00:00Z")), { month: 7, day: 4 });
+} finally { rmSync(directory, { recursive: true, force: true }); }
+console.error("profile and evaluation tests ok");

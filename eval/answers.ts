@@ -1,3 +1,5 @@
+import { loadCases, sampleCases, readFrozen, writeFrozen, quotesExpected } from "./corpus.ts";
+import { broaden } from "../src/profile.ts";
 // Answer eval: given passages that DO contain the answer, does the model quote the right one?
 //
 // The retrieval eval scores whether the gold chunk reaches the top 5. This scores what happens
@@ -13,7 +15,7 @@
 //
 //   node eval/answers.ts --limit 30 --models modelA,modelB
 try {
-  process.loadEnvFile();
+  if (process.env.GURU_NO_DOTENV !== "1") process.loadEnvFile();
 } catch {
   // no .env; env vars may still be set externally
 }
@@ -36,10 +38,10 @@ const load = (f: string): Case[] => {
 };
 
 const flat = (s: string) => s.replace(/\s+/g, " ").trim();
-const all = [...load("eval/cases.json"), ...load("eval/cases.generated.json")];
+const all = loadCases();
 // Stride rather than slice: the file is ordered by book, so a prefix is one author's cases.
 const stride = Math.max(1, Math.floor(all.length / LIMIT));
-const cases = all.filter((_, i) => i % stride === 0);
+const cases = sampleCases(all, LIMIT);
 
 /** The verbatim sentences an answer actually quoted, citations stripped. */
 const quotesOf = (answer: string) =>
@@ -82,14 +84,9 @@ const CACHE = cacheAt === -1 ? "" : process.argv[cacheAt + 1];
 type Frozen = { query: string; expect: string; hits: Hit[] };
 let frozen: Frozen[] = [];
 
-if (CACHE) {
-  try {
-    frozen = JSON.parse(readFileSync(CACHE, "utf8")) as Frozen[];
-    console.error(`answering from ${frozen.length} frozen cases in ${CACHE}`);
-  } catch {
-    console.error(`building ${CACHE}…`);
-  }
-}
+const cacheKind = `answers:${JSON.stringify(cases)}`;
+frozen = readFrozen<Frozen>(CACHE, db, cacheKind);
+if (frozen.length) console.error(`Loaded ${frozen.length} frozen answer cases`);
 
 if (!frozen.length) {
   for (const c of cases) {
@@ -98,8 +95,11 @@ if (!frozen.length) {
       frozen.push({ query: c.query, expect: c.expect, hits });
     }
   }
-  if (CACHE) writeFileSync(CACHE, JSON.stringify(frozen));
+  writeFrozen(CACHE, db, cacheKind, frozen);
 }
+
+console.log(`Selected ${cases.length} cases. Eligible ${frozen.length}. Excluded or missed ${cases.length - frozen.length}.`);
+if (!frozen.length) throw new Error("No eligible answer cases for this corpus");
 
 for (const c of frozen) {
   const hits = c.hits;
@@ -124,7 +124,7 @@ for (const c of frozen) {
 
     if (quotes.length) {
       s.answered++;
-      if (quotes.some((q) => goldText.includes(q))) s.gold++;
+      if (quotesExpected(result.answer, c.expect)) s.gold++;
       else notes.push(`  miss  ${model.split("/").pop()}  ${c.query.slice(0, 62)}`);
       continue;
     }
@@ -133,7 +133,7 @@ for (const c of frozen) {
     // is the model's judgement about passages it was shown. Ungrounded means it answered and
     // every quote failed verification, which should be near-impossible: the quoted text is
     // spliced from those same passages, so it is a bug rather than a judgement call.
-    const ungrounded = result.answer.startsWith(UNGROUNDED);
+    const ungrounded = !result.declined && !quotes.length;
     if (ungrounded) s.ungrounded++;
     else s.declined++;
     notes.push(

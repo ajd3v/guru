@@ -1,3 +1,7 @@
+# Historical design notes
+
+The current profile and answer contracts are documented in [CONFIGURATION.md](CONFIGURATION.md). Measurements below describe earlier configurations. They are not benchmarks of the current renderer.
+
 # guru, Spec (v2, post-grill)
 
 **Positioning:** a study companion, a scholar-teacher for *your* multi-tradition spiritual library that **never misquotes**. Every substantive claim is a verbatim quote cited with **title, author, page number**. No citation → no claim.

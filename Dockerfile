@@ -18,25 +18,27 @@ RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4 \
       build-essential python3 python3-venv python3-dev ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
+ARG ENGINE_DIR=.
+ENV GURU_ENGINE_DIR=${ENGINE_DIR}
 WORKDIR /app
 
 # Dependencies first so a source edit does not rebuild better-sqlite3 or reinstall PyMuPDF.
-COPY package.json package-lock.json ./
+COPY ${ENGINE_DIR}/package.json ${ENGINE_DIR}/package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY ingest/requirements.txt ingest/
-RUN python3 -m venv .venv && .venv/bin/pip install --no-cache-dir -r ingest/requirements.txt
+COPY ${ENGINE_DIR}/ingest/requirements.txt /tmp/requirements.txt
+RUN python3 -m venv .venv && .venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY . .
 
 # Bake the embedding model into the image. Left to first use it downloads ~100MB while a
 # reader waits, and every replacement container pays it again.
 ENV TRANSFORMERS_CACHE=/app/.cache/huggingface HF_HOME=/app/.cache/huggingface
-RUN node -e "const {embed}=await import('./src/embed.ts'); await embed(['warm the model cache']); console.log('embedder cached');"
+RUN node -e "const {embed}=await import('./'+process.env.GURU_ENGINE_DIR+'/src/embed.ts'); await embed(['warm the model cache']); console.log('embedder cached');"
 
 ENV NODE_ENV=production PORT=8080
 EXPOSE 8080
 
 # `serve` and `worker` are the two roles; the entrypoint builds the starter library once.
-ENTRYPOINT ["./deploy/entrypoint.sh"]
+ENTRYPOINT ["sh", "-c", "exec \"$GURU_ENGINE_DIR/deploy/entrypoint.sh\" \"$@\"", "guru"]
 CMD ["serve"]

@@ -54,6 +54,7 @@ def clean(text):
 def read_pdf(path, page_offset):
     """-> (title, author, [(page_label, text)])"""
     import fitz
+    fitz.TOOLS.mupdf_display_errors(False)
     doc = fitz.open(path)
     m = doc.metadata or {}
     title, author = title_author(m.get("title"), m.get("author"), path)
@@ -106,24 +107,41 @@ def read_epub(path, _page_offset):
         # Gutenberg-style books are often one giant document, so a document index is a
         # useless citation. Anchor to the nearest heading above the text: a reader can find it.
         section, para = f"ch. {ch}", 0
-        # Walked together and in document order so a marker seen before a paragraph sets the
-        # page that paragraph begins on. A marker inside a paragraph belongs to the next one:
-        # the text around it started on the page before the break.
-        for el in soup.find_all(["p", "h1", "h2", "h3", "h4", "span", "a"]):
+        # Split text at inline page markers before assigning its locator.
+        from bs4 import NavigableString, Tag
+        blocks = ["p", "h1", "h2", "h3", "h4"]
+        for el in soup.find_all(blocks + ["span", "a"]):
+            if el.find_parent(blocks):
+                continue
             found = page_marker(el)
             if found:
                 page = found
                 continue
-            if el.name not in ("p", "h1", "h2", "h3", "h4"):
-                continue
-            t = clean(el.get_text())
-            if not t:
+            if el.name not in blocks:
                 continue
             heading = el.name != "p"
             if heading:
-                section, para = f'"{t[:60]}"', 0
+                section, para = f'"{clean(el.get_text())[:60]}"', 0
             para += 1
-            units.append((page or f"{section}, para. {para}", t, heading))
+            text = []
+            first = True
+            def emit():
+                nonlocal text, first
+                value = clean("".join(text))
+                if value:
+                    units.append((page or f"{section}, para. {para}", value, heading and first))
+                    first = False
+                text = []
+            for node in el.descendants:
+                if isinstance(node, Tag):
+                    marker = page_marker(node)
+                    if marker:
+                        emit()
+                        page = marker
+                elif isinstance(node, NavigableString):
+                    if not any(page_marker(parent) for parent in node.parents if parent is not el):
+                        text.append(str(node))
+            emit()
     return title, author, units
 
 
@@ -204,6 +222,8 @@ def chunk(units):
         size = len(tail[1]) if tail else 0
 
     for label, text, boundary in units:
+        if buf and str(buf[-1][0]).isdigit() != str(label).isdigit():
+            flush(overlap=False)
         if boundary is True:
             flush(overlap=False)
         elif boundary == "soft" and size >= CHUNK_CHARS // 2:
@@ -232,7 +252,7 @@ def ingest(path, page_offset=0):
             # Whether the locators are page numbers, not whether the file was a PDF. EPUB
             # transcriptions usually keep the pagination of the book that was scanned, and
             # calling those "para." threw away a real page number the reader could look up.
-            "paginated": paginated, "chunks": chunks}
+            "paginated": paginated, "page_offset": page_offset, "chunks": chunks}
 
 
 def sample_pdf(path=None):
@@ -293,6 +313,29 @@ def selfcheck():
     png = render_page(path, 4)
     assert png and png[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
     assert render_page(path, 99) is None, "out-of-range page should be None"
+    import tempfile
+    from ebooklib import epub
+    with tempfile.TemporaryDirectory() as directory:
+        book = epub.EpubBook()
+        book.set_identifier("page-marker-test")
+        book.set_title("Notebook")
+        book.set_language("en")
+        chapter = epub.EpubHtml(title="Notes", file_name="notes.xhtml", lang="en")
+        chapter.content = '<h1>Notes</h1><p>Front matter.</p><span epub:type="pagebreak" id="page_1" title="1"/><p>First page text. <span epub:type="pagebreak" id="page_2" title="2"/>Second page text.</p>'
+        book.add_item(chapter)
+        book.add_item(epub.EpubNcx())
+        book.spine = [chapter]
+        target = os.path.join(directory, "Writer - Notebook.epub")
+        epub.write_epub(target, book)
+        _, _, units = read_epub(target, 0)
+        first = [u for u in units if "First page text" in u[1]]
+        second = [u for u in units if "Second page text" in u[1]]
+        assert first and str(first[0][0]) == "1", units
+        assert second and str(second[0][0]) == "2", units
+        result = ingest(target)
+        spans = [c for c in result["chunks"] if "Second page text" in c["text"]]
+        assert all(str(c["page_end"]) == "2" for c in spans), spans
+
     print("selfcheck ok:", len(r["chunks"]), "chunks", file=sys.stderr)
 
 

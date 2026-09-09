@@ -1,3 +1,5 @@
+import { loadCases, sampleCases, readFrozen, writeFrozen, quotesExpected } from "./corpus.ts";
+import { broaden } from "../src/profile.ts";
 // Rerank eval: given the same candidate list, which reranker promotes the right passage?
 //
 // The reranker is the measured ceiling on retrieval. Search finds the answer within 60
@@ -11,7 +13,7 @@
 //
 //   node eval/rerank.ts --cache data/rerank-cases.json --models modelA,modelB
 try {
-  process.loadEnvFile();
+  if (process.env.GURU_NO_DOTENV !== "1") process.loadEnvFile();
 } catch {
   // no .env; env vars may still be set externally
 }
@@ -40,23 +42,17 @@ const load = (f: string) => {
 
 type Frozen = { query: string; expect: string; candidates: Hit[] };
 let frozen: Frozen[] = [];
-if (CACHE) {
-  try {
-    frozen = JSON.parse(readFileSync(CACHE, "utf8")) as Frozen[];
-    console.error(`reranking ${frozen.length} frozen candidate sets from ${CACHE}`);
-  } catch {
-    console.error(`building ${CACHE} (one HyDE call per case)…`);
-  }
-}
-
 const db = open(DB);
+const cases = sampleCases(loadCases(), LIMIT);
+const cacheKind = `rerank:${JSON.stringify(cases)}`;
+frozen = readFrozen<Frozen>(CACHE, db, cacheKind);
 
 if (!frozen.length) {
-  const all = [...load("eval/cases.json"), ...load("eval/cases.generated.json")];
+  const all = loadCases();
   const stride = Math.max(1, Math.floor(all.length / LIMIT));
   const corpus = (db.prepare("select text from chunks").all() as any[]).map((r) => flat(r.text));
 
-  for (const c of all.filter((_, i) => i % stride === 0)) {
+  for (const c of cases) {
     // Only cases whose answer is actually in this corpus, judged exactly the way a hit is.
     if (!corpus.some((t) => t.includes(flat(c.expect)))) continue;
     const candidates = await search(db, await expandQuery(c.query));
@@ -64,8 +60,11 @@ if (!frozen.length) {
     if (!candidates.some((h) => flat(h.text).includes(flat(c.expect)))) continue;
     frozen.push({ query: c.query, expect: c.expect, candidates });
   }
-  if (CACHE) writeFileSync(CACHE, JSON.stringify(frozen));
+  writeFrozen(CACHE, db, cacheKind, frozen);
 }
+
+console.log(`Selected ${cases.length} cases. Eligible ${frozen.length}. Excluded or missed ${cases.length - frozen.length}.`);
+if (!frozen.length) throw new Error("No eligible rerank cases for this corpus");
 
 const rankOf = (hits: Hit[], expect: string) =>
   hits.findIndex((h) => flat(h.text).includes(flat(expect)));

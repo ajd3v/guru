@@ -3,7 +3,7 @@
 // Run: node test/openai.test.ts
 import { createServer } from "node:http";
 import assert from "node:assert";
-import { _resetLlmConfig, expandQuery, pickContent, resolveProvider, toOpenAiBody } from "../src/llm.ts";
+import { _resetLlmConfig, complete, generationModel, expandQuery, pickContent, resolveProvider, toOpenAiBody } from "../src/llm.ts";
 
 // --- provider selection --------------------------------------------------
 
@@ -107,6 +107,11 @@ assert.equal(seen.length, 1);
 assert.equal(seen[0].url, "/v1/chat/completions", "trailing slash must not double up");
 assert.equal(seen[0].auth, "Bearer test-key");
 assert.equal(seen[0].body.messages.at(-1).role, "user");
+
+process.env.GURU_GEN_MODEL = "evaluation-stub";
+assert.equal(await complete({ model: generationModel(), max_tokens: 20, messages: [{ role: "user", content: "Write an evaluation case" }] }), "pong");
+assert.equal(seen.at(-1).body.model, "evaluation-stub");
+delete process.env.GURU_GEN_MODEL;
 
 // An empty model override must fall back to the default, not be sent as the model id. Every
 // layer of the deployment writes "" for "unset": compose interpolates `${VAR:-}` whether or

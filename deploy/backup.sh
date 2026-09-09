@@ -44,7 +44,7 @@ WORK=$(mktemp -d)
 # fails with SQLITE_CANTOPEN before it reads a byte. The serving container already has the
 # volume open the ordinary way, and VACUUM INTO only ever writes to its destination, so this
 # takes a consistent snapshot without touching what the app is using.
-APP=$(docker ps --filter name=guru-kk72 --format '{{.Names}}' | head -1)
+APP="${GURU_CONTAINER:-$(docker ps --filter name=guru- --format '{{.Names}}' | head -1)}"
 [ -n "$APP" ] || { echo "$(date -u) FAIL: guru container not running, nothing to back up" >&2; exit 1; }
 STAGE=/app/data/.backup-$TS
 docker exec "$APP" mkdir -p "$STAGE"

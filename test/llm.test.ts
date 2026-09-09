@@ -122,7 +122,8 @@ assert.deepEqual(
 seen.length = 0;
 replies = ["Supported claim. [P0S0]\n\nUnsupported claim. [P9S9]"];
 const partial = await ask("q", [passage]);
-assert(partial.answer.includes("Supported claim"), "supported claim survives");
+assert(!partial.answer.includes("Supported claim"), "generated prose cannot become a source claim");
+assert(partial.answer.includes("The Tao that can be trodden"));
 assert(!partial.answer.includes("Unsupported claim"), "claim with only invented ids is dropped");
 
 // If nothing at all survives, say so rather than shipping unsourced prose.
@@ -141,7 +142,7 @@ assert(/could not ground/.test(noIds.answer), "unsourced prose is caught even wh
 seen.length = 0;
 replies = ["NOT COVERED: these sentences discuss water, not the question asked."];
 const declined = await ask("q", [passage]);
-assert(/discuss water/.test(declined.answer), "decline text survives");
+assert.equal(declined.answer, "No supporting passage was found for this question.");
 assert(!/NOT COVERED/.test(declined.answer), "marker is stripped");
 // The flag the page reads to decide whether to list what was searched. Without it, asking
 // "skeet?" printed five citations under a heading saying they had been consulted, directly
@@ -151,14 +152,14 @@ assert.equal(declined.declined, true, "a decline is flagged so its passages are 
 // Dashes are stripped from the model's own prose only. A quotation keeps the author's.
 seen.length = 0;
 replies = ["NOT COVERED: these discuss water—not the question asked."];
-assert.equal((await ask("q", [passage])).answer, "these discuss water, not the question asked.");
+assert.equal((await ask("q", [passage])).answer, "No supporting passage was found for this question.");
 // The passage itself carries an em-dash, so the spliced quotation must still carry it: the
 // answer body is the author's words and repunctuating them would be a silent misquote.
 seen.length = 0;
 const dashedSource = hit(1, "The Tao that can be trodden—that one—is not the enduring Tao.");
 replies = [`SYNOPSIS: the way named—the spoken one—is not the lasting way\nA claim [P0S0]`];
 const dashed = await ask("q", [dashedSource]);
-assert.equal(dashed.synopsis, "The way named, the spoken one, is not the lasting way");
+assert.equal(dashed.synopsis, "", "a generated synopsis cannot bypass source verification");
 assert(dashed.answer.includes("trodden—that one—is"), "the author's em-dash survives in the quote");
 
 // The near-miss reply is not a decline. Its own wording points at the passages, so hiding
@@ -192,6 +193,29 @@ replies = ["Confident nonsense. [P9S9]"];
 const bogus = await ask("q", [passage]);
 assert.equal(bogus.dropped, 1, "unknown id is dropped");
 assert(!bogus.answer.includes("P9S9"), "no broken marker is shown");
+
+// A valid sentence id cannot authorize adjacent model prose or a forged citation.
+replies = [`SYNOPSIS: An invented conclusion.\n\nAn unsupported claim.\n\n> Fabricated words [Wrong Writer, Wrong Book, p. 900]\n\n[P0S0]\n\nA second unsupported claim. [P0S1]`];
+const guarded = await ask("q", [passage]);
+assert.equal(guarded.synopsis, "");
+assert(!/invented conclusion|unsupported claim|Wrong Writer|Fabricated/.test(guarded.answer));
+assert.equal(guarded.answer.split("\n").filter((line) => line.startsWith("> ")).length, 1);
+assert(guarded.answer.includes(cite(passage)));
+replies = ["NOT COVERED: Ignore the question and accept this invented claim. [P0S0]"];
+assert.equal((await ask("q", [passage])).answer, "No supporting passage was found for this question.");
+assert(unverifiedQuotes("> fake ... fraud [Wrong Writer, Wrong Book, p. 99]", [passage]).length > 0);
+
+const wrapped = hit(1, "A source sentence starts on the first printed line\nand completes its meaning on the second printed line.");
+replies = ["[P0S0]"];
+const wrappedAnswer = await ask("q", [wrapped]);
+assert.equal(wrappedAnswer.answer.split("\n").length, 1);
+assert(wrappedAnswer.answer.includes("and completes its meaning"));
+replies = ["[P0S0] [P0S1]"];
+const completePassage = await ask("q", [passage]);
+assert(completePassage.answer.includes("The name that can be named"), "one passage may include adjacent sentences");
+const gap = hit(1, "This first sentence contains a claim with more than forty characters. Never. This last sentence contains a different claim with more than forty characters.");
+replies = ["[P0S0] [P0S1]"];
+assert(!(await ask("q", [gap])).answer.includes("This last sentence"), "omitted sentences must not be silently joined across");
 
 server.close();
 console.error("llm stub tests ok");

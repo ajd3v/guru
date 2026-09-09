@@ -1,3 +1,4 @@
+import { profile } from "./profile.ts";
 // Identity, isolated behind one function so the rest of the app only ever sees a user id.
 //
 // Clerk is used rather than anything hand-rolled: sessions, password storage, MFA, and token
@@ -77,15 +78,34 @@ if (PRODUCTION && SECRET && !AUTHORIZED_PARTIES.length) {
 if (PRODUCTION && SINGLE_USER && !BASIC_AUTH.length) {
   throw new Error("GURU_BASIC_AUTH (user:password) is required alongside GURU_SINGLE_USER in production");
 }
-/**
- * A `guru` cookie carrying the same base64 user:password a Basic header would, set by the
- * server's /login route for installed web apps, where the browser's own auth prompt is
- * somewhere between ugly and unreachable. Same bytes, same timing-safe comparison as the
- * header path; only the envelope differs.
- */
-export function cookieCredential(cookie: string | undefined) {
-  const m = cookie?.match(/(?:^|;\s*)guru=([A-Za-z0-9+/=%]+)/);
-  return m ? `Basic ${decodeURIComponent(m[1])}` : undefined;
+/** Token cookies preserve installed sessions without storing passwords in new cookies. */
+export function linkToken(user: string, expected = BASIC_AUTH) {
+  const credential = expected.find((c) => username(c) === user);
+  return credential ? createHash("sha256").update(`${profile.tokenNamespace}:${credential}`).digest("base64url") : undefined;
+}
+export function tokenUser(user: string, token: string, expected = BASIC_AUTH) {
+  const want = linkToken(user, expected);
+  return want && timingSafeEqual(createHash("sha256").update(want).digest(), createHash("sha256").update(token).digest()) ? user : undefined;
+}
+export const readers = (expected = BASIC_AUTH) => expected.map(username);
+export function sessionCookie(cookie: string | undefined) {
+  const names = new Set([profile.cookieName, `__Host-${profile.cookieName}`]);
+  const parts = (cookie ?? "").split(";").map((s) => s.trim());
+  const item = parts.find((s) => s.startsWith(`__Host-${profile.cookieName}=`)) ?? parts.find((s) => names.has(s.split("=")[0]));
+  if (item === undefined) return undefined;
+  try { return decodeURIComponent(item.slice(item.indexOf("=") + 1)); } catch { return ""; }
+}
+export function cookieUser(cookie: string | undefined) {
+  const value = sessionCookie(cookie);
+  if (!value) return undefined;
+  const dot = value.indexOf(".");
+  return dot > 0 ? tokenUser(value.slice(0, dot), value.slice(dot + 1)) : basicAuthUser(`Basic ${value}`);
+}
+export function passwordProblem(user: string, password: string) {
+  if (password.length < 12) return "shorter than 12 characters";
+  if (/^password/i.test(password) || /^\d+$/.test(password)) return "too easy to guess";
+  if (user && password.toLowerCase().includes(user.toLowerCase())) return "contains the username";
+  return undefined;
 }
 
 /**
@@ -111,8 +131,10 @@ function username(cred: string) {
 // pattern in store.ts, which cannot be imported here without dragging SQLite in with it.
 for (const cred of BASIC_AUTH) {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(username(cred))) {
-    throw new Error(`GURU_BASIC_AUTH entry is not user:password with a usable username: ${JSON.stringify(cred.slice(0, 12))}…`);
+    throw new Error("GURU_BASIC_AUTH entry is not user:password with a usable username");
   }
+  const problem = passwordProblem(username(cred), cred.slice(cred.indexOf(":") + 1));
+  if (PRODUCTION && problem) throw new Error(`GURU_BASIC_AUTH password for "${username(cred)}" is ${problem}`);
 }
 // The guest name becomes a filename too, and it must never shadow a real reader: a
 // credential list containing the guest name would make "who is this" ambiguous.
@@ -170,6 +192,10 @@ const LIBRARIANS = (process.env.GURU_LIBRARIAN ?? "")
 export const isLibrarian = (userId: string, allowed = LIBRARIANS) =>
   !allowed.length || allowed.includes(userId);
 
+const OPERATORS = (process.env.GURU_OPERATORS ?? process.env.GURU_LIBRARIAN ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+/** Global reader data requires an explicitly configured operator. */
+export const isOperator = (userId: string, allowed = OPERATORS) => allowed.includes(userId);
+
 /** Node's request is not a fetch Request, and Clerk wants the latter. Headers and URL only. */
 export function toWebRequest(req: IncomingMessage): Request {
   const proto = (req.headers["x-forwarded-proto"] as string | undefined) ?? "http";
@@ -195,16 +221,16 @@ export async function authenticate(req: IncomingMessage): Promise<Auth> {
     // first person's.
     if (!BASIC_AUTH.length) return { kind: "user", userId: SINGLE_USER };
 
-    const credential = req.headers.authorization ?? cookieCredential(req.headers.cookie);
-    const user = basicAuthUser(credential);
+    const credential = req.headers.authorization ?? sessionCookie(req.headers.cookie);
+    const user = req.headers.authorization !== undefined ? basicAuthUser(req.headers.authorization) : cookieUser(req.headers.cookie);
     if (!user) {
       // No credential at all, and a reading room is open: the visitor is the guest. A wrong
       // credential still 401s, so a typo never silently demotes a reader.
-      if (GUEST && !credential) return { kind: "user", userId: GUEST, guest: true };
+      if (GUEST && credential === undefined) return { kind: "user", userId: GUEST, guest: true };
       return {
         kind: "respond",
         status: 401,
-        headers: new Headers({ "www-authenticate": 'Basic realm="guru", charset="UTF-8"' }),
+        headers: new Headers({ "www-authenticate": `Basic realm="${profile.id}", charset="UTF-8"` }),
       };
     }
     return { kind: "user", userId: user };

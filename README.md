@@ -8,7 +8,7 @@ Ask it a question and it answers out of books you own, in their words rather tha
 A model that cannot find an answer in your shelf says so instead of writing one.
 
 **The reading room is open at [guru.alanj.dev](https://guru.alanj.dev).** Search the starter
-shelf, 124 public-domain books, as much as you like and with no model in the loop. Five
+shelf, 123 public-domain books, as much as you like and with no model in the loop. Five
 composed answers come with the visit, which is enough to ask something the shelf covers,
 something it covers badly, and something it does not cover at all. The last one is the
 interesting one.
@@ -21,17 +21,19 @@ line from Trine and Troward to Atkinson and Allen; Muir and Burroughs and Richar
 finding it outdoors; Okakura, Nitobe and Hearn on the Japanese inner life. Every id is
 resolved against Gutenberg rather than recalled.
 
-See [SPEC.md](SPEC.md) for the design and the measured numbers.
+See [CONFIGURATION.md](CONFIGURATION.md) to run another library on the same engine.
+[SPEC.md](SPEC.md) contains historical design notes and measurements.
 
 ## How it refuses to misquote
 
 The model is never allowed to type a quotation. It cites a sentence id and the exact wording
 is spliced in from the source, so a misquote is not expressible rather than merely detected.
-Anything that survives that is checked against the book again, and a claim whose quote fails
-is dropped rather than shipped. Measured on cases where retrieval supplied the answer, the
-deployed model quoted the right passage in 10 or 11 of 11 across runs, and invented a
-quotation **zero** times. The spread is the answer step being stochastic at that sample size;
-the zero is the number that matters and is the one this is built to hold.
+The renderer builds each quotation and its citation from the selected source record.
+Generated claims and summaries are discarded. An explicit refusal produces a fixed message.
+
+The tests verify this contract against stub model responses. Historical model scores in
+SPEC.md predate the current renderer and must be remeasured before comparing answer quality.
+Quotation fidelity does not establish whether a passage answers the question.
 
 Retrieval refuses too. If the reranker judges that nothing on the shelf bears on the question,
 the answer is one sentence saying so, with no citations under it.

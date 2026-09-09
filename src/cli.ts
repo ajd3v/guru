@@ -3,11 +3,14 @@
 // because llm.ts resolves its provider on first use rather than at module scope.
 // Optional by design: the pipeline runs against a local router with no .env.
 try {
-  process.loadEnvFile();
+  if (process.env.GURU_NO_DOTENV !== "1") process.loadEnvFile();
 } catch {
   // no .env, or a runtime without loadEnvFile. Env vars may still be set externally
 }
 
+import { profile, PYTHON as PY, SIDECAR } from "./profile.ts";
+import { fetchStarter } from "./starter.ts";
+export { fetchStarter } from "./starter.ts";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -34,15 +37,13 @@ import {
 } from "./jobs.ts";
 import { ask as askLlm, contextualize, expandQuery, rerank, unverifiedQuotes } from "./llm.ts";
 
-const PY = ".venv/bin/python";
-const SIDECAR = "ingest/ingest.py";
 const DB = process.env.GURU_DB ?? "data/library.db";
 
 /** The sidecar runs in its own process because PDF parsers are an RCE surface. */
 function extract(path: string, pageOffset = 0): Book {
   const args = [SIDECAR, path, ...(pageOffset ? ["--page-offset", String(pageOffset)] : [])];
   const out = execFileSync(PY, args, { maxBuffer: 256 * 1024 * 1024, encoding: "utf8" });
-  return JSON.parse(out);
+  return { ...JSON.parse(out), page_offset: pageOffset };
 }
 
 /** The source PDF's own bytes, kept alongside the extracted text so pages can be streamed
@@ -56,7 +57,7 @@ function db() {
   return open(DB);
 }
 
-async function add(path: string, pageOffset: number, withContext: boolean) {
+async function add(path: string, pageOffset: number, withContext: boolean, metadata?: { title: string; author: string; source: string }) {
   // A directory is a bulk ingest, in this one process: loading the embedder costs more
   // than embedding a whole book, so 2,000 files must not mean 2,000 process starts.
   if (statSync(path).isDirectory()) {
@@ -75,7 +76,7 @@ async function add(path: string, pageOffset: number, withContext: boolean) {
     }
     return;
   }
-  const book = extract(path, pageOffset);
+  const book = { ...extract(path, pageOffset), ...metadata };
   const contexts = withContext ? await contextualize(book, book.chunks) : undefined;
   await addBook(db(), book, contexts, pdfBytes(path));
   console.log(
@@ -84,59 +85,11 @@ async function add(path: string, pageOffset: number, withContext: boolean) {
   );
 }
 
-/** The public-domain corpus every user gets on day one, and the eval corpus. */
-export const STARTER_DIR = "data/starter";
-
-/**
- * `limit` takes the first N books instead of the whole manifest.
- *
- * The whole library is hours of CPU before the first question can be asked,
- * which is the right cost for a real shelf and the wrong one for finding out whether you want
- * it. The manifest opens with the Tao Te Ching, the Gita, the Dhammapada and the Upanishads,
- * so the first handful is already several traditions and the cross-tradition answers this
- * exists for work at five books.
- *
- * Not for the eval, which needs the whole corpus: the case set is generated against every book
- * and scoring a subset silently changes which cases are in corpus.
- */
-export async function fetchStarter(limit = Infinity) {
-  const all = JSON.parse(readFileSync("starter/library.json", "utf8")) as {
-    gutenberg: number;
-    author: string;
-    title: string;
-  }[];
-  const books = Number.isFinite(limit) ? all.slice(0, limit) : all;
-  mkdirSync(STARTER_DIR, { recursive: true });
-  const paths: string[] = [];
-  const missed: string[] = [];
-  for (const b of books) {
-    const path = join(STARTER_DIR, `${b.author} - ${b.title}.epub`);
-    if (!existsSync(path)) {
-      // Not every catalogue entry is a text. Gutenberg 20679 is a LibriVox recording of James
-      // Allen filed under the same title and author as the book, and it has no epub at any
-      // quality, so this threw on book 111 of 124 and lost the whole shelf. One absent edition
-      // is not worth a failed rebuild, so it is reported and skipped. The build still refuses
-      // to publish an empty library, which is the failure that actually matters.
-      const res = await fetch(`https://www.gutenberg.org/ebooks/${b.gutenberg}.epub3.images`);
-      if (!res.ok) {
-        console.error(`skipping ${b.title}: gutenberg ${b.gutenberg} returned ${res.status}`);
-        missed.push(`${b.gutenberg} ${b.title}`);
-        continue;
-      }
-      writeFileSync(path, Buffer.from(await res.arrayBuffer()));
-      console.error(`fetched ${b.title}`);
-    }
-    paths.push(path);
-  }
-  if (missed.length) console.error(`${missed.length} of ${books.length} unavailable: ${missed.join(", ")}`);
-  return paths;
-}
-
 async function starter(withContext: boolean, limit = Infinity) {
   const paths = await fetchStarter(limit);
   let done = 0;
-  for (const path of paths) {
-    await add(path, 0, withContext);
+  for (const { path, pageOffset, metadata } of paths) {
+    await add(path, pageOffset, withContext, metadata);
     // A shelf this size is long enough that silence reads as a hang. The count is the only way
     // to tell "still working" from "stuck on a book that will not parse".
     console.error(`  ${++done}/${paths.length} books`);
@@ -396,5 +349,5 @@ else if (cmd === "worker") await worker();
 else if (cmd === "selfcheck") await selfcheck();
 else
   console.log(
-    "usage: guru add BOOK.pdf [--page-offset N] [--context] | starter [--limit N] [--context] | find QUERY | ask QUESTION | worker | selfcheck",
+    `usage: ${profile.id} add BOOK.pdf [--page-offset N] [--context] | starter [--limit N] [--context] | find QUERY | ask QUESTION | worker | selfcheck`,
   );
