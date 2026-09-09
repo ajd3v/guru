@@ -1,0 +1,201 @@
+{
+  "profile": "guru",
+  "identity": {
+    "version": 1,
+    "profile": "a215e07fde95b220a5c9583f4cbcbc3327f2d23ca198a7f13b6fd1986612fc49",
+    "corpus": "ae154389624067b204be37b401555e92d0b9e4a914fbc834e897dd9fbc15c4e7",
+    "cases": "896d90f0a4cb7ad199181c8071a594326e57b8b3274f242376335f74c17db64a"
+  },
+  "mode": "source-selection",
+  "split": "all",
+  "selected": 12,
+  "engine": {
+    "baseRevision": "f0084337bccb56b0ba14427659064f6025d0d078",
+    "filesHash": "fadd62ea867d6bf8b213280a72c5165e9a23871c5d1ad93e075d4e7cd63baca2",
+    "method": "weighted-rrf-source-filter-v2"
+  },
+  "embedding": {
+    "model": "Xenova/bge-base-en-v1.5",
+    "dimensions": 768
+  },
+  "runtime": "v26.7.0",
+  "indexes": "3d1984cc6a8584ef9b2b01a2856cf90b28897b7c893889e171a4750c62b26057",
+  "eligible": 12,
+  "excluded": 0,
+  "candidates": 60,
+  "baseline": {
+    "vectorWeight": 2,
+    "preview": "excerpt",
+    "hit5": 1,
+    "hitCandidates": 4,
+    "visible5": 1,
+    "visibleCandidates": 4,
+    "mrr5": 0.020833333333333332,
+    "searchMs": 1129.9761159999996
+  },
+  "candidate": {
+    "vectorWeight": 2,
+    "preview": "excerpt",
+    "hit5": 7,
+    "hitCandidates": 11,
+    "visible5": 7,
+    "visibleCandidates": 10,
+    "mrr5": 0.22499999999999998,
+    "searchMs": 1486.4484709999992
+  },
+  "sourceViolations": 0,
+  "visibility": {
+    "budget": 700,
+    "prefix": 9,
+    "excerpt": 11,
+    "gained": 3,
+    "lost": 1
+  },
+  "rows": [
+    {
+      "query": "How can I pause when someone insults me?",
+      "source": "source-selection",
+      "split": "dev",
+      "excluded": false,
+      "excludedReason": "",
+      "bookId": 7,
+      "baselineRank": 3,
+      "candidateRank": 3,
+      "prefixVisible": true,
+      "excerptVisible": true
+    },
+    {
+      "query": "What does the Dhammapada suggest when my thoughts keep wandering?",
+      "source": "source-selection",
+      "split": "dev",
+      "excluded": false,
+      "excludedReason": "",
+      "bookId": 3,
+      "baselineRank": 51,
+      "candidateRank": 3,
+      "prefixVisible": true,
+      "excerptVisible": true
+    },
+    {
+      "query": "I want to start an overwhelming project. Does the Tao offer a small first action?",
+      "source": "source-selection",
+      "split": "holdout",
+      "excluded": false,
+      "excludedReason": "",
+      "bookId": 1,
+      "baselineRank": 27,
+      "candidateRank": 4,
+      "prefixVisible": true,
+      "excerptVisible": true
+    },
+    {
+      "query": "If work succeeds, should I keep treating it as proof of my importance?",
+      "source": "source-selection",
+      "split": "holdout",
+      "excluded": false,
+      "excludedReason": "",
+      "bookId": 1,
+      "baselineRank": -1,
+      "candidateRank": 12,
+      "prefixVisible": false,
+      "excerptVisible": true
+    },
+    {
+      "query": "I keep thinking about being wronged. What does the Dhammapada say this does to hatred?",
+      "source": "source-selection",
+      "split": "holdout",
+      "excluded": false,
+      "excludedReason": "",
+      "bookId": 3,
+      "baselineRank": -1,
+      "candidateRank": 2,
+      "prefixVisible": true,
+      "excerptVisible": true
+    },
+    {
+      "query": "Can I love my children without deciding what they must think?",
+      "source": "source-selection",
+      "split": "dev",
+      "excluded": false,
+      "excludedReason": "",
+      "bookId": 13,
+      "baselineRank": -1,
+      "candidateRank": 2,
+      "prefixVisible": true,
+      "excerptVisible": true
+    },
+    {
+      "query": "How does Walden describe simplifying day-to-day demands?",
+      "source": "source-selection",
+      "split": "dev",
+      "excluded": false,
+      "excludedReason": "",
+      "bookId": 10,
+      "baselineRank": -1,
+      "candidateRank": 38,
+      "prefixVisible": false,
+      "excerptVisible": true
+    },
+    {
+      "query": "Where should I look before criticizing other people?",
+      "source": "source-selection",
+      "split": "dev",
+      "excluded": false,
+      "excludedReason": "",
+      "bookId": 5,
+      "baselineRank": 45,
+      "candidateRank": 2,
+      "prefixVisible": true,
+      "excerptVisible": true
+    },
+    {
+      "query": "What does Emerson say to trust when others disapprove?",
+      "source": "source-selection",
+      "split": "holdout",
+      "excluded": false,
+      "excludedReason": "",
+      "bookId": 9,
+      "baselineRank": -1,
+      "candidateRank": 44,
+      "prefixVisible": true,
+      "excerptVisible": false
+    },
+    {
+      "query": "Does As a Man Thinketh connect thoughts to one's character?",
+      "source": "source-selection",
+      "split": "dev",
+      "excluded": false,
+      "excludedReason": "",
+      "bookId": 14,
+      "baselineRank": -1,
+      "candidateRank": 16,
+      "prefixVisible": true,
+      "excerptVisible": true
+    },
+    {
+      "query": "How does Meditations suggest using the limited time I have?",
+      "source": "source-selection",
+      "split": "dev",
+      "excluded": false,
+      "excludedReason": "",
+      "bookId": 6,
+      "baselineRank": -1,
+      "candidateRank": -1,
+      "prefixVisible": false,
+      "excerptVisible": true
+    },
+    {
+      "query": "What does the Prophet say about trying to make my children just like me?",
+      "source": "source-selection",
+      "split": "dev",
+      "excluded": false,
+      "excludedReason": "",
+      "bookId": 13,
+      "baselineRank": -1,
+      "candidateRank": 0,
+      "prefixVisible": true,
+      "excerptVisible": true
+    }
+  ],
+  "measurementNote": "Known reader questions with an explicitly selected source. Both sides use the current ranking configuration. Gold spans must occur in that source. These are conditional retrieval checks, not unseen holdout or answer-quality scores."
+}

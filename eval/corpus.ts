@@ -3,19 +3,23 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type Database from "better-sqlite3";
 import { profile, PROFILE_PATH } from "../src/profile.ts";
 
-export type Case = { query: string; expect: string; book?: string; source?: string; split?: "dev" | "holdout" };
+export type Case = { query: string; expect: string; book?: string; source?: string; split?: "dev" | "holdout"; scope?: { title: string; author: string } };
+export function readCases(file: string, source = "hand"): Case[] {
+  const value = JSON.parse(readFileSync(file, "utf8"));
+  if (!Array.isArray(value)) throw new Error(`Invalid evaluation cases: ${file}`);
+  return value.map((c) => {
+    if (!c || typeof c.query !== "string" || !c.query.trim() || typeof c.expect !== "string" || !c.expect.trim()) throw new Error(`Invalid evaluation case: ${file}`);
+    if (c.source !== undefined && (typeof c.source !== "string" || !c.source.trim())) throw new Error(`Invalid evaluation source: ${file}`);
+    if (c.split !== undefined && !["dev", "holdout"].includes(c.split)) throw new Error(`Invalid evaluation split: ${file}`);
+    if (c.scope !== undefined && (!c.scope || Object.keys(c.scope).some((k) => !["title", "author"].includes(k)) ||
+        [c.scope.title, c.scope.author].some((s) => typeof s !== "string" || !s.trim()))) throw new Error(`Invalid evaluation scope: ${file}`);
+    return { ...c, source: c.source ?? source } as Case;
+  });
+}
+
 export function loadCases(handOnly = false): Case[] {
   const files = handOnly ? profile.evaluation.slice(0, 1) : profile.evaluation;
-  const cases = files.flatMap((file, index) => {
-    const value = JSON.parse(readFileSync(file, "utf8"));
-    if (!Array.isArray(value)) throw new Error(`Invalid evaluation cases: ${file}`);
-    return value.map((c) => {
-      if (!c || typeof c.query !== "string" || !c.query.trim() || typeof c.expect !== "string" || !c.expect.trim()) throw new Error(`Invalid evaluation case: ${file}`);
-      if (c.source !== undefined && (typeof c.source !== "string" || !c.source.trim())) throw new Error(`Invalid evaluation source: ${file}`);
-      if (c.split !== undefined && !["dev", "holdout"].includes(c.split)) throw new Error(`Invalid evaluation split: ${file}`);
-      return { ...c, source: c.source ?? (index === 0 ? "hand" : "gen") } as Case;
-    });
-  });
+  const cases = files.flatMap((file, index) => readCases(file, index === 0 ? "hand" : "gen"));
   if (!cases.length) throw new Error("No evaluation cases configured");
   return cases;
 }

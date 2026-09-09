@@ -26,7 +26,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert";
-import { addBook, askedToday, bookPdf, cite, open, recordAsk, search, userLibrary, type Book } from "./store.ts";
+import { addBook, askedToday, bookPdf, cite, listBooks, open, recordAsk, search, selectedBook, userLibrary, type Book } from "./store.ts";
 import {
   claim,
   countActive,
@@ -98,25 +98,27 @@ async function starter(withContext: boolean, limit = Infinity) {
 }
 
 /** Ask adds model query expansion and reranking to the local search. */
-async function retrieve(query: string) {
+async function retrieve(query: string, selection?: string) {
   const conn = db();
   try {
-    return await rerank(query, await search(conn, await expandQuery(query), undefined, { literalQuery: query }));
+    const book = selectedBook(conn, selection);
+    return await rerank(query, await search(conn, await expandQuery(query), undefined, { literalQuery: query, bookIds: book ? [book.id] : undefined }));
   } finally { conn.close(); }
 }
 
-async function find(query: string) {
+async function find(query: string, selection?: string) {
   const conn = db();
   try {
-    for (const hit of (await search(conn, broaden(query), undefined, { literalQuery: query })).slice(0, 8)) {
+    const book = selectedBook(conn, selection);
+    for (const hit of (await search(conn, broaden(query), undefined, { literalQuery: query, bookIds: book ? [book.id] : undefined })).slice(0, 8)) {
       console.log(`\n${cite(hit)}  score ${hit.score.toFixed(4)}`);
       console.log(excerpt(hit.text, query, 500).replace(/\n/g, " "));
     }
   } finally { conn.close(); }
 }
 
-async function ask(query: string) {
-  const hits = await retrieve(query);
+async function ask(query: string, selection?: string) {
+  const hits = await retrieve(query, selection);
   if (!hits.length) return console.log("your library doesn't cover this.");
   const { answer, synopsis, regenerated, dropped } = await askLlm(query, hits);
   if (synopsis) console.log(`${synopsis}\n`);
@@ -336,20 +338,27 @@ const offsetAt = rest.indexOf("--page-offset");
 const pageOffset = offsetAt === -1 ? 0 : Number(rest[offsetAt + 1]);
 const limitAt = rest.indexOf("--limit");
 const bookLimit = limitAt === -1 ? Infinity : Number(rest[limitAt + 1]);
+const bookAt = rest.indexOf("--book");
+const selection = bookAt === -1 ? undefined : rest[bookAt + 1] ?? "invalid";
 // A flag and its value must both drop out, or `ask --limit 5 what is the self?` searches for
 // the flag along with the question.
 const flagged = new Set(
-  [offsetAt, limitAt].flatMap((i) => (i === -1 ? [] : [i, i + 1])),
+  [offsetAt, limitAt, bookAt].flatMap((i) => (i === -1 ? [] : [i, i + 1])),
 );
 const arg = rest.filter((a, i) => a !== "--context" && !flagged.has(i)).join(" ");
 
 if (cmd === "add") await add(arg, pageOffset, withContext);
 else if (cmd === "starter") await starter(withContext, bookLimit);
-else if (cmd === "find") await find(arg);
-else if (cmd === "ask") await ask(arg);
+else if (cmd === "find") await find(arg, selection);
+else if (cmd === "ask") await ask(arg, selection);
+else if (cmd === "books") {
+  const conn = db();
+  try { for (const book of listBooks(conn)) console.log(`${book.id}\t${book.title}\t${book.author}`); }
+  finally { conn.close(); }
+}
 else if (cmd === "worker") await worker();
 else if (cmd === "selfcheck") await selfcheck();
 else
   console.log(
-    `usage: ${profile.id} add BOOK.pdf [--page-offset N] [--context] | starter [--limit N] [--context] | find QUERY | ask QUESTION | worker | selfcheck`,
+    `usage: ${profile.id} add BOOK.pdf [--page-offset N] [--context] | starter [--limit N] [--context] | books | find QUERY [--book ID] | ask QUESTION [--book ID] | worker | selfcheck`,
   );

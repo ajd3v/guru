@@ -1,0 +1,110 @@
+[
+  {
+    "query": "How can I pause when someone insults me?",
+    "expect": "Try, therefore, in the first place, not to be bewildered by appearances.",
+    "scope": {
+      "title": "The Enchiridion",
+      "author": "Epictetus"
+    },
+    "source": "source-selection"
+  },
+  {
+    "query": "What does the Dhammapada suggest when my thoughts keep wandering?",
+    "expect": "a tamed mind brings happiness",
+    "scope": {
+      "title": "The Dhammapada",
+      "author": "Max Muller"
+    },
+    "source": "source-selection"
+  },
+  {
+    "query": "I want to start an overwhelming project. Does the Tao offer a small first action?",
+    "expect": "the journey of a thousand li commenced with a single step",
+    "scope": {
+      "title": "Tao Teh King",
+      "author": "Laozi"
+    },
+    "source": "source-selection"
+  },
+  {
+    "query": "If work succeeds, should I keep treating it as proof of my importance?",
+    "expect": "The work is accomplished, and there is no resting in it",
+    "scope": {
+      "title": "Tao Teh King",
+      "author": "Laozi"
+    },
+    "source": "source-selection"
+  },
+  {
+    "query": "I keep thinking about being wronged. What does the Dhammapada say this does to hatred?",
+    "expect": "those who harbour such thoughts hatred will never cease",
+    "scope": {
+      "title": "The Dhammapada",
+      "author": "Max Muller"
+    },
+    "source": "source-selection"
+  },
+  {
+    "query": "Can I love my children without deciding what they must think?",
+    "expect": "You may give them your love but not your thoughts",
+    "scope": {
+      "title": "The Prophet",
+      "author": "Kahlil Gibran"
+    },
+    "source": "source-selection"
+  },
+  {
+    "query": "How does Walden describe simplifying day-to-day demands?",
+    "expect": "Simplify, simplify.",
+    "scope": {
+      "title": "Walden",
+      "author": "Henry David Thoreau"
+    },
+    "source": "source-selection"
+  },
+  {
+    "query": "Where should I look before criticizing other people?",
+    "expect": "Look well unto thyself, and beware that thou judge not the doings of others.",
+    "scope": {
+      "title": "The Imitation of Christ",
+      "author": "Thomas a Kempis"
+    },
+    "source": "source-selection"
+  },
+  {
+    "query": "What does Emerson say to trust when others disapprove?",
+    "expect": "integrity of your own mind",
+    "scope": {
+      "title": "Essays",
+      "author": "Ralph Waldo Emerson"
+    },
+    "source": "source-selection"
+  },
+  {
+    "query": "Does As a Man Thinketh connect thoughts to one's character?",
+    "expect": "mind is the master-weaver, both of the inner garment of character",
+    "scope": {
+      "title": "As a Man Thinketh",
+      "author": "James Allen"
+    },
+    "source": "source-selection"
+  },
+  {
+    "query": "How does Meditations suggest using the limited time I have?",
+    "expect": "we must endeavour to gain the present time with best discretion and justice",
+    "scope": {
+      "title": "Meditations",
+      "author": "Marcus Aurelius"
+    },
+    "source": "source-selection"
+  },
+  {
+    "query": "What does the Prophet say about trying to make my children just like me?",
+    "expect": "You may strive to be like them, but seek not to make them like you.",
+    "scope": {
+      "title": "The Prophet",
+      "author": "Kahlil Gibran"
+    },
+    "source": "source-selection"
+  }
+]

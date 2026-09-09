@@ -24,8 +24,8 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, mkdtempSync
 import { mkdir, rm } from "node:fs/promises";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { askedToday, bookPdf, cite, libraryPath, recordAsk, search, userLibrary, type Hit } from "./store.ts";
+import { basename, join } from "node:path";
+import { askedToday, bookPdf, BookSelectionError, cite, libraryPath, listBooks, recordAsk, search, selectedBook, userLibrary, type Hit, type LibraryBook } from "./store.ts";
 import { ask, expandQuery, plainDashes, rerank } from "./llm.ts";
 import { countActive, enqueue, listJobs, openJobs } from "./jobs.ts";
 
@@ -492,7 +492,19 @@ function clientAddress(req: IncomingMessage) {
 // chrome a shared reading room must not offer; `demo` strips them from everybody, operator
 // included, because a showcase is for reading. All three are chrome only; the routes refuse
 // for themselves.
-const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = "", reader = "") => `<!doctype html>
+type SourceChoice = { books: LibraryBook[]; selected?: number };
+function sourceLabel(book: LibraryBook) {
+  let source = book.source;
+  try { source = new URL(source).pathname; } catch {}
+  return `${book.title}, ${book.author} (${basename(source) || "copy"}, ${book.id})`;
+}
+function bookLabel(book: LibraryBook, books: LibraryBook[]) {
+  return books.filter((b) => b.title === book.title && b.author === book.author).length < 2
+    ? `${book.title}, ${book.author}` : sourceLabel(book);
+}
+const scopeNote = (book?: LibraryBook) => book ? `<p class="note scope-note">From ${escape(sourceLabel(book))}</p>` : "";
+const loggedQuestion = (query: string, book?: LibraryBook) => book ? `${query}\n[Source: ${sourceLabel(book)}]` : query;
+const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = "", reader = "", choice?: SourceChoice) => `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escape(profile.name)}</title>
 <meta name="theme-color" content="${profile.themeColor}">
@@ -551,6 +563,11 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = ""
   .ask button { border: 0; background: none; color: var(--quiet); cursor: pointer;
                 font: .75rem/1 var(--small); letter-spacing: .18em; text-transform: uppercase; }
   .ask button:hover { color: var(--moss); }
+  .scope { display: flex; gap: .75rem; align-items: center; margin-bottom: 1rem; }
+  .scope label { flex-shrink: 0; }
+  .scope select { flex: 1; min-width: 0; max-width: 100%; min-height: 44px; padding: .5rem;
+                  border: 1px solid var(--rule); background: var(--paper); color: var(--ink); font: 1rem/1.4 var(--serif); }
+  .scope select:focus-visible { outline: 2px solid var(--moss); outline-offset: 2px; }
 
   h2 { font-size: 1.25rem; font-weight: 400; font-style: italic; color: var(--quiet);
        margin: 0 0 2rem; text-wrap: balance; }
@@ -647,7 +664,10 @@ ${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
        own view without ever owning it. This does the same with books. -->
   <p class="tagline">${escape(profile.tagline)}</p>
 </header>
-<form class="ask" method="post" action="/ask">
+${choice?.books.length ? `<div class="scope"><label for="book" class="note">Search in</label>
+<select id="book" name="book" form="ask-form"><option value="">All books</option>${choice.books.map((b) =>
+  `<option value="${b.id}"${b.id === choice.selected ? " selected" : ""}>${escape(bookLabel(b, choice.books))}</option>`).join("")}</select></div>` : ""}
+<form id="ask-form" class="ask" method="post" action="/ask">
   <input name="q" aria-label="Question for your library" maxlength="${MAX_QUERY}" placeholder="Ask ${guest ? "the library" : "your library"}&hellip;" autofocus>
   <button class="alt" formaction="/find" title="Passages only, no composed answer">Find</button>
   <button>Ask</button>
@@ -771,6 +791,7 @@ ${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
 
   form.addEventListener("submit", async (e) => {
     const q = form.q.value.trim();
+    const book = document.getElementById("book")?.value || "";
     if (!q) return;
     e.preventDefault();
 
@@ -783,8 +804,11 @@ ${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
         const r = await fetch("/find", {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ q }),
+          body: new URLSearchParams({ q, book }),
         });
+        if (!(r.headers.get("content-type") || "").includes("application/json")) {
+          document.open(); document.write(await r.text()); document.close(); return;
+        }
         const d = await r.json();
         cur.innerHTML = "<h2></h2>" + d.html;
         cur.querySelector("h2").textContent = q;
@@ -804,7 +828,7 @@ ${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
       res = await fetch("/ask", {
         method: "POST",
         headers: { accept: "text/event-stream", "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ q }),
+        body: new URLSearchParams({ q, book }),
       });
     } catch { waiting().textContent = "could not reach the server"; return; }
 
@@ -1099,13 +1123,14 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   // page once can call them again by hand. A guest is never a librarian whatever the env says,
   // because the reading room's shelf belongs to the operator, not to whoever walked in.
   const librarian = !guest && isLibrarian(user);
-  const page = (html = "", meta = "") => PAGE(html, librarian, guest, DEMO, meta, user);
+  const page = (html = "", meta = "", choice?: SourceChoice) => PAGE(html, librarian, guest, DEMO, meta, user, choice);
 
   if (req.method === "GET" && req.url === "/") {
     const db = userLibrary(user);
     const left = Math.max(0, MAX_ASKS - askedToday(db));
+    const books = listBooks(db);
     db.close();
-    return send(200, page(reading(user) + shelf(user), profile.showQuota ? `${left} of ${MAX_ASKS} questions left today` : ""));
+    return send(200, page(reading(user) + shelf(user), profile.showQuota ? `${left} of ${MAX_ASKS} questions left today` : "", { books }));
   }
   if (req.method === "GET" && new URL(req.url ?? "/", "http://local").pathname === "/log") {
     if (guest || !isOperator(user)) return send(403, page("<p>Operator only.</p>"));
@@ -1179,28 +1204,35 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   // Retrieval without composition: hybrid search only, no answer model in the loop, so it
   // costs next to nothing per use and stays open to guests.
   if (req.method === "POST" && req.url === "/find") {
-    const q = new URLSearchParams(await body(req)).get("q")?.trim() ?? "";
-    if (!q) return send(400, page("<p>Ask something.</p>"));
-    if (q.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>"));
-    logEvent(user, "find", q);
+    const form = new URLSearchParams(await body(req));
+    const q = form.get("q")?.trim() ?? "";
     const db = userLibrary(user);
-    const hits = (await search(db, broaden(q), undefined, { literalQuery: q })).slice(0, 8);
-    db.close();
-    const items = hits
-      .map(
-        (h) =>
-          `<blockquote><p>${escape(excerpt(h.text, q, 500))}</p>` +
-          `${citationMarkup(h)}</blockquote>`,
-      )
-      .join("");
-    const html = items
-      ? `<p class="note">Passages only; no answer was composed.</p><div class="answer">${items}</div>`
-      : "<p>Nothing in the library reads close to that.</p>";
-    if ((req.headers.accept ?? "").includes("application/json")) {
-      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-      return void res.end(JSON.stringify({ html }));
-    }
-    return send(200, page(`<h2>${escape(q)}</h2>${html}`));
+    try {
+      const book = selectedBook(db, form.get("book"));
+      const choice = { books: listBooks(db), selected: book?.id };
+      if (!q) return send(400, page("<p>Ask something.</p>", "", choice));
+      if (q.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>", "", choice));
+      logEvent(user, "find", loggedQuestion(q, book));
+      const hits = (await search(db, broaden(q), undefined, { literalQuery: q, bookIds: book ? [book.id] : undefined })).slice(0, 8);
+      const items = hits
+        .map(
+          (h) =>
+            `<blockquote><p>${escape(excerpt(h.text, q, 500))}</p>` +
+            `${citationMarkup(h)}</blockquote>`,
+        )
+        .join("");
+      const html = scopeNote(book) + (items
+        ? `<p class="note">Passages only; no answer was composed.</p><div class="answer">${items}</div>`
+        : "<p>No passages were found in the selected sources.</p>");
+      if ((req.headers.accept ?? "").includes("application/json")) {
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        return void res.end(JSON.stringify({ html }));
+      }
+      return send(200, page(`<h2>${escape(q)}</h2>${html}`, "", choice));
+    } catch (error) {
+      if (error instanceof BookSelectionError) return send(400, page(`<p>${escape(error.message)}</p>`, "", { books: listBooks(db) }));
+      throw error;
+    } finally { db.close(); }
   }
 
   if (req.method === "PUT" && req.url?.startsWith("/upload")) {
@@ -1302,48 +1334,53 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
 
   if (req.method !== "POST" || req.url !== "/ask") return send(404, page("<p>Not found.</p>"));
 
-  // A guest gets a handful of composed answers so the room can actually be judged rather
-  // than just looked at. The allowance is this browser's; the address only sets a ceiling
-  // on how many browsers it may hand one to. Search stays free and uncounted.
-  if (guest) {
-    const ip = clientAddress(req);
-    const spent = (deviceGet.get(device.id) as { n: number } | undefined)?.n ?? 0;
-    const fromHere = (quotaGet.get(ip) as { n: number } | undefined)?.n ?? 0;
-    if (spent >= GUEST_ASKS || fromHere >= GUEST_ASKS * GUEST_DEVICES) {
-      // Which limit was hit changes what the reader should do about it, so say which.
-      const why =
-        spent >= GUEST_ASKS
-          ? `That is ${GUEST_ASKS} composed answers, which is what the reading room offers.`
-          : `This network has spent what the reading room offers it.`;
-      return send(
-        429,
-        page(
-          `<p>${why} ` +
-            `Find still works and costs nothing, so the shelf is still open to search. ` +
-            `For a library of your own, <a href="mailto:alandevaney@gmail.com">ask for an account</a>.</p>`,
-        ),
-      );
-    }
-  }
-
-  const query = new URLSearchParams(await body(req)).get("q")?.trim() ?? "";
-  if (!query) return send(400, page("<p>Ask something.</p>"));
-  if (query.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>"));
-  const logId = logEvent(user, "ask", query);
-  // Counted before the work and after validation: the model calls happen whether or not the
-  // pipeline finds anything, and a failed question that refunds its slot is a free retry loop.
-  if (guest) {
-    deviceBump.run(device.id);
-    quotaBump.run(clientAddress(req));
-  }
-
+  const form = new URLSearchParams(await body(req));
+  const query = form.get("q")?.trim() ?? "";
+  const db = userLibrary(user);
+  let book: LibraryBook | undefined;
+  const choice: SourceChoice = { books: [] };
   try {
-    const db = userLibrary(user);
+    choice.books = listBooks(db);
+    book = selectedBook(db, form.get("book"));
+    choice.selected = book?.id;
+    if (!query) return send(400, page("<p>Ask something.</p>", "", choice));
+    if (query.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>", "", choice));
+    // A guest gets a handful of composed answers so the room can actually be judged rather
+    // than just looked at. The allowance is this browser's; the address only sets a ceiling
+    // on how many browsers it may hand one to. Search stays free and uncounted.
+    if (guest) {
+      const ip = clientAddress(req);
+      const spent = (deviceGet.get(device.id) as { n: number } | undefined)?.n ?? 0;
+      const fromHere = (quotaGet.get(ip) as { n: number } | undefined)?.n ?? 0;
+      if (spent >= GUEST_ASKS || fromHere >= GUEST_ASKS * GUEST_DEVICES) {
+        // Which limit was hit changes what the reader should do about it, so say which.
+        const why =
+          spent >= GUEST_ASKS
+            ? `That is ${GUEST_ASKS} composed answers, which is what the reading room offers.`
+            : `This network has spent what the reading room offers it.`;
+        return send(
+          429,
+          page(
+            `<p>${why} ` +
+              `Find still works and costs nothing, so the shelf is still open to search. ` +
+              `For a library of your own, <a href="mailto:alandevaney@gmail.com">ask for an account</a>.</p>`, "", choice,
+          ),
+        );
+      }
+    }
+
+    const logId = logEvent(user, "ask", loggedQuestion(query, book));
+    // Counted before the work and after validation: the model calls happen whether or not the
+    // pipeline finds anything, and a failed question that refunds its slot is a free retry loop.
+    if (guest) {
+      deviceBump.run(device.id);
+      quotaBump.run(clientAddress(req));
+    }
+
     // Counted before the work, not after: the cost is incurred whether or not the pipeline
     // finds an answer, and a failed question that refunds its slot is a free retry loop.
     if (askedToday(db) >= MAX_ASKS) {
-      db.close();
-      return send(429, page(`<p>That's ${MAX_ASKS} questions today. Back tomorrow.</p>`));
+      return send(429, page(`<p>That's ${MAX_ASKS} questions today. Back tomorrow.</p>`, "", choice));
     }
     recordAsk(db);
 
@@ -1368,11 +1405,11 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
 
     if (profile.showQuota) emit("quota", { text: `${Math.max(0, MAX_ASKS - askedToday(db))} of ${MAX_ASKS} questions left today` });
     emit("stage", { text: "searching your library" });
-    const hits = await rerank(query, await search(db, await expandQuery(query), undefined, { literalQuery: query }));
+    const hits = await rerank(query, await search(db, await expandQuery(query), undefined, { literalQuery: query, bookIds: book ? [book.id] : undefined }));
     if (!hits.length) {
       logOutcome(logId, "no passages");
-      const none = "<p>No supporting passage was found for this question.</p>";
-      if (!streaming) return send(200, page(none));
+      const none = scopeNote(book) + "<p>No supporting passage was found for this question.</p>";
+      if (!streaming) return send(200, page(none, "", choice));
       emit("answer", { html: none });
       return void res.end();
     }
@@ -1397,27 +1434,28 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     // thing this page must never do is let its own prose look like somebody's book.
     const lead = synopsis ? `<p class="synopsis">${escape(synopsis)}</p>` : "";
     const content = passages.length ? passages.map((p) => `<blockquote><p>${escape(p.text)}</p>${citationMarkup(p.hit)}</blockquote>`).join("") : render(answer);
-    const composed = `${lead}<div class="answer">${content}</div>`;
+    const composed = `${scopeNote(book)}${lead}<div class="answer">${content}</div>`;
 
     if (!streaming) {
-      return send(200, page(`<h2>${escape(query)}</h2>${composed}${shelfNote}${note}`));
+      return send(200, page(`<h2>${escape(query)}</h2>${composed}${shelfNote}${note}`, "", choice));
     }
     emit("answer", { html: composed + shelfNote + note });
     res.end();
   } catch (err) {
+    if (err instanceof BookSelectionError) return send(400, page(`<p>${escape(err.message)}</p>`, "", { books: listBooks(db) }));
     // The pipeline calls an upstream model. A failure there is not the reader's fault and
     // must not render as an unsourced answer, so it is reported as a failure.
     console.error(err);
-    const failed = "<p>Something failed upstream. Try again.</p>";
+    const failed = scopeNote(book) + "<p>Something failed upstream. Try again.</p>";
     // A stream that has already sent its headers cannot be given a status; it has to say so
     // in an event and close, or the reader watches a spinner that never resolves.
     if (res.headersSent) {
       res.write(`event: answer\ndata: ${JSON.stringify({ html: failed })}\n\n`);
       res.end();
     } else {
-      send(502, page(failed));
+      send(502, page(failed, "", choice));
     }
-  }
+  } finally { db.close(); }
 };
 createServer((req, res) => {
   void handleRequest(req, res).catch((error) => {

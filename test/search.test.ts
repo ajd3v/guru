@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { open, search } from "../src/store.ts";
+import { BookSelectionError, listBooks, open, search, selectedBook } from "../src/store.ts";
 import { embed } from "../src/embed.ts";
 import { excerpt } from "../src/excerpt.ts";
 
@@ -51,11 +51,35 @@ try {
   );
   assert.equal((await search(db, '"unknown expression"', 5)).length, 3, "missing exact phrases can still return related passages");
   assert.equal((await search(db, '"silver lantern" OR NEAR *', 5))[0].id, 1, "query punctuation is not executable FTS syntax");
+  assert.deepEqual(await search(db, query, 5, { bookIds: [] }), [], "an empty scope never falls back to all books");
+  assert.deepEqual(await search(db, query, 5, { bookIds: [9999] }), [], "a missing source never falls back to all books");
+  await assert.rejects(search(db, query, 5, { bookIds: [NaN] }), /book selection/);
+  await assert.rejects(search(db, query, 5, { bookIds: [-1] }), /book selection/);
+  assert.deepEqual((await search(db, query, 5, { bookIds: [2] })).map((h) => h.id), [2], "exact phrases outside the selected source cannot enter the results");
+  assert.deepEqual(await search(db, query, 5, { bookIds: [1, 2, 2] }), await search(db, query, 5, { bookIds: [1, 2] }), "duplicate selections do not change ranking");
+  assert.equal(selectedBook(db, "2")?.title, "Notebook 2");
+  assert.equal(selectedBook(db, ""), undefined);
+  for (const value of ["0", "-1", "1 OR 1=1", "1.2", "1e0", "9007199254740992", "9999"]) assert.throws(() => selectedBook(db, value), BookSelectionError);
+  assert.equal(listBooks(db).length, 3);
+
+  // A source match outside the global candidate window must still be found within its book.
+  for (let id = 4; id <= 24; id++) {
+    db.prepare("insert into chunks(id,book_id,chunk_id,text,page_start,page_end) values (?,2,?,'A silver lantern near the gate.','1','1')").run(id, id);
+    db.prepare("insert into chunks_fts(rowid,text) values (?,?)").run(id, "Where is the silver lantern?");
+    db.prepare("insert into chunks_vec(rowid,embedding) values (?,?)").run(BigInt(id), Buffer.from(vector.buffer));
+  }
+  assert((await search(db, "Where is the silver lantern?", 1)).every((h) => h.book_id !== 1));
+  assert.deepEqual((await search(db, "Where is the silver lantern?", 1, { bookIds: [1] })).map((h) => h.id), [1], "scope is applied before the candidate limit");
   db.pragma("wal_checkpoint(TRUNCATE)");
   db.close();
   const output = execFileSync(process.execPath, ["src/cli.ts", "find", query], {
     encoding: "utf8", env: { ...process.env, GURU_NO_DOTENV: "1", GURU_DB: file, GURU_PROVIDER: "disabled-for-offline-check" },
   });
   assert(output.includes("silver lantern"), "CLI Find works with no usable model provider");
+  const scoped = execFileSync(process.execPath, ["src/cli.ts", "find", query, "--book", "1"], {
+    encoding: "utf8", env: { ...process.env, GURU_NO_DOTENV: "1", GURU_DB: file, GURU_PROVIDER: "disabled-for-offline-check" },
+  });
+  assert(scoped.includes("Notebook 1"));
+  assert(!scoped.includes("Notebook 2"), "CLI keeps the selected scope");
 } finally { rmSync(directory, { recursive: true, force: true }); }
 console.error("retrieval and excerpt tests ok");

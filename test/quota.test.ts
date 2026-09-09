@@ -23,7 +23,9 @@ const PORT = 8952;
 const ASKS = 2;
 const DEVICES = 2;
 const dir = mkdtempSync(join(tmpdir(), "guru-quota-"));
-open(join(dir, "starter.db")).close();
+const starter = open(join(dir, "starter.db"));
+starter.prepare("insert into books (id, title, author, source, paginated) values (1, 'Notebook', 'Writer', 'notebook.txt', 0)").run();
+starter.close();
 
 const srv = spawn("node", ["src/server.ts"], {
   stdio: ["ignore", "ignore", "ignore"],
@@ -98,6 +100,11 @@ try {
   const HERE = "9.9.9.9";
   for (let i = 0; i < ASKS; i++) assert.ok(!spent(await ask(a, HERE)), `A ask ${i + 1} is allowed`);
   assert.ok(spent(await ask(a, HERE)), "A is out after its own allowance");
+  const scopedLimit = await fetch(base + "/ask", {
+    method: "POST", headers: { cookie: a, "x-forwarded-for": `1.2.3.4, ${HERE}` }, body: "q=stillness&book=1",
+  });
+  assert.equal(scopedLimit.status, 429);
+  assert.match(await scopedLimit.text(), /<option value="1" selected>/, "Find keeps the selected book after the guest allowance runs out");
 
   // The whole point: B shares an address with a browser that is already out, and is not
   // punished for it. This is what per-address counting got wrong.

@@ -39,3 +39,21 @@ The baseline uses equal weights without phrase priority. The candidate uses the 
 The score accepts an expected span in any matching book. It does not check edition identity or semantic support. Negative questions are outside this positive retrieval denominator. Stub tests verify refusal handling, including a lone irrelevant candidate. They do not measure real-model refusal accuracy.
 
 Next, measure the full Ask path on supported and unsupported reader questions. Query expansion can change candidate coverage, and focused excerpts can change reranker decisions. Estimate the selected models' charges before those runs. Source transcription and page accuracy still require separate checks.
+
+## Search within a book
+
+The web form now offers a Search in selector. Find and Ask can use a single book, including a specific copy when titles repeat. All books remains the default. The CLI supports `books` to list IDs and `find --book ID` or `ask --book ID` to select one.
+
+The selected book limits keyword and vector candidates before their ranking limits. Literal phrase priority follows the same scope. Query expansion cannot widen it. Invalid or missing book IDs fail before provider calls or question charges. Source IDs belong to the current reader's library. They are not permanent edition identifiers across library replacement.
+
+Results and exported question logs retain the selected book's filename and ID. Validation errors and upstream failures preserve selection for the next submission. The native selector has a visible label and a 44-pixel minimum height. Desktop and 390-pixel browser checks found no horizontal overflow and opened the selected source correctly. This was a focused flow check, not a full accessibility audit.
+
+Twelve existing reader questions were paired with an explicit title and author in `eval/cases.sources.json`. On the isolated 123-book snapshot, source-correct top-five hits rose from 1/12 without selection to 7/12 with selection. Top-60 hits rose from 4/12 to 11/12. Both sides used vector weight 2 with the current phrase behavior. All 12 cases were eligible, with zero exclusions and no candidates outside the selected book.
+
+These are conditional results for a reader who chooses the book. The questions were already known. They do not show better whole-library ranking or measure answer support. The regular evaluation still has 163 cases. A separate comparison against the previous engine returned identical unrestricted results and scores for all 163 queries.
+
+[eval/results/source-selection-2026-09-09.json](eval/results/source-selection-2026-09-09.json) records every case and the fingerprints. Unlike the earlier any-book metric, this mode counts a gold span only in its declared source. Missing sources and ambiguous title-author pairs are excluded with explicit reasons. An absent expected span is also excluded. An isolated fixture verified all three paths and a failing exit status when no cases are eligible. No provider evaluation ran.
+
+```sh
+GURU_NO_DOTENV=1 GURU_DB=/path/to/isolated/library.db npm run eval:compare -- --source-cases eval/cases.sources.json --output /tmp/source-selection.json
+```

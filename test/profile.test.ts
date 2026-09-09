@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { broaden, loadProfile, profile } from "../src/profile.ts";
-import { loadCases, sampleCases, quotesExpected, readFrozen, writeFrozen, caseSplit } from "../eval/corpus.ts";
+import { loadCases, readCases, sampleCases, quotesExpected, readFrozen, writeFrozen, caseSplit } from "../eval/corpus.ts";
 import { isOperator } from "../src/auth.ts";
 import { open } from "../src/store.ts";
 import { datedReading, monthDayIn } from "../src/reading.ts";
@@ -42,6 +42,10 @@ try {
   assert(loadCases().filter((c) => c.source === "reader-holdout").every((c) => caseSplit(c) === "holdout"));
   assert.deepEqual(sampleCases([0, 1, 2, 3, 4, 5], 2), [0, 3]);
   assert.throws(() => sampleCases([], 0), /positive integer/);
+  writeFileSync(join(directory, "cases.json"), JSON.stringify([{ query: "birds", expect: "birds", scope: { title: "Notebook", author: "Writer" } }]));
+  assert.equal(readCases(join(directory, "cases.json"))[0].scope?.title, "Notebook");
+  writeFileSync(join(directory, "cases.json"), JSON.stringify([{ query: "birds", expect: "birds", scope: { title: "Notebook" } }]));
+  assert.throws(() => readCases(join(directory, "cases.json")), /scope/);
   assert.equal(quotesExpected("> The birds arrive in winter. [Writer, Notebook, p. 2]", "The insects arrive in summer."), false);
   assert.equal(quotesExpected("> The insects arrive in summer. [Writer, Notebook, p. 2]", "The insects arrive in summer."), true);
   const db = open(join(directory, "library.db"));

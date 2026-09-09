@@ -30,6 +30,22 @@ export type Hit = Chunk & {
   score: number;
 };
 
+export type LibraryBook = { id: number; title: string; author: string; source: string };
+export const listBooks = (db: Database.Database) =>
+  db.prepare("select id, title, author, source from books order by title, author, id").all() as LibraryBook[];
+
+export class BookSelectionError extends Error {}
+
+/** Resolve a reader's explicit selection within that reader's library. */
+export function selectedBook(db: Database.Database, value?: string | null): LibraryBook | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const id = Number(value);
+  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(id)) throw new BookSelectionError("Choose a book from your library.");
+  const book = db.prepare("select id, title, author, source from books where id = ?").get(id) as LibraryBook | undefined;
+  if (!book) throw new BookSelectionError("That book is no longer in your library. Reload the page.");
+  return book;
+}
+
 /** One SQLite file per user: isolation by filesystem, not by WHERE clause. */
 export function open(path: string) {
   const db = new Database(path);
@@ -197,13 +213,17 @@ export const VECTOR_WEIGHT = Number(process.env.GURU_VECTOR_WEIGHT ?? profile.ve
 if (!Number.isInteger(CANDIDATES) || CANDIDATES < 1 || CANDIDATES > 1000) throw new Error("GURU_CANDIDATES must be an integer from 1 to 1000");
 if (!Number.isFinite(VECTOR_WEIGHT) || VECTOR_WEIGHT <= 0 || VECTOR_WEIGHT > 10) throw new Error("GURU_VECTOR_WEIGHT must be greater than zero and at most 10");
 
-type SearchOptions = { vectorWeight?: number; exactPhrases?: boolean; literalQuery?: string };
+type SearchOptions = { vectorWeight?: number; exactPhrases?: boolean; literalQuery?: string; bookIds?: number[] };
 
 /** Hybrid BM25 + vector, fused with reciprocal rank. */
 export async function search(db: Database.Database, query: string, k = CANDIDATES, options: SearchOptions = {}): Promise<Hit[]> {
   if (!Number.isInteger(k) || k < 1 || k > 1000) throw new Error("Search limit must be an integer from 1 to 1000");
   const weight = options.vectorWeight ?? VECTOR_WEIGHT;
   if (!Number.isFinite(weight) || weight <= 0 || weight > 10) throw new Error("Invalid vector weight");
+  if (options.bookIds !== undefined && (!Array.isArray(options.bookIds) || options.bookIds.length > 1000 ||
+      options.bookIds.some((id) => !Number.isSafeInteger(id) || id < 1))) throw new Error("Invalid book selection");
+  const books = options.bookIds === undefined ? undefined : [...new Set(options.bookIds)];
+  if (books?.length === 0) return [];
   const match = ftsQuery(query);
   if (!match) return [];
   const RRF_K = 60;
@@ -214,16 +234,23 @@ export async function search(db: Database.Database, query: string, k = CANDIDATE
   const fuse = (ids: number[], weight = 1) =>
     ids.forEach((id, rank) => scores.set(id, (scores.get(id) ?? 0) + weight / (RRF_K + rank + 1)));
 
+  const placeholders = books?.map(() => "?").join(",");
+  // Start with the FTS scan. A rowid IN filter here can repeat that scan for every source row.
+  const keyword = books
+    ? `select chunks_fts.rowid id from chunks_fts cross join chunks c on c.id = chunks_fts.rowid
+       where chunks_fts match ? and c.book_id in (${placeholders}) order by rank`
+    : "select rowid id from chunks_fts where chunks_fts match ? order by rank";
+  const vectorScope = books ? ` and rowid in (select id from chunks where book_id in (${placeholders}))` : "";
   fuse(
-    db.prepare("select rowid as id from chunks_fts where chunks_fts match ? order by rank limit ?")
-      .all(match, depth)
+    db.prepare(`${keyword} limit ?`)
+      .all(match, ...(books ?? []), depth)
       .map((r: any) => r.id),
   );
 
   const [vector] = await embed([query], "query");
   fuse(
-    db.prepare("select rowid as id from chunks_vec where embedding match ? and k = ? order by distance")
-      .all(Buffer.from(vector.buffer), BigInt(depth))
+    db.prepare(`select rowid as id from chunks_vec where embedding match ? and k = ?${vectorScope} order by distance`)
+      .all(Buffer.from(vector.buffer), BigInt(depth), ...(books ?? []))
       .map((r: any) => r.id),
     weight,
   );
@@ -234,7 +261,7 @@ export async function search(db: Database.Database, query: string, k = CANDIDATE
       .map((m) => m[1].toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter((words) => words.length >= 2);
     if (phrases.length) {
       const phraseQuery = phrases.map((words) => `"${words.join(" ")}"`).join(" AND ");
-      const exact = db.prepare("select rowid id from chunks_fts where chunks_fts match ? order by rank").iterate(phraseQuery) as Iterable<{ id: number }>;
+      const exact = db.prepare(keyword).iterate(phraseQuery, ...(books ?? [])) as Iterable<{ id: number }>;
       const source = db.prepare("select text from chunks where id = ?");
       let rank = 0;
       for (const { id } of exact) {

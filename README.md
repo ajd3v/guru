@@ -53,6 +53,8 @@ npm test                                # no API key needed, runs against stubs
 node src/cli.ts starter --limit 5       # five books, ~3 minutes
 node src/cli.ts ask "what is the self?"
 node src/cli.ts find "quieting a restless mind"
+node src/cli.ts books                  # IDs in the current library
+node src/cli.ts find --book 1 "what is the self?"
 ```
 
 Drop `--limit` for the whole starter library. That is 123 books and **hours** of CPU, because
@@ -75,6 +77,9 @@ GURU_DB=data/starter.db node src/cli.ts starter   # once, build the template
 npm run serve                                     # http://localhost:8080
 npm run worker                                    # separate process, drains the ingest queue
 ```
+
+Choose a book with Search in to limit Find or Ask to that source. All books searches the
+whole shelf. Duplicate titles show a filename and book ID so you can choose the intended copy.
 
 Uploads are PUT with the file as the raw body (no multipart), capped while streaming, and
 restricted to `.pdf` and `.epub`. The server only writes the file and records a job; parsing
