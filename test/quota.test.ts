@@ -104,7 +104,7 @@ try {
     method: "POST", headers: { cookie: a, "x-forwarded-for": `1.2.3.4, ${HERE}` }, body: "q=stillness&book=1",
   });
   assert.equal(scopedLimit.status, 429);
-  assert.match(await scopedLimit.text(), /<option value="1" selected>/, "Find keeps the selected book after the guest allowance runs out");
+  assert.match(await scopedLimit.text(), /<option value="1"[^>]* selected>/, "Find keeps the selected book after the guest allowance runs out");
 
   // The whole point: B shares an address with a browser that is already out, and is not
   // punished for it. This is what per-address counting got wrong.

@@ -9,7 +9,7 @@ for (const key of Object.keys(env)) {
   if (/API_KEY|BASE_URL|CLERK_|GURU_(SINGLE_USER|BASIC_AUTH|GUEST|DEMO|PIPELINE_MODEL|ANSWER_MODEL|VECTOR_WEIGHT|CANDIDATES|SNIPPET)/.test(key)) delete env[key];
 }
 try {
-  for (const args of [["src/cli.ts", "selfcheck"], ["src/server.ts", "--selfcheck"], ["test/llm.test.ts"], ["test/openai.test.ts"], ["test/quota.test.ts"], ["test/profile.test.ts"], ["test/source.test.ts"], ["test/search.test.ts"]]) {
+  for (const args of [["src/cli.ts", "selfcheck"], ["src/server.ts", "--selfcheck"], ["test/llm.test.ts"], ["test/openai.test.ts"], ["test/quota.test.ts"], ["test/profile.test.ts"], ["test/source.test.ts"], ["test/search.test.ts"], ["test/backup.test.ts"], ["test/source-files.test.ts"]]) {
     const result = spawnSync(process.execPath, args, { env, stdio: "inherit" });
     if (result.status !== 0) process.exitCode = 1;
     if (process.exitCode) break;

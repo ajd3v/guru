@@ -10,6 +10,7 @@
 #
 # INSTALL (on the deploy box, one-time):
 #   install -m755 backup.sh /home/deploy/backup-guru.sh
+#   install -m644 snapshot.cjs verify-snapshot.cjs /home/deploy/
 #   (crontab -l 2>/dev/null; echo '30 2 * * * /home/deploy/backup-guru.sh >> /home/deploy/backups/guru-backup.log 2>&1') | crontab -
 #
 # OFF-SITE (owner action, needs a bucket, ~$0.005/GB/mo at Backblaze B2):
@@ -53,34 +54,8 @@ docker exec "$APP" mkdir -p "$STAGE"
 # run inherits a partial copy and the volume grows a hidden directory per failure.
 trap 'rm -rf "$WORK"; docker exec "$APP" rm -rf "$STAGE" >/dev/null 2>&1 || true' EXIT
 
-docker exec -e GURU_STAGE="$STAGE" "$APP" \
-  node --input-type=commonjs -e '
-    const D = require("better-sqlite3"), fs = require("fs"), path = require("path");
-    // Every .db on the volume: the starter template, the job queue, and one per reader.
-    // Uploads are deliberately skipped, they are consumed by the worker and are already
-    // either in a library or a failed job.
-    const files = [];
-    const stage = process.env.GURU_STAGE;
-    for (const d of ["/app/data", "/app/data/users"]) {
-      if (!fs.existsSync(d)) continue;
-      for (const f of fs.readdirSync(d)) if (f.endsWith(".db")) files.push(path.join(d, f));
-    }
-    if (!files.length) { console.error("no databases found on the volume"); process.exit(1); }
-    for (const f of files) {
-      const name = f.replace("/app/data/", "").replace(/\//g, "_");
-      const db = new D(f, { readonly: true });
-      // SQLite reads a double-quoted string as an identifier, so a JSON-quoted path comes back
-      // as `no such column: "/out/jobs.db"`. It has to be single-quoted, and this whole program
-      // is inside a single-quoted shell argument, so the quote is built from its char code
-      // rather than typed. VACUUM INTO takes no bind parameter, so the path goes in literally.
-      const q = String.fromCharCode(39);
-      const dest = stage + "/" + name;
-      db.exec("vacuum into " + q + dest.split(q).join(q + q) + q);
-      const n = (() => { try { return db.prepare("select count(*) n from books").get().n; } catch { return "-"; } })();
-      db.close();
-      console.error(`  ${name}: ${n} books`);
-    }
-  '
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+docker exec -i -e GURU_STAGE="$STAGE" "$APP" node < "$SCRIPT_DIR/snapshot.cjs"
 
 docker cp "$APP:$STAGE/." "$WORK/"
 tar -czf "$OUT" -C "$WORK" .
@@ -95,10 +70,12 @@ if [ -n "$REMOTE" ]; then
       echo "$(date -u) off-site ok: $REMOTE/guru-$TS.tar.gz"
       rclone delete "$REMOTE/" --min-age "${OFFSITE_RETAIN_DAYS}d" --include 'guru-*.tar.gz' 2>/dev/null || true
     else
-      echo "$(date -u) WARN off-site copy FAILED for guru-$TS.tar.gz" >&2
+      echo "$(date -u) FAIL off-site copy for guru-$TS.tar.gz" >&2
+      exit 1
     fi
   else
-    echo "$(date -u) WARN GURU_BACKUP_REMOTE is set but rclone is not installed" >&2
+    echo "$(date -u) FAIL GURU_BACKUP_REMOTE is set but rclone is not installed" >&2
+    exit 1
   fi
 else
   echo "$(date -u) NOTE local only. This disk dying still loses everything. Set GURU_BACKUP_REMOTE." >&2

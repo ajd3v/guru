@@ -18,21 +18,23 @@ export type Book = {
   source: string;
   paginated: boolean;
   page_offset?: number;
+  quality?: { pages: number; flaggedPages: { pdfPage: number; characters: number; issues: string[] }[] } | null;
   chunks: Chunk[];
 };
 
 export type Hit = Chunk & {
   id: number;
   book_id?: number;
+  revision?: string;
   title: string;
   author: string;
   paginated: number;
   score: number;
 };
 
-export type LibraryBook = { id: number; title: string; author: string; source: string };
+export type LibraryBook = { id: number; title: string; author: string; source: string; revision: string };
 export const listBooks = (db: Database.Database) =>
-  db.prepare("select id, title, author, source from books order by title, author, id").all() as LibraryBook[];
+  db.prepare("select id, title, author, source, revision from books order by title, author, id").all() as LibraryBook[];
 
 export class BookSelectionError extends Error {}
 
@@ -41,7 +43,7 @@ export function selectedBook(db: Database.Database, value?: string | null): Libr
   if (value === undefined || value === null || value === "") return undefined;
   const id = Number(value);
   if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(id)) throw new BookSelectionError("Choose a book from your library.");
-  const book = db.prepare("select id, title, author, source from books where id = ?").get(id) as LibraryBook | undefined;
+  const book = db.prepare("select id, title, author, source, revision from books where id = ?").get(id) as LibraryBook | undefined;
   if (!book) throw new BookSelectionError("That book is no longer in your library. Reload the page.");
   return book;
 }
@@ -79,6 +81,11 @@ export function open(path: string) {
   if (!(db.pragma("table_info(books)") as { name: string }[]).some((c) => c.name === "page_offset")) {
     db.exec("alter table books add column page_offset integer not null default 0");
   }
+  if (!(db.pragma("table_info(books)") as { name: string }[]).some((c) => c.name === "revision")) {
+    db.exec("alter table books add column revision text");
+  }
+  if (!(db.pragma("table_info(books)") as { name: string }[]).some((c) => c.name === "extraction_quality")) db.exec("alter table books add column extraction_quality text");
+  db.exec("update books set revision = lower(hex(randomblob(16))) where revision is null");
   return db;
 }
 
@@ -155,7 +162,7 @@ export async function addBook(
   const vectors = await embed(indexed);
 
   const insertBook = db.prepare(
-    "insert or replace into books (title, author, source, paginated, pdf, page_offset) values (?,?,?,?,?,?)",
+    "insert or replace into books (title, author, source, paginated, pdf, page_offset, extraction_quality, revision) values (?,?,?,?,?,?,?,lower(hex(randomblob(16))))",
   );
   const insertChunk = db.prepare(
     "insert into chunks (book_id, chunk_id, text, page_start, page_end) values (?,?,?,?,?)",
@@ -187,7 +194,7 @@ export async function addBook(
     }
 
     const bookId = insertBook.run(
-      book.title, book.author, book.source, book.paginated ? 1 : 0, pdf ?? null, book.page_offset ?? 0,
+      book.title, book.author, book.source, book.paginated ? 1 : 0, pdf ?? null, book.page_offset ?? 0, book.quality ? JSON.stringify(book.quality) : null,
     ).lastInsertRowid as number;
     book.chunks.forEach((c, i) => {
       const id = insertChunk.run(
@@ -278,7 +285,7 @@ export async function search(db: Database.Database, query: string, k = CANDIDATE
   if (!scores.size) return [];
   const top = [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, k);
   const rows = db.prepare(`
-    select c.id, c.book_id, c.chunk_id, c.text, c.page_start, c.page_end, b.title, b.author, b.paginated
+    select c.id, c.book_id, c.chunk_id, c.text, c.page_start, c.page_end, b.title, b.author, b.paginated, b.revision
     from chunks c join books b on b.id = c.book_id
     where c.id in (${top.map(() => "?").join(",")})
   `).all(...top.map(([id]) => id)) as any[];
@@ -289,10 +296,10 @@ export async function search(db: Database.Database, query: string, k = CANDIDATE
 
 /** The stored source PDF for a book, by title, or undefined if it has none (EPUB, or ingested
  * before this column existed). Bytes only: the caller materializes them to disk for rendering. */
-export function bookPdf(db: Database.Database, identity: string | number): { id: number; pdf: Buffer; page_offset: number } | undefined {
+export function bookPdf(db: Database.Database, identity: string | number, revision?: string): { id: number; pdf: Buffer; page_offset: number } | undefined {
   const rows = db.prepare(typeof identity === "number"
-    ? "select id, pdf, page_offset from books where id = ?"
-    : "select id, pdf, page_offset from books where title = ? limit 2").all(identity) as
+    ? "select id, pdf, page_offset from books where id = ?" + (revision ? " and revision = ?" : "")
+    : "select id, pdf, page_offset from books where title = ? limit 2").all(...(typeof identity === "number" && revision ? [identity, revision] : [identity])) as
     { id: number; pdf: Buffer | null; page_offset: number }[];
   return rows.length === 1 && rows[0].pdf ? rows[0] as { id: number; pdf: Buffer; page_offset: number } : undefined;
 }

@@ -1,3 +1,4 @@
+import { adjacentContext, fuseQueries } from "../src/retrieval.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -70,6 +71,16 @@ try {
   }
   assert((await search(db, "Where is the silver lantern?", 1)).every((h) => h.book_id !== 1));
   assert.deepEqual((await search(db, "Where is the silver lantern?", 1, { bookIds: [1] })).map((h) => h.id), [1], "scope is applied before the candidate limit");
+  db.prepare("update books set revision = lower(hex(randomblob(16)))").run();
+  const ranked = await search(db, query, 1, { bookIds: [2] });
+  const neighbors = adjacentContext(db, ranked);
+  assert(neighbors.length > ranked.length);
+  assert(neighbors.every((h) => h.book_id === 2 && h.revision === ranked[0].revision));
+  assert.equal(new Set(neighbors.map((h) => h.id)).size, neighbors.length);
+  assert.equal(fuseQueries([neighbors, neighbors], 2).length, 2);
+  assert.equal(fuseQueries([neighbors, neighbors], 2)[0].id, neighbors[0].id);
+  db.prepare("update books set revision = lower(hex(randomblob(16))) where id=2").run();
+  assert.equal(adjacentContext(db, ranked).length, ranked.length, "stale hits cannot pull context from replacement books");
   db.pragma("wal_checkpoint(TRUNCATE)");
   db.close();
   const output = execFileSync(process.execPath, ["src/cli.ts", "find", query], {

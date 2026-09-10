@@ -11,5 +11,32 @@
     "eval/cases.reader.json"
   ],
   "sourceRegister": "classic works of philosophy or scripture",
-  "vectorWeight": 2
+  "vectorWeight": 2,
+  "bookDetails": [
+    {
+      "title": "Tao Teh King",
+      "author": "Laozi",
+      "tradition": "Taoism"
+    },
+    {
+      "title": "The Song Celestial (Bhagavad Gita)",
+      "author": "Edwin Arnold",
+      "tradition": "Hinduism"
+    },
+    {
+      "title": "The Dhammapada",
+      "author": "Max Muller",
+      "tradition": "Buddhism"
+    },
+    {
+      "title": "The Imitation of Christ",
+      "author": "Thomas a Kempis",
+      "tradition": "Christianity"
+    },
+    {
+      "title": "Meditations",
+      "author": "Marcus Aurelius",
+      "tradition": "Stoicism"
+    }
+  ]
 }

@@ -26,6 +26,8 @@ try {
   assert.equal(p.sourceRegister, "field guides");
   assert.equal(p.cookieName, "field-notes");
   assert.equal(p.vectorWeight, 1);
+  assert.equal(load({ bookDetails: [{ title: "Notebook", author: "Writer", edition: "First", tradition: "Natural history" }] }).bookDetails.length, 1);
+  assert.throws(() => load({ bookDetails: [{ title: "Notebook", author: "Writer", edition: 2 }] }), /book detail/);
   assert.equal(load({ vectorWeight: 2 }).vectorWeight, 2);
   for (const vectorWeight of [0, -1, 11, "2", null]) assert.throws(() => load({ vectorWeight }), /vectorWeight/);
   assert.equal(broaden("Where are the beetles?", p.queryExpansions), "Where are the beetles? insects");

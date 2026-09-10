@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { open } from "../src/store.ts";
+import { PYTHON, SIDECAR } from "../src/profile.ts";
+const directory = mkdtempSync(join(tmpdir(), "guru-originals-"));
+try {
+  const pdf = join(directory, "Writer - Sample.pdf");
+  execFileSync(PYTHON, [SIDECAR, "--sample", pdf]);
+  const book = JSON.parse(execFileSync(PYTHON, [SIDECAR, pdf], { encoding: "utf8" }));
+  const path = join(directory, "library.db"), manifest = join(directory, "manifest.json"), plan = join(directory, "plan.json");
+  let db = open(path);
+  db.prepare("insert into books(id,title,author,source,paginated,revision) values(1,?,?,?,1,?)").run(book.title, book.author, book.source, "a".repeat(32));
+  for (const c of book.chunks) db.prepare("insert into chunks(book_id,chunk_id,text,page_start,page_end) values(1,?,?,?,?)").run(c.chunk_id, c.text, String(c.page_start), String(c.page_end));
+  const before = db.prepare("select * from chunks").all(); db.close();
+  writeFileSync(manifest, JSON.stringify([{ title: book.title, author: book.author }]));
+  execFileSync(PYTHON, ["ingest/verify_source.py", path, "--files", directory, "--manifest", manifest, "--output", plan]);
+  assert.equal(JSON.parse(readFileSync(plan, "utf8")).verified, 1);
+  const args = ["src/attach-sources.ts", "--plan", plan, "--database", path];
+  execFileSync(process.execPath, args);
+  db = open(path); assert.equal((db.prepare("select pdf from books").get() as any).pdf, null); db.close();
+  execFileSync(process.execPath, [...args, "--apply"]);
+  db = open(path); assert.deepEqual(db.prepare("select * from chunks").all(), before);
+  const attached = db.prepare("select pdf,revision from books").get() as any;
+  assert.deepEqual(attached.pdf, readFileSync(pdf)); assert.notEqual(attached.revision, "a".repeat(32));
+  db.prepare("update chunks set page_start='9999' where id=1").run(); db.close();
+  assert.notEqual(spawnSync(process.execPath, [...args, "--apply"]).status, 0, "changed stored page mappings reject attachment");
+  execFileSync(PYTHON, ["ingest/verify_source.py", path, "--files", directory, "--manifest", manifest, "--output", plan]);
+  assert.equal(JSON.parse(readFileSync(plan, "utf8")).verified, 0, "mismatched originals stay excluded");
+} finally { rmSync(directory, { recursive: true, force: true }); }
+console.error("original source validation tests ok");

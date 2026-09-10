@@ -64,6 +64,8 @@ function config() {
   return cfg;
 }
 
+export const modelConfiguration = () => ({ ...config() });
+
 /** Test hook: forget the cached provider/model choice. */
 export function _resetLlmConfig() {
   cfg = undefined;

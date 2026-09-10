@@ -144,6 +144,7 @@ touch its `-shm` file even to be read and a read-only mount fails before it read
 ```sh
 install -m755 deploy/backup.sh        /home/deploy/backup-guru.sh
 install -m755 deploy/backup-verify.sh /home/deploy/backup-verify-guru.sh
+install -m644 deploy/snapshot.cjs deploy/verify-snapshot.cjs /home/deploy/
 (crontab -l 2>/dev/null; echo '30 2 * * * /home/deploy/backup-guru.sh >> /home/deploy/backups/guru-backup.log 2>&1') | crontab -
 ```
 
@@ -188,3 +189,89 @@ ISC. See [LICENSE](LICENSE).
 
 Built by [Alan De Vaney](https://alanj.dev). The engine is library-agnostic.
 Swap in your own texts and nothing else changes.
+
+### Reading sources
+
+Citations carry a book revision and chunk identity. Replacing a source invalidates
+older links, including saved answers. Open a fresh result to read the new edition.
+
+The source reader uses the stored original PDF. It requests byte ranges and renders
+one page at a time in a local PDF.js worker. It supports selectable text, page jumps,
+zoom and rotation. PDF contents load when opened. Page bookmarks and passage
+bookmarks stay in this browser. EPUB sources have text navigation without a PDF.
+
+Book titles on the shelf open a passage browser. The source picker supports title
+and author search. Choose up to four books for an explicit comparison. Each gets a
+separate retrieval pass. The answer flags books from which no quote was selected.
+This can cost more than an unrestricted Ask.
+
+Optional `bookDetails` entries in the deployment profile provide `tradition` and
+`edition` filters. Entries match `title` and `author` exactly. Add `source` to select
+a specific filename when multiple editions share those fields. Missing tags do not
+exclude a book from the library.
+
+### Personal history
+
+Signed-in readers can open `/privacy` even on a fixed shelf. Export question history,
+turn future question logging off, or clear the server log and this browser's answer
+history. Books and bookmarks stay. Usage timestamps still enforce the daily allowance.
+Other browsers retain their local history. Existing backups retain their snapshots
+until the configured retention expires.
+
+### Verify original files
+
+PDF ingestion reports pages with little or no extractable text and records the
+report with the book. A warning means search coverage needs review. It does not
+prove a page is damaged. OCR is not applied to source quotations.
+
+For a legacy library without stored PDFs, first check the originals against every
+stored passage at its cited pages. The report lists exclusions individually.
+
+```sh
+.venv/bin/python ingest/verify_source.py data/library.db --files data/originals --manifest starter/library.json --output data/source-report.json
+node src/attach-sources.ts --plan data/source-report.json --database data/library.db
+```
+
+The second command validates the report without writing. After a backup and a review,
+add `--apply` to attach verified files. It checks file hashes and stored text again.
+It leaves text, chunk IDs and search indexes intact. Source revisions change.
+Use `--files DIRECTORY` when the originals have moved since verification.
+
+### Complete Ask evaluation
+
+`npm run eval:pipeline` is a dry run by default. It lists the corpus eligibility
+and exclusions before any model request. Supported questions stay in the scored
+denominator when retrieval misses. Use `--unsupported FILE` for refusal cases
+belonging to the deployment's library.
+
+An actual run requires `--run`, an output path and current model prices per million
+tokens. `--budget` must cover the printed planning estimate. This is a conservative
+estimate with a retry allowance, not a provider billing limit. Use isolated data.
+
+The report separates exact source wording from citation metadata. It also records
+whether the expected passage was quoted. Claim support and omitted caveats remain
+explicit human review fields. Exact quotations alone do not prove a useful answer.
+Errors remain visible in the denominators.
+
+`--method paired` tests separate original and expanded query retrieval with rank
+fusion. `--context` adds adjacent passages for answer selection. Neighbors keep
+their own source identities and page citations. Neither experiment changes the
+production default. Use `--freeze-expansions FILE` for both sides of a comparison
+so query generation cannot change between runs. Cache checks bind expansions to
+the corpus and the model configuration. Test a held-out split before promotion.
+
+### Backup recovery
+
+Install `deploy/snapshot.cjs` and `deploy/verify-snapshot.cjs` beside the backup shell scripts. Snapshots capture the job
+queue first, including the files needed by pending jobs, then the libraries. A
+consumed or missing pending file fails the backup rather than producing an archive
+that cannot resume ingestion. Retry the backup after the worker finishes.
+
+`snapshot.json` maps each archived database and upload to its original path under
+the data directory. Restore those paths with services stopped. Start one worker to
+requeue interrupted jobs. Run `deploy/backup-verify.sh ARCHIVE` before restoring.
+The checker validates pending file hashes as well as database integrity.
+
+When `GURU_BACKUP_REMOTE` is configured, failed transfers return an error. Off-host
+recovery still needs a configured destination and a restore test using a downloaded
+archive. A local archive does not cover loss of the host.

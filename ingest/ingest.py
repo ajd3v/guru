@@ -241,6 +241,14 @@ def chunk(units):
 def ingest(path, page_offset=0):
     reader = read_epub if path.lower().endswith(".epub") else read_pdf
     title, author, units = reader(path, page_offset)
+    report = None
+    if reader is read_pdf:
+        import fitz
+        from verify_source import quality
+        with fitz.open(path) as doc:
+            report = quality(doc)
+        if report['flaggedPages']:
+            print(f"Extraction check flagged {len(report['flaggedPages'])}/{report['pages']} pages. Review the original before trusting search coverage.", file=sys.stderr)
     units = strip_boilerplate(units)
     if SECTION_SPLIT:
         units = mark_sections(units)
@@ -252,7 +260,7 @@ def ingest(path, page_offset=0):
             # Whether the locators are page numbers, not whether the file was a PDF. EPUB
             # transcriptions usually keep the pagination of the book that was scanned, and
             # calling those "para." threw away a real page number the reader could look up.
-            "paginated": paginated, "page_offset": page_offset, "chunks": chunks}
+            "paginated": paginated, "page_offset": page_offset, "quality": report, "chunks": chunks}
 
 
 def sample_pdf(path=None):

@@ -26,9 +26,14 @@ import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { askedToday, bookPdf, BookSelectionError, cite, libraryPath, listBooks, recordAsk, search, selectedBook, userLibrary, type Hit, type LibraryBook } from "./store.ts";
-import { ask, expandQuery, plainDashes, rerank } from "./llm.ts";
+import { ask, plainDashes } from "./llm.ts";
+import { retrieveQuestion } from "./retrieval.ts";
+import { bookLink, browseBook, detailsFor, picker, selection } from "./library.ts";
+import { SourceChanged, sourceBook, sourceContext, streamPdf } from "./source.ts";
+import { createRequire } from "node:module";
 import { countActive, enqueue, listJobs, openJobs } from "./jobs.ts";
 
+const PDFJS_ROOT = join(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"), "..");
 const PORT = Number(process.env.PORT ?? 8080);
 
 const UPLOADS = process.env.GURU_UPLOADS ?? "data/uploads";
@@ -44,8 +49,8 @@ const PDF_CACHE = process.env.GURU_PDF_CACHE ?? "data/pdf-cache";
 
 /** The reader's copy of a book's PDF on disk, written once and reused by size (a re-ingest of
  * the same title overwrites it). undefined when the book has no stored PDF (EPUB, or missing). */
-function materializePdf(db: SqliteDatabase.Database, user: string, identity: string | number) {
-  const row = bookPdf(db, identity);
+function materializePdf(db: SqliteDatabase.Database, user: string, identity: string | number, revision?: string) {
+  const row = bookPdf(db, identity, revision);
   if (!row) return undefined;
   const hash = createHash("sha256").update(row.pdf).digest("hex").slice(0, 20);
   const path = join(PDF_CACHE, `${user}-${row.id}-${hash}.pdf`);
@@ -145,7 +150,7 @@ const escape = (s: string) =>
  * whole thing as prose and renders a verbatim quotation as the model's own words.
  */
 function citationMarkup(hit: Hit, label = escape(cite(hit).slice(1, -1))) {
-  return `<cite><button type="button" class="source" data-chunk="${hit.id}" data-book="${hit.book_id ?? ""}" data-page="${escape(String(hit.page_start))}" data-title="${escape(hit.title)}" aria-expanded="false">${label}</button></cite>`;
+  return `<cite><button type="button" class="source" data-chunk="${hit.id}" data-book="${hit.book_id ?? ""}" data-revision="${hit.revision ?? ""}" data-page="${escape(String(hit.page_start))}" data-title="${escape(hit.title)}" aria-expanded="false">${label}</button></cite>`;
 }
 function render(answer: string, hits: Hit[] = []) {
   const sources = new Map(hits.map((hit) => [escape(cite(hit).slice(1, -1)), hit]));
@@ -360,15 +365,24 @@ const jobs = openJobs();
 const logdb = new SqliteDatabase(process.env.GURU_LOG_DB ?? "data/log.db");
 logdb.pragma("journal_mode = WAL");
 logdb.exec("create table if not exists log (at text default (datetime('now')), user text, event text, q text)");
-for (const column of ["flag", "outcome"]) {
+for (const column of ["flag", "outcome", "event_key"]) {
   if (!(logdb.pragma("table_info(log)") as { name: string }[]).some((c) => c.name === column)) logdb.exec(`alter table log add column ${column} text`);
 }
-const logStmt = logdb.prepare("insert into log (user, event, q, flag) values (?, ?, ?, ?)");
+logdb.exec("create unique index if not exists log_event_key on log(event_key)");
+logdb.exec("create table if not exists reader_privacy (user text primary key, logging integer not null check(logging in (0, 1)))");
+const loggingEnabled = (user: string) => (logdb.prepare("select logging from reader_privacy where user = ?").get(user) as { logging: number } | undefined)?.logging !== 0;
+const logStmt = logdb.prepare("insert into log (user, event, q, flag, event_key) values (?, ?, ?, ?, ?)");
 const logEvent = (user: string, event: string, q: string) => {
-  try { return Number(logStmt.run(user, event, q, suspicious(q)).lastInsertRowid); } catch { return 0; }
+  try {
+    if (!loggingEnabled(user)) return undefined;
+    const token = randomBytes(16).toString("hex");
+    logStmt.run(user, event, q, suspicious(q), token);
+    return { token, user };
+  } catch { return undefined; }
 };
-const logOutcome = (id: number, outcome: string) => {
-  try { logdb.prepare("update log set outcome = ? where rowid = ?").run(outcome, id); } catch {}
+const logOutcome = (event: { token: string; user: string } | undefined, outcome: string) => {
+  if (!event) return;
+  try { logdb.prepare("update log set outcome = ? where event_key = ? and user = ?").run(outcome, event.token, event.user); } catch {}
 };
 const suspicious = (q: string) => /\b(ignore|disregard|forget)\b.{0,40}\b(instructions?|prompt|rules|above)\b|\bsystem prompt\b|\bjailbreak\b|<\/?(question|system)>/i.test(q) ? "steering" : "";
 const failures = new Map<string, { count: number; until: number }>();
@@ -498,7 +512,7 @@ function clientAddress(req: IncomingMessage) {
 // chrome a shared reading room must not offer; `demo` strips them from everybody, operator
 // included, because a showcase is for reading. All three are chrome only; the routes refuse
 // for themselves.
-type SourceChoice = { books: LibraryBook[]; selected?: number };
+type SourceChoice = { books: LibraryBook[]; selected?: number; compare?: number[] };
 function sourceLabel(book: LibraryBook) {
   let source = book.source;
   try { source = new URL(source).pathname; } catch {}
@@ -508,8 +522,8 @@ function bookLabel(book: LibraryBook, books: LibraryBook[]) {
   return books.filter((b) => b.title === book.title && b.author === book.author).length < 2
     ? `${book.title}, ${book.author}` : sourceLabel(book);
 }
-const scopeNote = (book?: LibraryBook) => book ? `<p class="note scope-note">From ${escape(sourceLabel(book))}</p>` : "";
-const loggedQuestion = (query: string, book?: LibraryBook) => book ? `${query}\n[Source: ${sourceLabel(book)}]` : query;
+const scopeNote = (books: LibraryBook[] = []) => books.length ? `<p class="note scope-note">From ${books.map((book) => escape(sourceLabel(book))).join("<br>")}</p>` : "";
+const loggedQuestion = (query: string, books: LibraryBook[] = []) => books.length ? `${query}\n[Source: ${books.map(sourceLabel).join(" | ")}]` : query;
 const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = "", reader = "", choice?: SourceChoice) => `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escape(profile.name)}</title>
@@ -646,6 +660,21 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = ""
   .source:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--moss); outline-offset: 4px; }
   .ask input:focus-visible { outline: 2px solid var(--moss); outline-offset: 4px; }
   .reading { white-space: pre-wrap; }
+  .library-tools { margin-bottom: 1rem; }
+  .library-tools input, .library-tools select { width: 100%; min-height: 44px; font: inherit; }
+  .library-tools label { display: block; margin-top: .6rem; }
+  .library-tools summary { padding-block: .6rem; cursor: pointer; }
+  .book-passages { padding-left: 1.3rem; }
+  .book-passages li { margin-block: .7rem; }
+  .context nav { display: flex; flex-wrap: wrap; gap: .6rem; }
+  .context nav button, .context nav a, #saved-passages { min-height: 44px; }
+  dialog { max-width: min(90vw, 42rem); background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; }
+  dialog::backdrop { background: #0008; }
+  #bookmark-list p { display: flex; gap: .8rem; align-items: center; }
+  #bookmark-list a { flex: 1; overflow-wrap: anywhere; }
+  #bookmark-list button { min-height: 44px; }
+  #clear-history { max-width: 100%; min-height: 44px; }
+
   .log-wrap { overflow-x: auto; }
   table.log { border-collapse: collapse; font-size: .8125rem; width: 100%; }
   .log th, .log td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--rule); }
@@ -653,7 +682,7 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = ""
   @media (prefers-reduced-motion: reduce) { .waiting { animation: none; } }
 </style>
 ${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
-<div class="sheet" data-reader="${escape(reader)}">
+<div class="sheet" data-reader="${escape(reader)}" data-history="${escape(profile.historyKey)}">
 <header>
   <!-- The eclipse. A ring drawn as two subpaths under evenodd, the inner circle pushed down
        and right so the corona thins toward the bottom-right and thickens opposite, the way a
@@ -672,7 +701,7 @@ ${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
 </header>
 ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Search in</label>
 <select id="book" name="book" form="ask-form"><option value="">All books</option>${choice.books.map((b) =>
-  `<option value="${b.id}"${b.id === choice.selected ? " selected" : ""}>${escape(bookLabel(b, choice.books))}</option>`).join("")}</select></div>` : ""}
+  `<option value="${b.id}" data-tradition="${escape(detailsFor(b)?.tradition || "")}" data-edition="${escape(detailsFor(b)?.edition || "")}"${b.id === choice.selected ? " selected" : ""}>${escape(bookLabel(b, choice.books))}</option>`).join("")}</select></div>${picker(choice.books, choice.compare)}` : ""}
 <form id="ask-form" class="ask" method="post" action="/ask">
   <input name="q" aria-label="Question for your library" maxlength="${MAX_QUERY}" placeholder="Ask ${guest ? "the library" : "your library"}&hellip;" autofocus>
   <button class="alt" formaction="/find" title="Passages only, no composed answer">Find</button>
@@ -681,7 +710,7 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
 <p class="note meta" role="status">${escape(meta)}</p>
 <div id="out"><div id="hist"></div>${body}</div>
 <footer>
-  <span class="note">Questions are stored for operator review. Browser history stays on this device.</span>
+  <span class="note">${loggingEnabled(reader) ? "Questions are stored for operator review." : "Question logging is off."} Browser history stays on this device.</span>
   ${guest
     ? `<span class="note">You are reading as a guest, with ${GUEST_ASKS} composed answers to spend. Find is free and uncounted.</span>`
     : demo
@@ -696,8 +725,12 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
     <input aria-label="Type DELETE to delete your library" name="confirm" placeholder="type DELETE">
     <button>Delete all</button>
   </form>`}
+  ${!guest ? '<a class="note" href="/privacy">Privacy and history</a>' : ""}
+  <button type="button" id="saved-passages" class="note">Bookmarks</button>
 </footer>
+<dialog id="bookmark-dialog"><h2>Saved passages</h2><div id="bookmark-list"></div><form method="dialog"><button>Close</button></form></dialog>
 </div>
+<script src="/library.js" defer></script>
 <script>
   // Progressive enhancement: without this the form posts normally and the page renders the
   // whole answer at once. With it, answers stack newest-first and stay on the page.
@@ -707,8 +740,8 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
   // same page they left.
   const form = document.querySelector("form.ask"), hist = document.getElementById("hist");
   const KEY = ${JSON.stringify(profile.historyKey)} + ":" + document.querySelector(".sheet").dataset.reader;
-  if (document.getElementById("deleted")) { try { localStorage.removeItem(KEY); } catch {} }
-  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } };
+  if (document.getElementById("deleted") || document.getElementById("history-cleared")) { try { localStorage.removeItem(KEY); localStorage.removeItem(${JSON.stringify(profile.historyKey)}); } catch {} }
+  const load = () => { try { const rows = JSON.parse(localStorage.getItem(KEY)); return Array.isArray(rows) ? rows.filter((p) => p && typeof p.q === "string" && typeof p.html === "string").slice(0, 50) : []; } catch { return []; } };
   // Fifty answers is more page than anyone scrolls and localStorage has a quota; the tail
   // falls off silently. Saving can also fail outright (private mode), and history is not
   // worth breaking the answer over.
@@ -736,68 +769,59 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
   };
   if (past.length) hist.after(clear);
 
-  // A tapped citation opens the page it points at, right under the quotation, with the
-  // quoted words marked. Delegated from the container so restored history entries work too.
   document.getElementById("out").addEventListener("click", async (ev) => {
-    const c = ev.target.closest(".answer cite");
-    if (!c) return;
-    const open = c.parentElement.querySelector(".context");
-    if (open) { open.remove(); c.querySelector(".source")?.setAttribute("aria-expanded", "false"); return; }
-    const source = c.querySelector(".source");
+    const source = ev.target.closest("button.source");
     if (!source) return;
-    const title = source.dataset.title;
-    const pageNo = source.dataset.page;
-    const sourceQuery = "chunk=" + encodeURIComponent(source.dataset.chunk);
-    source.setAttribute("aria-expanded", "true");
-    let d;
-    try {
-      const r = await fetch("/context?" + sourceQuery);
-      d = await r.json();
-    } catch { return; }
-    if (!d.text) return;
+    const cite = source.closest("cite");
+    const existing = cite.nextElementSibling;
+    if (existing?.classList.contains("context")) { existing.remove(); source.setAttribute("aria-expanded", "false"); return; }
     const div = document.createElement("div");
     div.className = "context";
-    div.textContent = d.text;
+    div.setAttribute("role", "region");
+    div.setAttribute("aria-label", "Source context");
+    div.textContent = "Opening source...";
+    cite.after(div);
     source.setAttribute("aria-expanded", "true");
-    // Mark the quoted words, tolerant of the whitespace differences chunking introduces.
-    const quote = (c.parentElement.querySelector("p") || {}).textContent || "";
-    const words = quote.trim().split(/\\s+/);
-    if (words.length > 3) {
+    const params = new URLSearchParams({ book: source.dataset.book, revision: source.dataset.revision || "", chunk: source.dataset.chunk });
+    const show = async () => {
       try {
-        const pat = words.map((w) => w.replace(/[.*+?^$()|[\\]\\\\{}]/g, "\\\\$&")).join("\\\\s+");
-        div.innerHTML = div.innerHTML.replace(new RegExp(pat), (s) => "<mark>" + s + "</mark>");
-      } catch {}
-    }
-    c.after(div);
-    div.querySelector("mark")?.scrollIntoView({ block: "nearest" });
-
-    // The real page, only fetched if the reader asks: a citation the model never quoted
-    // this session should not cost anyone a page render they will not look at.
-    try {
-      const m = await (await fetch("/pdf-meta?book=" + encodeURIComponent(source.dataset.book))).json();
-      if (m.available) {
-        const link = document.createElement("a");
-        link.href = "#";
-        link.className = "note";
-        link.textContent = "view page image";
-        link.onclick = (e2) => {
-          e2.preventDefault();
-          if (div.querySelector("img")) return;
-          const img = document.createElement("img");
-          img.className = "pdf-page";
-          img.loading = "lazy";
-          img.alt = title + ", p. " + pageNo;
-          img.src = "/pdf-page?book=" + encodeURIComponent(source.dataset.book) + "&page=" + encodeURIComponent(pageNo);
-          div.append(img);
-        };
-        div.append(link);
-      }
-    } catch {}
+        const response = await fetch("/context?" + params);
+        const data = await response.json();
+        if (!response.ok) { div.textContent = data.error || "Source unavailable."; return; }
+        div.replaceChildren();
+        const text = document.createElement("p");
+        text.textContent = data.text;
+        div.append(text);
+        const controls = document.createElement("nav");
+        controls.setAttribute("aria-label", "Source navigation");
+        for (const [label, id] of [["Previous passage", data.previous], ["Next passage", data.next]]) {
+          const button = document.createElement("button");
+          button.type = "button"; button.textContent = label; button.disabled = !id;
+          button.onclick = () => { params.set("chunk", id); show(); };
+          controls.append(button);
+        }
+        if (data.pdf) {
+          const link = document.createElement("a");
+          const target = new URLSearchParams({ book: data.book, revision: data.revision, page: data.page_start });
+          link.href = "/reader?" + target;
+          link.textContent = "Read original PDF";
+          controls.append(link);
+        }
+        const savePassage = document.createElement("button");
+        savePassage.type = "button"; savePassage.textContent = "Bookmark passage";
+        savePassage.onclick = () => window.dispatchEvent(new CustomEvent("bookmark-passage", { detail: data }));
+        controls.append(savePassage);
+        div.append(controls);
+      } catch { div.textContent = "Could not open the source. Close it and try again."; }
+    };
+    await show();
   });
 
   form.addEventListener("submit", async (e) => {
     const q = form.q.value.trim();
     const book = document.getElementById("book")?.value || "";
+    const payload = new URLSearchParams({ q, book });
+    for (const option of document.getElementById("compare")?.selectedOptions || []) payload.append("compare", option.value);
     if (!q) return;
     e.preventDefault();
 
@@ -810,7 +834,7 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
         const r = await fetch("/find", {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ q, book }),
+          body: payload,
         });
         if (!(r.headers.get("content-type") || "").includes("application/json")) {
           document.open(); document.write(await r.text()); document.close(); return;
@@ -834,7 +858,7 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
       res = await fetch("/ask", {
         method: "POST",
         headers: { accept: "text/event-stream", "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ q, book }),
+        body: payload,
       });
     } catch { waiting().textContent = "could not reach the server"; return; }
 
@@ -895,7 +919,7 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
 // that would 403.
 const blankPage = PAGE();
 const codeHash = (tag: string) => createHash("sha256").update(blankPage.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1] ?? "").digest("base64");
-const CSP = `default-src 'self'; script-src 'sha256-${codeHash("script")}'; style-src 'self' 'sha256-${codeHash("style")}'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`;
+const CSP = `default-src 'self'; script-src 'self' 'sha256-${codeHash("script")}'; style-src 'self' 'sha256-${codeHash("style")}'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`;
 
 if (process.argv.includes("--selfcheck")) {
   assert.match(PAGE("", true), /Add a book/);
@@ -971,10 +995,7 @@ if (process.argv.includes("--selfcheck")) {
 /** What the reader has, and what is still being read in. */
 function shelf(user: string) {
   const db = userLibrary(user);
-  const books = db.prepare("select title, author from books order by title").all() as {
-    title: string;
-    author: string;
-  }[];
+  const books = listBooks(db);
   db.close();
 
   const pending = listJobs(jobs, user)
@@ -985,7 +1006,7 @@ function shelf(user: string) {
         : `<li>${escape(j.filename)}, <span class="note">${j.state}&hellip;</span></li>`,
     );
 
-  const shelved = books.map((b) => `<li>${escape(b.title)}, ${escape(b.author)}</li>`);
+  const shelved = books.map((b) => `<li data-shelf-book><a href="${bookLink(b)}">${escape(b.title)}</a>, ${escape(b.author)}</li>`);
 
   // Anything in flight stays visible; the shelf itself folds away. Landing on fourteen book
   // titles makes the first screen a stock list, when the only thing to do here is ask.
@@ -1002,7 +1023,7 @@ function reading(user: string) {
   const settings = profile.dailyReading;
   if (!settings) return "";
   const db = userLibrary(user);
-  const rows = db.prepare("select c.id, c.book_id, c.chunk_id, c.text, c.page_start, c.page_end, b.title, b.author, b.paginated, c.text t, c.page_start ps from chunks c join books b on c.book_id = b.id where b.title = ?").all(settings.book) as (Hit & { t: string; ps: string })[];
+  const rows = db.prepare("select c.id, c.book_id, c.chunk_id, c.text, c.page_start, c.page_end, b.title, b.author, b.paginated, b.revision, c.text t, c.page_start ps from chunks c join books b on c.book_id = b.id where b.title = ?").all(settings.book) as (Hit & { t: string; ps: string })[];
   db.close();
   const { month, day } = monthDayIn(process.env.GURU_TZ ?? settings.timezone);
   const entry = datedReading(rows, month, day);
@@ -1100,6 +1121,18 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     res.writeHead(200, { "content-type": req.url === "/mark.svg" ? "image/svg+xml" : "text/css; charset=utf-8" });
     return void res.end(readFileSync(file));
   }
+  if (req.method === "GET") {
+    const path = new URL(req.url ?? "/", "http://local").pathname;
+    let asset: string | undefined;
+    if (["/reader.js", "/reader.css", "/library.js"].includes(path)) asset = join(ENGINE_ROOT, "web", path.slice(1));
+    const vendor = /^\/pdfjs\/((?:build\/pdf(?:\.worker)?\.mjs)|(?:web\/pdf_viewer\.css)|(?:(?:cmaps|standard_fonts|wasm)\/[a-zA-Z0-9_.-]+))$/.exec(path);
+    if (vendor) asset = join(PDFJS_ROOT, vendor[1]);
+    if (asset && existsSync(asset)) {
+      const type = /\.m?js$/.test(asset) ? "text/javascript" : asset.endsWith(".css") ? "text/css" : asset.endsWith(".wasm") ? "application/wasm" : "application/octet-stream";
+      res.writeHead(200, { "content-type": type, "cache-control": "no-cache" });
+      return void createReadStream(asset).pipe(res);
+    }
+  }
   const ip = clientAddress(req);
   if (blocked(ip)) return send(429, PAGE("<p>Too many failed sign-ins. Try again later.</p>", false, true));
   if (req.method === "GET" && new URL(req.url ?? "/", "http://local").pathname === "/login") {
@@ -1138,6 +1171,34 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     db.close();
     return send(200, page(reading(user) + shelf(user), profile.showQuota ? `${left} of ${MAX_ASKS} questions left today` : "", { books }));
   }
+  if (req.url === "/privacy" || req.url === "/privacy/export" || req.url === "/privacy/clear") {
+    if (guest) return send(403, page("<p>Sign in to manage personal history.</p>"));
+    if (req.method === "GET" && req.url === "/privacy/export") {
+      const db = userLibrary(user);
+      let asks;
+      try { asks = db.prepare("select at from asks order by at").all(); } finally { db.close(); }
+      res.writeHead(200, { "content-type": "application/json", "content-disposition": 'attachment; filename="question-history.json"' });
+      return void res.end(JSON.stringify({ user, logging: loggingEnabled(user), asks, events: logdb.prepare("select at, event, q, flag, outcome from log where user = ? order by rowid").all(user) }, null, 2));
+    }
+    let cleared = false;
+    if (req.method === "POST") {
+      const form = new URLSearchParams(await body(req));
+      if (req.url === "/privacy/clear") {
+        if (form.get("confirm") !== "CLEAR") return send(400, page("<p>Type CLEAR to delete question history.</p>"));
+        logdb.prepare("delete from log where user = ?").run(user);
+        cleared = true;
+      } else if (req.url === "/privacy" && ["on", "off"].includes(form.get("logging") ?? "")) {
+        logdb.prepare("insert into reader_privacy values (?, ?) on conflict(user) do update set logging = excluded.logging").run(user, form.get("logging") === "on" ? 1 : 0);
+      } else return send(400, page("<p>Choose a history setting.</p>"));
+    } else if (req.method !== "GET") return send(405, page("<p>Method not allowed.</p>"));
+    return send(200, page(`${cleared ? '<p id="history-cleared">Question history cleared.</p>' : ""}<h2>Privacy and history</h2>
+      <p>Question logging is ${loggingEnabled(user) ? "on" : "off"}. When on, the operator can read your questions and source requests.</p>
+      <form method="post" action="/privacy"><button name="logging" value="${loggingEnabled(user) ? "off" : "on"}">Turn logging ${loggingEnabled(user) ? "off" : "on"}</button></form>
+      <p><a href="/privacy/export">Export question history</a></p>
+      <form method="post" action="/privacy/clear"><label for="clear-history">Type CLEAR to delete question history</label><input id="clear-history" name="confirm" autocomplete="off"><button>Clear question history</button></form>
+      <p class="note">Clearing removes your server question log and this browser's answer history. Your books and bookmarks stay. Daily usage timestamps still enforce the question allowance. Other devices keep their own browser history. Backups expire under the operator's retention settings.</p>
+      <p><a href="/">Return to library</a></p>`));
+  }
   if (req.method === "GET" && new URL(req.url ?? "/", "http://local").pathname === "/log") {
     if (guest || !isOperator(user)) return send(403, page("<p>Operator only.</p>"));
     const query = new URL(req.url!, "http://local").searchParams;
@@ -1150,61 +1211,40 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     return send(200, page(`<h2>Usage log</h2><div class="log-wrap"><table class="log"><thead><tr><th>Time</th><th>Reader</th><th>Action</th><th>Question</th><th>Outcome</th></tr></thead><tbody>${table}</tbody></table></div><details><summary>Reader links</summary><ul>${links}</ul></details>`));
   }
 
-  // The page a citation lives on, for reading a quotation in its surroundings. Title and
-  // page arrive from the client's parse of the citation line; an unknown pair is just an
-  // empty result, not an error worth a page.
-  if (req.method === "GET" && req.url?.startsWith("/context")) {
-    const u = new URL(req.url, "http://x");
-    const id = Number(u.searchParams.get("chunk"));
+  const sourceUrl = new URL(req.url ?? "/", "http://local");
+  if (["GET", "HEAD"].includes(req.method ?? "") && ["/context", "/pdf-meta", "/source.pdf", "/reader", "/pdf-page", "/book"].includes(sourceUrl.pathname)) {
     const db = userLibrary(user);
-    const row = Number.isSafeInteger(id) && id > 0 ? db.prepare("select text t, page_start ps, page_end pe from chunks where id = ?").get(id) as { t: string; ps: string; pe: string } | undefined : undefined;
-    db.close();
-    logEvent(user, "context", String(id));
-    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    return void res.end(
-      JSON.stringify(row ? { text: row.t, page_start: row.ps, page_end: row.pe } : { text: "" }),
-    );
-  }
-
-  // Whether a citation's book has its original PDF on file, and how many pages, so the
-  // client only offers "view page image" where a page can actually be streamed.
-  if (req.method === "GET" && req.url?.startsWith("/pdf-meta")) {
-    const identity = Number(new URL(req.url, "http://x").searchParams.get("book"));
-    const db = userLibrary(user);
-    const pdf = Number.isSafeInteger(identity) && identity > 0 ? materializePdf(db, user, identity) : undefined;
-    db.close();
-    let pages = 0;
-    if (pdf) {
-      try {
-        pages = JSON.parse(execFileSync(PY, [SIDECAR, "--meta", pdf.path], { encoding: "utf8" })).pages ?? 0;
-      } catch {
-        // corrupt PDF, missing fitz, whatever — no pages, no link shown
-      }
-    }
-    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    return void res.end(JSON.stringify({ available: pages > 0, pages }));
-  }
-
-  // One rendered page, streamed on demand: the reader who taps "view page image" pulls a
-  // few hundred KB for that page, not the whole PDF the answer happened to cite.
-  if (req.method === "GET" && req.url?.startsWith("/pdf-page")) {
-    const u = new URL(req.url, "http://x");
-    const identity = Number(u.searchParams.get("book"));
-    const printed = Number(u.searchParams.get("page"));
-    const db = userLibrary(user);
-    const pdf = Number.isSafeInteger(identity) && identity > 0 ? materializePdf(db, user, identity) : undefined;
-    const n = printed - (pdf?.pageOffset ?? 0);
-    db.close();
-    const fail = () => res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("page unavailable");
-    if (!pdf || !Number.isInteger(n) || n < 1) return void fail();
-    let png: Buffer;
     try {
-      png = execFileSync(PY, [SIDECAR, "--render", pdf.path, String(n)], { maxBuffer: 32 * 1024 * 1024 });
-    } catch {
-      return void fail();
-    }
-    res.writeHead(200, { "content-type": "image/png", "cache-control": "private, max-age=3600" });
-    return void res.end(png);
+      const book = sourceBook(db, sourceUrl.searchParams.get("book"), sourceUrl.searchParams.get("revision"));
+      if (sourceUrl.pathname === "/book") return send(200, page(browseBook(db, book, sourceUrl.searchParams), "", { books: listBooks(db), selected: book.id }));
+      if (sourceUrl.pathname === "/source.pdf") return await streamPdf(req, res, db, book);
+      if (sourceUrl.pathname === "/reader") {
+        if (!book.bytes) return send(404, page("<p>The original PDF is not stored for this edition. Source text is still available from its citation.</p>"));
+        res.setHeader("content-security-policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' blob:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+        return send(200, readFileSync(join(ENGINE_ROOT, "web/reader.html"), "utf8").replaceAll("__READER__", escape(user)).replaceAll("__HISTORY__", escape(profile.historyKey)));
+      }
+      if (sourceUrl.pathname === "/pdf-meta") {
+        res.writeHead(200, { "content-type": "application/json" });
+        return void res.end(JSON.stringify({ ...book, available: book.bytes > 0 }));
+      }
+      if (sourceUrl.pathname === "/context") {
+        const row = sourceContext(db, book, sourceUrl.searchParams.get("chunk"));
+        logEvent(user, "context", `${book.revision}/${row.id}`);
+        res.writeHead(200, { "content-type": "application/json" });
+        return void res.end(JSON.stringify({ ...row, book: book.id, revision: book.revision, title: book.title, author: book.author, pdf: book.bytes > 0 }));
+      }
+      const pdf = materializePdf(db, user, book.id, book.revision);
+      const n = Number(sourceUrl.searchParams.get("page")) - book.page_offset;
+      if (!pdf || !Number.isInteger(n) || n < 1) return void res.writeHead(404).end("page unavailable");
+      try {
+        const png = execFileSync(PY, [SIDECAR, "--render", pdf.path, String(n)], { maxBuffer: 32 * 1024 * 1024 });
+        res.writeHead(200, { "content-type": "image/png" });
+        return void res.end(png);
+      } catch { return void res.writeHead(404).end("page unavailable"); }
+    } catch (error) {
+      if (error instanceof SourceChanged) return void res.writeHead(410, { "content-type": "application/json" }).end(JSON.stringify({ error: error.message }));
+      throw error;
+    } finally { db.close(); }
   }
 
   // Retrieval without composition: hybrid search only, no answer model in the loop, so it
@@ -1214,12 +1254,12 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     const q = form.get("q")?.trim() ?? "";
     const db = userLibrary(user);
     try {
-      const book = selectedBook(db, form.get("book"));
-      const choice = { books: listBooks(db), selected: book?.id };
+      const { chosen, choice } = selection(db, form);
       if (!q) return send(400, page("<p>Ask something.</p>", "", choice));
       if (q.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>", "", choice));
-      logEvent(user, "find", loggedQuestion(q, book));
-      const hits = (await search(db, broaden(q), undefined, { literalQuery: q, bookIds: book ? [book.id] : undefined })).slice(0, 8);
+      logEvent(user, "find", loggedQuestion(q, chosen));
+      const groups = chosen.length > 1 ? await Promise.all(chosen.map((b) => search(db, broaden(q), undefined, { literalQuery: q, bookIds: [b.id] }))) : [await search(db, broaden(q), undefined, { literalQuery: q, bookIds: chosen.length ? chosen.map((b) => b.id) : undefined })];
+      const hits = groups.flatMap((hits) => hits.slice(0, chosen.length > 1 ? 3 : 8));
       const items = hits
         .map(
           (h) =>
@@ -1227,7 +1267,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
             `${citationMarkup(h)}</blockquote>`,
         )
         .join("");
-      const html = scopeNote(book) + (items
+      const html = scopeNote(chosen) + (items
         ? `<p class="note">Passages only; no answer was composed.</p><div class="answer">${items}</div>`
         : "<p>No passages were found in the selected sources.</p>");
       if ((req.headers.accept ?? "").includes("application/json")) {
@@ -1343,12 +1383,13 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   const form = new URLSearchParams(await body(req));
   const query = form.get("q")?.trim() ?? "";
   const db = userLibrary(user);
-  let book: LibraryBook | undefined;
+  let chosen: LibraryBook[] = [];
   const choice: SourceChoice = { books: [] };
   try {
     choice.books = listBooks(db);
-    book = selectedBook(db, form.get("book"));
-    choice.selected = book?.id;
+    const selected = selection(db, form);
+    chosen = selected.chosen;
+    Object.assign(choice, selected.choice);
     if (!query) return send(400, page("<p>Ask something.</p>", "", choice));
     if (query.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>", "", choice));
     // A guest gets a handful of composed answers so the room can actually be judged rather
@@ -1375,7 +1416,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
       }
     }
 
-    const logId = logEvent(user, "ask", loggedQuestion(query, book));
+    const logId = logEvent(user, "ask", loggedQuestion(query, chosen));
     // Counted before the work and after validation: the model calls happen whether or not the
     // pipeline finds anything, and a failed question that refunds its slot is a free retry loop.
     if (guest) {
@@ -1411,10 +1452,11 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
 
     if (profile.showQuota) emit("quota", { text: `${Math.max(0, MAX_ASKS - askedToday(db))} of ${MAX_ASKS} questions left today` });
     emit("stage", { text: "searching your library" });
-    const hits = await rerank(query, await search(db, await expandQuery(query), undefined, { literalQuery: query, bookIds: book ? [book.id] : undefined }));
+    const retrieval = await retrieveQuestion(db, query, { bookIds: chosen.length ? chosen.map((b) => b.id) : undefined });
+    const hits = retrieval.hits;
     if (!hits.length) {
       logOutcome(logId, "no passages");
-      const none = scopeNote(book) + "<p>No supporting passage was found for this question.</p>";
+      const none = scopeNote(chosen) + "<p>No supporting passage was found for this question.</p>";
       if (!streaming) return send(200, page(none, "", choice));
       emit("answer", { html: none });
       return void res.end();
@@ -1440,7 +1482,8 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     // thing this page must never do is let its own prose look like somebody's book.
     const lead = synopsis ? `<p class="synopsis">${escape(synopsis)}</p>` : "";
     const content = passages.length ? passages.map((p) => `<blockquote><p>${escape(p.text)}</p>${citationMarkup(p.hit)}</blockquote>`).join("") : render(answer);
-    const composed = `${scopeNote(book)}${lead}<div class="answer">${content}</div>`;
+    const missing = chosen.length > 1 ? chosen.filter((book) => !passages.some((p) => p.hit.book_id === book.id)).map((book) => `<p class="note">No quoted support selected from ${escape(sourceLabel(book))}. This comparison may be incomplete.</p>`).join("") : "";
+    const composed = `${scopeNote(chosen)}${missing}${lead}<div class="answer">${content}</div>`;
 
     if (!streaming) {
       return send(200, page(`<h2>${escape(query)}</h2>${composed}${shelfNote}${note}`, "", choice));
@@ -1452,7 +1495,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     // The pipeline calls an upstream model. A failure there is not the reader's fault and
     // must not render as an unsourced answer, so it is reported as a failure.
     console.error(err);
-    const failed = scopeNote(book) + "<p>Something failed upstream. Try again.</p>";
+    const failed = scopeNote(chosen) + "<p>Something failed upstream. Try again.</p>";
     // A stream that has already sent its headers cannot be given a status; it has to say so
     // in an event and close, or the reader watches a spinner that never resolves.
     if (res.headersSent) {

@@ -10,7 +10,8 @@
     "eval:gen": "node eval/generate.ts",
     "worker": "node src/cli.ts worker",
     "eval:answers": "node eval/answers.ts",
-    "eval:rerank": "node eval/rerank.ts"
+    "eval:rerank": "node eval/rerank.ts",
+    "eval:pipeline": "node eval/pipeline.ts"
   },
   "repository": {
     "type": "git",
@@ -36,6 +37,7 @@
     "@clerk/backend": "^3.13.2",
     "@huggingface/transformers": "^4.2.0",
     "better-sqlite3": "^13.0.1",
+    "pdfjs-dist": "6.3.289",
     "sqlite-vec": "^0.1.9"
   },
   "bin": {

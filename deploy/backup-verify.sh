@@ -31,34 +31,9 @@ tar -xzf "$ARCHIVE" -C "$WORK"
 
 # The checker is written to a file rather than passed with -e, because it travels through ssh,
 # sh and docker on the way in and every layer wants its own quoting. A file has none of that.
-cat > "$WORK/verify.cjs" <<'JS'
-const D = require("better-sqlite3"), fs = require("fs");
-let bad = 0;
-for (const f of fs.readdirSync("/r").filter((f) => f.endsWith(".db")).sort()) {
-  // Copied out of the read-only mount first: opening a database sets journal mode, which is
-  // a write, and the point here is to leave the archive untouched.
-  fs.copyFileSync(`/r/${f}`, `/tmp/${f}`);
-  const db = new D(`/tmp/${f}`);
-  const integrity = db.pragma("integrity_check")[0].integrity_check;
-  let detail = "";
-  try {
-    const books = db.prepare("select count(*) n from books").get().n;
-    const chunks = db.prepare("select count(*) n from chunks").get().n;
-    // A library that opens but whose text is gone would pass a row count, so read one.
-    const sample = db.prepare("select text from chunks limit 1").get();
-    detail = `${books} books, ${chunks} chunks, first chunk ${sample ? sample.text.length : 0} chars`;
-    if (!books || !chunks || !sample) { detail += "  <-- EMPTY"; bad++; }
-  } catch {
-    detail = "no library tables (expected for the job queue)";
-  }
-  if (integrity !== "ok") bad++;
-  console.log(`  ${f.padEnd(26)} integrity=${integrity}  ${detail}`);
-  db.close();
-}
-console.log(bad ? `FAIL: ${bad} database(s) did not verify` : "RESTORE OK: every database opened and read back");
-process.exit(bad ? 1 : 0);
-JS
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cp "$SCRIPT_DIR/verify-snapshot.cjs" "$WORK/verify.cjs"
 
 # NODE_PATH because require() resolves from the script's own directory, and the script is
 # mounted at /r while better-sqlite3 lives in /app/node_modules.
-docker run --rm -v "$WORK:/r:ro" -e NODE_PATH=/app/node_modules "$IMAGE" node /r/verify.cjs
+docker run --rm --network none -v "$WORK:/r:ro" -e NODE_PATH=/app/node_modules "$IMAGE" node /r/verify.cjs

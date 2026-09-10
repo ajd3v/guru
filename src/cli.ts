@@ -36,7 +36,9 @@ import {
   openJobs,
   requeueStale,
 } from "./jobs.ts";
-import { ask as askLlm, contextualize, expandQuery, rerank, unverifiedQuotes } from "./llm.ts";
+import { ask as askLlm, contextualize, unverifiedQuotes } from "./llm.ts";
+
+import { retrieveQuestion } from "./retrieval.ts";
 
 const DB = process.env.GURU_DB ?? "data/library.db";
 
@@ -102,7 +104,7 @@ async function retrieve(query: string, selection?: string) {
   const conn = db();
   try {
     const book = selectedBook(conn, selection);
-    return await rerank(query, await search(conn, await expandQuery(query), undefined, { literalQuery: query, bookIds: book ? [book.id] : undefined }));
+    return (await retrieveQuestion(conn, query, { bookIds: book ? [book.id] : undefined })).hits;
   } finally { conn.close(); }
 }
 

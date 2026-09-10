@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Source reader</title>
+  <link rel="stylesheet" href="/pdfjs/web/pdf_viewer.css">
+  <link rel="stylesheet" href="/reader.css">
+  <script type="module" src="/reader.js"></script>
+</head>
+<body data-reader="__READER__" data-history="__HISTORY__">
+  <header class="reader-header">
+    <a class="back" href="/">Back to library</a>
+    <div class="book-heading"><h1 id="title">Opening source</h1><p id="author"></p></div>
+    <a id="download" class="control" download>Download PDF</a>
+  </header>
+  <nav class="toolbar" aria-label="PDF controls">
+    <div class="control-group"><button id="previous" disabled aria-label="Previous page">Previous</button>
+      <form id="jump"><label for="page">PDF page</label><input id="page" type="number" min="1" value="1" inputmode="numeric"><span id="total"></span><button>Go</button></form>
+      <button id="next" disabled aria-label="Next page">Next</button></div>
+    <div class="control-group"><button id="zoom-out" disabled aria-label="Zoom out">-</button><button id="fit" disabled>Fit width</button><button id="zoom-in" disabled aria-label="Zoom in">+</button><button id="rotate" disabled>Rotate</button></div>
+    <button id="bookmark" disabled aria-pressed="false">Bookmark page</button>
+  </nav>
+  <div class="reader-layout">
+    <aside>
+      <details id="contents"><summary>Contents</summary><nav id="outline" aria-label="Document contents"></nav></details>
+      <details><summary>Bookmarks</summary><nav id="bookmarks" aria-label="Saved pages"></nav></details>
+      <details><summary>Find on this page</summary><label for="find">Text to find</label><input id="find" type="search" autocomplete="off"><p id="matches" role="status"></p></details>
+    </aside>
+    <main id="main" tabindex="-1">
+      <p id="status" role="status" aria-live="polite">Opening the original PDF...</p>
+      <form id="password-form" hidden><label for="password">PDF password</label><input id="password" type="password" autocomplete="off"><button>Open</button></form>
+      <div id="viewport"><div id="sheet"><canvas id="canvas" aria-hidden="true"></canvas><div id="text" class="textLayer"></div></div></div>
+      <p id="page-note"></p>
+      <details id="plain-text"><summary>Page text</summary><p id="transcript"></p></details>
+    </main>
+  </div>
+</body>
+</html>

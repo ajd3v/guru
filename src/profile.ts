@@ -35,6 +35,7 @@ export type Profile = {
   cookieName: string;
   tokenNamespace: string;
   historyKey: string;
+  bookDetails: { title: string; author: string; source?: string; tradition?: string; edition?: string }[];
   dailyReading?: { book: string; label: string; timezone: string };
 };
 
@@ -42,7 +43,7 @@ const defaults = {
   shortName: "", tagline: "", description: "A study companion for your library.",
   sourceRegister: "the works in this library", queryExpansions: [], maxQuotesPerBook: 1, vectorWeight: 1,
   starterMode: "automatic", assets: "assets", themeColor: "#f3efe3", backgroundColor: "#14150f",
-  showControls: true, showQuota: false,
+  showControls: true, showQuota: false, bookDetails: [],
 };
 
 export function loadProfile(path: string): Profile {
@@ -79,6 +80,12 @@ export function loadProfile(path: string): Profile {
         !Array.isArray(rule.terms) || !rule.terms.length ||
         rule.terms.some((s: unknown) => typeof s !== "string" || !s.trim() || s.length > 100) ||
         typeof rule.append !== "string" || !rule.append.trim()) throw new Error("Invalid query expansion");
+  }
+  if (!Array.isArray(p.bookDetails)) throw new Error("Invalid bookDetails");
+  for (const d of p.bookDetails) {
+    if (!d || typeof d.title !== "string" || typeof d.author !== "string" || !d.title || !d.author ||
+        Object.keys(d).some((k) => !["title", "author", "source", "tradition", "edition"].includes(k)) ||
+        [d.source, d.tradition, d.edition].some((v) => v !== undefined && (typeof v !== "string" || !v.trim()))) throw new Error("Invalid book detail");
   }
   if (p.dailyReading !== undefined) {
     const r = p.dailyReading;
