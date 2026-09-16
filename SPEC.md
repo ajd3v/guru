@@ -18,7 +18,7 @@ The current profile and answer contracts are documented in [CONFIGURATION.md](CO
 
   **The starter is versioned by a hash of `starter/library.json`.** It used to be keyed on the file merely existing, so growing the manifest changed nothing on any box that had already built one: no error, no warning, an old corpus for ever. The entrypoint now stamps the manifest hash beside the database and rebuilds when they differ, and stamps only after the atomic move so an interrupted build is retried rather than recorded as done.
 
-  **Open gap: a rebuilt starter does not reach existing readers.** A library is cloned from the starter the first time a reader appears, and never again, so books added to the manifest are invisible to anyone who already has a library. Rebuilding gives them to new readers only. Fixing this needs a per-book reconciliation on boot (add the starter books a reader is missing, leave their uploads alone), which is real work and is not built. Today the only remedy is deleting a reader's file so it re-clones, which also destroys their uploads.
+  **Starter reconciliation now reaches existing readers.** A per-book reconciliation pass runs when a reader library opens. It copies missing starter books, chunks, FTS rows, and vector embeddings from the starter template in a single transaction. Reader uploads, bookmarks, and ask counts are left alone.
 
 ## Copyright posture (hybrid)
 
@@ -204,8 +204,8 @@ one. Model choice for the answer step is a quality decision, not a cost decision
 
 - Single agent, warm scholar-teacher persona. Answers **only** from retrieved passages; says "your library doesn't cover this" instead of hallucinating.
 - Model routing: Haiku-tier for pipeline steps (contextualizing, rerank, query rewrite), Sonnet-tier for the answer. **Built as two independent settings** (`GURU_PIPELINE_MODEL`, `GURU_ANSWER_MODEL`), though the measurement below says the dear tier buys nothing at the answer step.
-- Streaming: **partial.** The page updates over SSE as the stages complete, so the reader sees how many passages were found while the answer is being composed, but the answer itself arrives in one event rather than token by token.
-- Conversation memory: last-N messages. **Not built.** Every question is answered standing alone; there is no thread, and a follow-up that says "and what about him?" has nothing to resolve it against. This is the largest unbuilt thing in this section and it is a product gap, not a technical one.
+- Streaming: **built.** The page updates over SSE as stages complete, and streams each grounded quotation block into view as it is verified, followed by the final composed layout and shelf note.
+- Conversation memory: **built.** The web client includes recent turns in the request, and the query expander and answer selector use that context to resolve pronouns and follow-up questions.
 
 ## Architecture & security
 

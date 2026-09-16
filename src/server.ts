@@ -822,6 +822,10 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
     const book = document.getElementById("book")?.value || "";
     const payload = new URLSearchParams({ q, book });
     for (const option of document.getElementById("compare")?.selectedOptions || []) payload.append("compare", option.value);
+    if (past.length) {
+      const recent = past.slice(0, 3).map((p) => ({ q: p.q, a: p.html ? p.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300) : "" }));
+      payload.set("history", JSON.stringify(recent));
+    }
     if (!q) return;
     e.preventDefault();
 
@@ -886,6 +890,19 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
         // Only the count is used here. Whether the passages are worth listing depends on the
         // answer, which has not been written yet, so the server sends the list with it.
         if (name === "passages" && waiting()) waiting().textContent = data.text + ", composing an answer";
+        if (name === "quote") {
+          let stream = cur.querySelector(".stream-quotes");
+          if (!stream) {
+            const w = waiting();
+            if (w) w.remove();
+            stream = document.createElement("div");
+            stream.className = "answer stream-quotes";
+            cur.append(stream);
+          }
+          const temp = document.createElement("div");
+          temp.innerHTML = data.html;
+          stream.append(...temp.childNodes);
+        }
         if (name === "answer") {
           cur.innerHTML = "<h2></h2>" + data.html;
           cur.querySelector("h2").textContent = q;
@@ -1382,6 +1399,19 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
 
   const form = new URLSearchParams(await body(req));
   const query = form.get("q")?.trim() ?? "";
+  let history: { q: string; a?: string }[] | undefined;
+  const rawHistory = form.get("history");
+  if (rawHistory) {
+    try {
+      const parsed = JSON.parse(rawHistory);
+      if (Array.isArray(parsed)) {
+        history = parsed
+          .filter((t) => t && typeof t.q === "string")
+          .slice(-3)
+          .map((t) => ({ q: String(t.q).slice(0, 500), a: t.a ? String(t.a).slice(0, 500) : undefined }));
+      }
+    } catch {}
+  }
   const db = userLibrary(user);
   let chosen: LibraryBook[] = [];
   const choice: SourceChoice = { books: [] };
@@ -1452,7 +1482,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
 
     if (profile.showQuota) emit("quota", { text: `${Math.max(0, MAX_ASKS - askedToday(db))} of ${MAX_ASKS} questions left today` });
     emit("stage", { text: "searching your library" });
-    const retrieval = await retrieveQuestion(db, query, { bookIds: chosen.length ? chosen.map((b) => b.id) : undefined });
+    const retrieval = await retrieveQuestion(db, query, { bookIds: chosen.length ? chosen.map((b) => b.id) : undefined, history });
     const hits = retrieval.hits;
     if (!hits.length) {
       logOutcome(logId, "no passages");
@@ -1470,7 +1500,16 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
       `<ul class="shelf">${sources}</ul></details>`;
     emit("passages", { text: `reading ${hits.length} passage${hits.length > 1 ? "s" : ""}` });
 
-    const { answer, synopsis, dropped, declined, passages } = await ask(query, hits);
+    const { answer, synopsis, dropped, declined, passages } = await ask(query, hits, {
+      history,
+      onPassage: (p) => {
+        if (streaming) {
+          emit("quote", {
+            html: `<blockquote><p>${escape(p.text)}</p>${citationMarkup(p.hit)}</blockquote>`,
+          });
+        }
+      },
+    });
     logOutcome(logId, declined ? "declined" : /^>/.test(answer) ? "answered" : "ungrounded");
     // A decline means nothing retrieved bore on the question, so listing what was read under
     // "Passages consulted" would claim a relevance the answer just denied.

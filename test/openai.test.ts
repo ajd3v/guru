@@ -122,7 +122,7 @@ process.env.GURU_PIPELINE_MODEL = "";
 _resetLlmConfig();
 seen.length = 0;
 await expandQuery("what is the way?");
-assert.equal(seen.at(-1).body.model, "deepseek-ai/DeepSeek-V4-Flash-0731", "empty override falls back");
+assert.equal(seen.at(-1).body.model, "deepseek-ai/DeepSeek-V4.1-Flash", "empty override falls back");
 delete process.env.GURU_ANSWER_MODEL;
 delete process.env.GURU_PIPELINE_MODEL;
 _resetLlmConfig();

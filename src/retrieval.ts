@@ -28,9 +28,9 @@ export function adjacentContext(db: Database.Database, hits: Hit[]): Hit[] {
   return [...out.values()];
 }
 
-export async function retrieveQuestion(db: Database.Database, query: string, options: { bookIds?: number[]; method?: "expanded" | "paired"; context?: boolean; expanded?: string } = {}) {
+export async function retrieveQuestion(db: Database.Database, query: string, options: { bookIds?: number[]; method?: "expanded" | "paired"; context?: boolean; expanded?: string; history?: { q: string; a?: string }[] } = {}) {
   const started = performance.now();
-  const expanded = options.expanded ?? await expandQuery(query);
+  const expanded = options.expanded ?? await expandQuery(query, options.history);
   const expandedMs = performance.now() - started;
   const scopes = options.bookIds && options.bookIds.length > 1 ? options.bookIds.map((id) => [id]) : [options.bookIds];
   const groups = await Promise.all(scopes.map(async (bookIds) => {

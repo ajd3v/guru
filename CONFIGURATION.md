@@ -49,7 +49,7 @@ The answer renderer accepts source sentence IDs only. It builds quotations and c
 
 Use `npm run eval:compare -- --output /tmp/retrieval.json` with an isolated `GURU_DB` to compare the previous equal-weight search with the configured search. Set `split` to `holdout` on cases reserved for later validation. Otherwise a stable hash of the query assigns the split. See [RETRIEVAL.md](RETRIEVAL.md) for the measured scope and limits.
 
-Existing reader libraries survive starter updates. Updating a template does not reconcile books into existing readers. That needs a separate migration which preserves uploads and usage.
+Existing reader libraries survive starter updates. When a reader library opens, missing starter books reconcile automatically into the library. Reader uploads, bookmarks, and ask counts are preserved.
 
 ## Consume the engine
 

@@ -144,8 +144,72 @@ export function userLibrary(userId: string, dir = process.env.GURU_USER_DIR ?? "
     src.pragma("wal_checkpoint(TRUNCATE)");
     src.close();
     copyFileSync(starter, path);
+    return open(path);
   }
-  return open(path);
+  const db = open(path);
+  reconcileStarter(db, starter);
+  return db;
+}
+
+/**
+ * Reconcile missing books from the starter database into an existing reader library.
+ *
+ * Preserves all user uploads, bookmarks, reading progress, and asks history.
+ * Copies chunks, FTS5 index entries, and vector embeddings directly without re-embedding.
+ */
+export function reconcileStarter(db: Database.Database, starterPath = process.env.GURU_STARTER ?? "data/starter.db"): number {
+  if (!existsSync(starterPath)) return 0;
+  let count = 0;
+  try {
+    db.prepare("attach database ? as starter_src").run(starterPath);
+  } catch {
+    return 0;
+  }
+  try {
+    const missing = db.prepare(`
+      select id, title, author, source, paginated, pdf, page_offset, revision, extraction_quality
+      from starter_src.books
+      where (title, author) not in (select title, author from books)
+    `).all() as { id: number; title: string; author: string; source: string; paginated: number; pdf: Buffer | null; page_offset: number; revision: string | null; extraction_quality: string | null }[];
+
+    if (!missing.length) return 0;
+
+    const insertBook = db.prepare(
+      "insert into books (title, author, source, paginated, pdf, page_offset, revision, extraction_quality) values (?,?,?,?,?,?,?,?)"
+    );
+    const getChunks = db.prepare(`
+      select c.chunk_id, c.text, c.page_start, c.page_end, v.embedding
+      from starter_src.chunks c
+      join starter_src.chunks_vec v on v.rowid = c.id
+      where c.book_id = ?
+      order by c.id
+    `);
+    const insertChunk = db.prepare(
+      "insert into chunks (book_id, chunk_id, text, page_start, page_end) values (?,?,?,?,?)"
+    );
+    const insertFts = db.prepare("insert into chunks_fts (rowid, text) values (?,?)");
+    const insertVec = db.prepare("insert into chunks_vec (rowid, embedding) values (?,?)");
+
+    db.transaction(() => {
+      for (const b of missing) {
+        const bookId = insertBook.run(
+          b.title, b.author, b.source, b.paginated, b.pdf, b.page_offset, b.revision, b.extraction_quality
+        ).lastInsertRowid as number;
+        const chunks = getChunks.all(b.id) as { chunk_id: number; text: string; page_start: string; page_end: string; embedding: Buffer }[];
+        for (const c of chunks) {
+          const chunkId = insertChunk.run(bookId, c.chunk_id, c.text, c.page_start, c.page_end).lastInsertRowid as number;
+          insertFts.run(BigInt(chunkId), c.text);
+          insertVec.run(BigInt(chunkId), c.embedding);
+        }
+        count++;
+      }
+    })();
+  } finally {
+    try {
+      db.prepare("detach database starter_src").run();
+    } catch {}
+  }
+  return count;
 }
 
 /**

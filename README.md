@@ -8,7 +8,7 @@ Ask it a question and it answers out of books you own, in their words rather tha
 A model that cannot find an answer in your shelf says so instead of writing one.
 
 **The reading room is open at [guru.alanj.dev](https://guru.alanj.dev).** Search the starter
-shelf, 123 public-domain books, as much as you like and with no model in the loop. Five
+shelf, 127 public-domain books, as much as you like and with no model in the loop. Five
 composed answers come with the visit, which is enough to ask something the shelf covers,
 something it covers badly, and something it does not cover at all. The last one is the
 interesting one.
@@ -18,7 +18,8 @@ Ching, the Gita, the Dhammapada and the Analects alongside Emerson, Thoreau, Whi
 Margaret Fuller; the Stoics and Plotinus alongside Schopenhauer, Nietzsche and Pascal;
 Underhill and Maeterlinck studying mysticism rather than preaching it; the whole New Thought
 line from Trine and Troward to Atkinson and Allen; Muir and Burroughs and Richard Jefferies
-finding it outdoors; Okakura, Nitobe and Hearn on the Japanese inner life. Every id is
+finding it outdoors; Okakura, Nitobe and Hearn on the Japanese inner life; Tagore, Bucke,
+Austin and Spinoza on nature and universal consciousness. Every id is
 resolved against Gutenberg rather than recalled.
 
 See [CONFIGURATION.md](CONFIGURATION.md) to run another library on the same engine.
@@ -57,7 +58,7 @@ node src/cli.ts books                  # IDs in the current library
 node src/cli.ts find --book 1 "what is the self?"
 ```
 
-Drop `--limit` for the whole starter library. That is 123 books and **hours** of CPU, because
+Drop `--limit` for the whole starter library. That is 127 books and **hours** of CPU, because
 every chunk is embedded locally, so it is worth knowing before you start it rather than after.
 The first five books are already four traditions, which is enough to see whether the
 cross-tradition answers are what you want.
