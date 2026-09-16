@@ -532,123 +532,327 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = ""
 <link rel="apple-touch-icon" href="/icon-180.png">
 <style>
   :root {
-    /* Washi, sumi, and moss. The green does the work rubric used to do, marking structure
-       and never colouring body text; vermilion remains, but only as the seal, stamped once. */
-    --paper: #f3efe3; --ink: #26241d; --quiet: #7d7a6c; --rule: #ddd6c2; --field: #eae4d2;
-    --moss: #6f8264; --seal: #b5472e;
-    /* Old-style serifs, in order of how good they look. No webfont: a page about patient
-       reading should not wait on a network round trip to show its first line. */
+    /* Morning sky, linen, and cedar moss. Natural minimalism with peaceful breathing room. */
+    --sky-top: #d4e7f5;
+    --sky-mid: #e3eff7;
+    --sky-bottom: #f6f4ee;
+    --paper: #faf8f5;
+    --paper-card: rgba(254, 252, 248, 0.82);
+    --field: rgba(244, 240, 230, 0.65);
+    --ink: #242928;
+    --quiet: #6b7771;
+    --rule: rgba(115, 135, 125, 0.18);
+    --moss: #4e6b4b;
+    --moss-hover: #3d563a;
+    --moss-soft: rgba(78, 107, 75, 0.12);
+    --seal: #b55038;
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", "Book Antiqua", Georgia, serif;
+    --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
     --small: ui-monospace, "SF Mono", "IBM Plex Mono", "DejaVu Sans Mono", monospace;
   }
   @media (prefers-color-scheme: dark) {
-    /* The garden at night. Moss lifts toward jade so it still reads as green against the
-       dark; the seal warms the way vermilion does by lamplight. */
-    :root { --paper: #14150f; --ink: #e4e1d2; --quiet: #8a8878; --rule: #2b2e23; --field: #1c1e15;
-            --moss: #8fa583; --seal: #cf6a45; }
+    /* Night sky above a sleeping pine forest. Luminescent starlight, misty jade, and deep tranquility. */
+    :root {
+      --sky-top: #0a1017;
+      --sky-mid: #101824;
+      --sky-bottom: #172433;
+      --paper: #0f151e;
+      --paper-card: rgba(19, 27, 37, 0.82);
+      --field: rgba(25, 36, 49, 0.65);
+      --ink: #e3ebf0;
+      --quiet: #8696a6;
+      --rule: rgba(255, 255, 255, 0.09);
+      --moss: #7ba977;
+      --moss-hover: #91be8d;
+      --moss-soft: rgba(123, 169, 119, 0.18);
+      --seal: #d26e4f;
+    }
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: clamp(3rem, 10vh, 7rem) 1.5rem 6rem;
-    background: var(--paper); color: var(--ink);
+    margin: 0;
+    min-height: 100vh;
+    padding: clamp(2.5rem, 6vh, 5.5rem) 1.25rem 6rem;
+    background: linear-gradient(175deg, var(--sky-top) 0%, var(--sky-mid) 24%, var(--sky-bottom) 100%);
+    color: var(--ink);
     font: 1.0625rem/1.75 var(--serif);
     font-feature-settings: "kern", "liga", "onum";
     -webkit-font-smoothing: antialiased;
+    position: relative;
   }
-  .sheet { max-width: 36rem; margin: 0 auto; }
 
-  header { text-align: center; margin-bottom: clamp(2.5rem, 7vh, 4.5rem); animation: rise .8s ease-out both; }
-  /* The corona brightens and dims on the pace of slow breathing. Eleven seconds is long
-     enough that you notice only if you stop and watch, which is the correct amount of
-     attention for a mark to ask for. The bead does not move; it is the fixed point. */
-  .mark { width: 64px; height: 64px; }
-  .mark .corona { fill: var(--ink); opacity: .82; animation: breathe-ink 11s ease-in-out infinite; }
+  /* Atmospheric sky and floating good-vibe clouds */
+  .sky {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+  .sky-glow {
+    position: absolute;
+    top: -15vh;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 120vw;
+    height: 70vh;
+    background: radial-gradient(ellipse at center, rgba(255, 252, 235, 0.7) 0%, rgba(255, 255, 255, 0) 70%);
+    filter: blur(40px);
+  }
+  @media (prefers-color-scheme: dark) {
+    .sky-glow {
+      background: radial-gradient(ellipse at center, rgba(140, 185, 235, 0.08) 0%, rgba(0, 0, 0, 0) 70%);
+    }
+  }
+  .cloud {
+    position: absolute;
+    color: rgba(255, 255, 255, 0.72);
+    filter: drop-shadow(0 12px 28px rgba(140, 175, 205, 0.18));
+    transition: opacity 0.5s ease;
+  }
+  @media (prefers-color-scheme: dark) {
+    .cloud {
+      color: rgba(26, 38, 54, 0.5);
+      filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.35));
+    }
+  }
+  .cloud svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .cloud-1 {
+    top: 4%;
+    left: -5vw;
+    width: clamp(240px, 32vw, 420px);
+    opacity: 0.85;
+    animation: drift-1 80s ease-in-out infinite alternate;
+  }
+  .cloud-2 {
+    top: 14%;
+    right: -6vw;
+    width: clamp(280px, 36vw, 480px);
+    opacity: 0.75;
+    animation: drift-2 105s ease-in-out infinite alternate;
+  }
+  .cloud-3 {
+    top: 42%;
+    left: 3vw;
+    width: clamp(200px, 26vw, 340px);
+    opacity: 0.65;
+    animation: drift-3 95s ease-in-out infinite alternate;
+  }
+  .cloud-4 {
+    top: 68%;
+    right: 2vw;
+    width: clamp(220px, 30vw, 380px);
+    opacity: 0.7;
+    animation: drift-4 115s ease-in-out infinite alternate;
+  }
+  @keyframes drift-1 { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(8vw, 2vh, 0); } }
+  @keyframes drift-2 { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(-7vw, -2vh, 0); } }
+  @keyframes drift-3 { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(6vw, -3vh, 0); } }
+  @keyframes drift-4 { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(-8vw, 2vh, 0); } }
+  @media (prefers-reduced-motion: reduce) {
+    .cloud { animation: none; }
+  }
+
+  .sheet {
+    max-width: 40rem;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+    background: var(--paper-card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    box-shadow: 0 18px 45px -12px rgba(60, 85, 105, 0.08), 0 1px 3px rgba(0, 0, 0, 0.02);
+    padding: clamp(2rem, 5vw, 3.5rem);
+  }
+  @media (prefers-color-scheme: dark) {
+    .sheet {
+      border-color: rgba(255, 255, 255, 0.08);
+      box-shadow: 0 18px 45px -12px rgba(0, 0, 0, 0.45);
+    }
+  }
+
+  header { text-align: center; margin-bottom: clamp(2rem, 5vh, 3.5rem); animation: rise .8s ease-out both; }
+  .mark { width: 56px; height: 56px; }
+  .mark .corona { fill: var(--ink); opacity: .75; animation: breathe-ink 11s ease-in-out infinite; }
   .mark .bead { fill: var(--seal); }
-  @keyframes breathe-ink { 0%, 100% { opacity: .82; } 50% { opacity: .58; } }
+  @keyframes breathe-ink { 0%, 100% { opacity: .75; } 50% { opacity: .5; } }
   @keyframes breathe { 0%, 100% { opacity: .25; } 50% { opacity: .7; } }
   @media (prefers-reduced-motion: reduce) { .mark .corona { animation: none; } }
 
-  h1 { margin: .9rem 0 .3rem; font-size: 1.5rem; font-weight: 400; letter-spacing: .34em;
-       text-indent: .34em; text-transform: lowercase; }
+  h1 { margin: .8rem 0 .3rem; font-size: 1.5rem; font-weight: 400; letter-spacing: .28em;
+       text-indent: .28em; text-transform: lowercase; }
   .tagline { margin: 0; color: var(--quiet); font-size: .9375rem; font-style: italic; text-wrap: balance; }
 
-  /* The question sits on a ruled line, like writing on a page, not inside a widget. */
-  .ask { display: flex; gap: .75rem; align-items: baseline;
-         border-bottom: 1px solid var(--rule); padding-bottom: .5rem; margin-bottom: 3rem; }
-  .ask input { flex: 1; min-width: 0; border: 0; background: transparent; color: inherit;
-               font: italic 1.125rem/1.6 var(--serif); padding: .3rem 0; }
-  .ask input::placeholder { color: var(--quiet); opacity: .8; }
+  /* Organic pill search bar */
+  .ask {
+    display: flex; gap: .5rem; align-items: center;
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(120, 140, 130, 0.22);
+    border-radius: 9999px;
+    padding: .3rem .35rem .3rem 1.25rem;
+    margin-bottom: 2.5rem;
+    box-shadow: 0 4px 18px rgba(60, 80, 70, 0.04);
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  @media (prefers-color-scheme: dark) {
+    .ask {
+      background: rgba(26, 36, 48, 0.82);
+      border-color: rgba(255, 255, 255, 0.12);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+    }
+  }
+  .ask:focus-within {
+    border-color: var(--moss);
+    box-shadow: 0 4px 20px var(--moss-soft), 0 0 0 3px var(--moss-soft);
+  }
+  .ask input {
+    flex: 1; min-width: 0; border: 0; background: transparent; color: inherit;
+    font: 1.0625rem/1.5 var(--serif); padding: .35rem 0;
+  }
+  .ask input::placeholder { color: var(--quiet); opacity: .75; font-style: italic; }
   .ask input:focus { outline: none; }
-  .ask:focus-within { border-bottom-color: var(--moss); }
-  .ask button { border: 0; background: none; color: var(--quiet); cursor: pointer;
-                font: .75rem/1 var(--small); letter-spacing: .18em; text-transform: uppercase; }
-  .ask button:hover { color: var(--moss); }
-  .scope { display: flex; gap: .75rem; align-items: center; margin-bottom: 1rem; }
+
+  /* Segmented mode toggle */
+  .mode-toggle {
+    display: inline-flex; align-items: center;
+    background: rgba(120, 138, 128, 0.12);
+    border-radius: 9999px; padding: 3px; gap: 2px; flex-shrink: 0;
+  }
+  .mode-toggle input {
+    position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;
+  }
+  .mode-toggle label {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: .35rem .85rem; border-radius: 9999px;
+    font: 500 .8125rem/1 var(--sans); letter-spacing: .02em;
+    color: var(--quiet); cursor: pointer;
+    transition: all .2s cubic-bezier(.2, .8, .2, 1);
+    user-select: none; min-height: 32px;
+  }
+  .mode-toggle input:focus-visible + label {
+    outline: 2px solid var(--moss); outline-offset: 2px;
+  }
+  .mode-toggle input:checked + label {
+    background: #ffffff; color: var(--moss);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    .mode-toggle { background: rgba(255, 255, 255, 0.08); }
+    .mode-toggle input:checked + label {
+      background: #253344; color: #9ecc9a;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    }
+  }
+
+  /* Submit button */
+  .ask-submit {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px; min-width: 38px; min-height: 38px;
+    border-radius: 50%; border: 0; background: var(--moss); color: #ffffff;
+    cursor: pointer; flex-shrink: 0;
+    transition: transform .15s ease, background-color .2s ease, box-shadow .2s ease;
+  }
+  .ask-submit:hover {
+    background: var(--moss-hover); transform: scale(1.05);
+    box-shadow: 0 3px 12px var(--moss-soft);
+  }
+  .ask-submit:focus-visible { outline: 2px solid var(--moss); outline-offset: 3px; }
+  .ask-submit svg { display: block; width: 16px; height: 16px; }
+  @media (prefers-color-scheme: dark) {
+    .ask-submit { color: #0d151c; }
+  }
+
+  .scope { display: flex; gap: .75rem; align-items: center; margin-bottom: 1.25rem; }
   .scope label { flex-shrink: 0; }
-  .scope select { flex: 1; min-width: 0; max-width: 100%; min-height: 44px; padding: .5rem;
-                  border: 1px solid var(--rule); background: var(--paper); color: var(--ink); font: 1rem/1.4 var(--serif); }
+  .scope select {
+    flex: 1; min-width: 0; max-width: 100%; min-height: 42px; padding: .45rem .8rem;
+    border: 1px solid var(--rule); border-radius: 12px;
+    background: var(--paper-card); color: var(--ink); font: .9375rem/1.4 var(--serif);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+  }
   .scope select:focus-visible { outline: 2px solid var(--moss); outline-offset: 2px; }
 
   h2 { font-size: 1.25rem; font-weight: 400; font-style: italic; color: var(--quiet);
        margin: 0 0 2rem; text-wrap: balance; }
 
-  /* Inverted hierarchy: the passage is the payload, the prose around it is scaffolding. The
-     margin rule is moss now, a reed laid beside somebody else's words. */
-  blockquote { position: relative; margin: 2.5rem 0; padding-left: 1.4rem; }
-  blockquote::before {
-    content: ""; position: absolute; left: 0; top: .34em; bottom: .34em; width: 2px;
-    background: var(--moss); opacity: .6;
+  /* Verbatim source passages with peaceful accents */
+  blockquote {
+    position: relative; margin: 2rem 0;
+    padding: 1.2rem 1.4rem 1.2rem 1.5rem;
+    background: var(--field); border-left: 3px solid var(--moss);
+    border-radius: 0 14px 14px 0;
+    box-shadow: 0 2px 10px rgba(50, 70, 60, 0.03);
+    transition: background .2s ease;
   }
-  blockquote p { margin: 0; font-size: 1.1875rem; line-height: 1.62; text-wrap: pretty; }
-  blockquote p::before { content: "\\201C"; margin-left: -.42em; }
+  blockquote p { margin: 0; font-size: 1.125rem; line-height: 1.68; text-wrap: pretty; }
+  blockquote p::before { content: "\\201C"; }
   blockquote p::after { content: "\\201D"; }
-  /* Set in the book face; half these titles are Gutenberg catalogue entries and the mono
-     face ran a locator to three lines. A tap opens the page the citation points at. */
-  cite { display: block; margin-top: .55rem; color: var(--quiet); opacity: .85;
-         font: italic .8125rem/1.45 var(--serif); letter-spacing: 0; text-wrap: pretty; }
+  cite {
+    display: block; margin-top: .65rem; color: var(--quiet); opacity: .88;
+    font: italic .8125rem/1.5 var(--serif); letter-spacing: 0; text-wrap: pretty;
+  }
   .answer cite { cursor: pointer; }
   .answer cite:hover { color: var(--moss); opacity: 1; }
-  .context { white-space: pre-wrap; margin: .75rem 0 0; padding: .75rem 1rem;
-             background: var(--field); border: 1px solid var(--rule); border-radius: 2px;
-             font-size: .8125rem; line-height: 1.7; max-height: 18rem; overflow: auto; }
-  .context mark { background: transparent; box-shadow: inset 0 -0.45em rgba(111,130,100,.3); color: inherit; }
-  .context .pdf-page { display: block; max-width: 100%; margin-top: .6rem; border-radius: 2px; }
-  /* Between passages, three stones in the gravel where the paragraphus used to stand. */
+  .context {
+    white-space: pre-wrap; margin: .75rem 0 0; padding: .85rem 1.1rem;
+    background: var(--paper-card); border: 1px solid var(--rule); border-radius: 12px;
+    font-size: .8125rem; line-height: 1.7; max-height: 18rem; overflow: auto;
+  }
+  .context mark { background: transparent; box-shadow: inset 0 -0.45em var(--moss-soft); color: inherit; }
+  .context .pdf-page { display: block; max-width: 100%; margin-top: .6rem; border-radius: 8px; }
   blockquote + p:not(:empty)::before {
     content: "\\00B7 \\00B7 \\00B7"; color: var(--moss); opacity: .8; letter-spacing: .3em;
     margin-right: .6em; font-size: .9em;
   }
   .answer > p { color: var(--quiet); font-size: .9375rem; text-wrap: pretty; }
 
-  /* The model's own summary: an editor's standfirst, ruled off, never dressed as a book. */
-  .synopsis { margin: 0 0 2.5rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--rule);
-              font-size: 1.0625rem; line-height: 1.7; text-wrap: pretty; }
+  .synopsis {
+    margin: 0 0 2.25rem; padding: 1.1rem 1.3rem;
+    background: var(--field); border-radius: 14px;
+    font-size: 1.0625rem; line-height: 1.7; text-wrap: pretty;
+  }
   .note { color: var(--quiet); font-size: .8125rem; }
   .note a { color: inherit; text-underline-offset: .2em; }
   details { margin-top: 2.5rem; }
-  summary { cursor: pointer; font: .6875rem/1.6 var(--small); letter-spacing: .12em;
-            text-transform: uppercase; list-style: none; }
+  summary {
+    cursor: pointer; font: 500 .75rem/1.6 var(--sans); letter-spacing: .06em;
+    text-transform: uppercase; list-style: none;
+  }
   summary::-webkit-details-marker { display: none; }
   summary::before { content: "+ "; color: var(--moss); }
   details[open] summary::before { content: "\\2212 "; }
   summary:hover { color: var(--ink); }
-  ul.shelf { list-style: none; padding: 0; margin: 3rem 0 0; }
-  ul.shelf li { padding: .35rem 0; border-bottom: 1px solid var(--rule); font-size: .875rem;
-                color: var(--quiet); text-wrap: pretty; }
+  ul.shelf { list-style: none; padding: 0; margin: 2.5rem 0 0; }
+  ul.shelf li {
+    padding: .45rem 0; border-bottom: 1px solid var(--rule); font-size: .875rem;
+    color: var(--quiet); text-wrap: pretty;
+  }
   ul.shelf li:last-child { border-bottom: 0; }
 
-  /* Stacked question-and-answer entries, newest on top, ruled apart like a ledger. */
   .qa { padding-top: 2rem; border-top: 1px solid var(--rule); margin-top: 2rem; }
   .qa:first-child { padding-top: 0; border-top: 0; margin-top: 0; }
 
-  footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--rule);
-           display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; align-items: center; }
+  footer {
+    margin-top: 4rem; padding-top: 1.75rem; border-top: 1px solid var(--rule);
+    display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; align-items: center;
+  }
   footer form { display: flex; gap: .5rem; margin: 0 0 0 auto; }
-  footer input { border: 0; border-bottom: 1px solid var(--rule); background: transparent;
-                 color: inherit; font: .75rem/1.6 var(--small); width: 7rem; padding: .2rem 0; }
-  footer input:focus { outline: none; border-bottom-color: var(--ink); }
-  footer button, .file { border: 0; background: none; padding: 0; color: var(--quiet); cursor: pointer;
-                         font: .6875rem/1.6 var(--small); letter-spacing: .12em; text-transform: uppercase; }
+  footer input {
+    border: 1px solid var(--rule); border-radius: 8px; background: transparent;
+    color: inherit; font: .75rem/1.6 var(--small); width: 7.5rem; padding: .3rem .6rem;
+  }
+  footer input:focus { outline: none; border-color: var(--moss); }
+  footer button, .file {
+    border: 0; background: none; padding: .3rem .6rem; color: var(--quiet); cursor: pointer;
+    border-radius: 6px; font: .75rem/1.5 var(--sans); letter-spacing: .04em;
+    transition: color .15s ease;
+  }
   footer button:hover, .file:hover { color: var(--ink); }
   .file input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .waiting { animation: breathe 3.2s ease-in-out infinite; }
@@ -661,15 +865,19 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = ""
   .ask input:focus-visible { outline: 2px solid var(--moss); outline-offset: 4px; }
   .reading { white-space: pre-wrap; }
   .library-tools { margin-bottom: 1rem; }
-  .library-tools input, .library-tools select { width: 100%; min-height: 44px; font: inherit; }
+  .library-tools input, .library-tools select { width: 100%; min-height: 44px; font: inherit; border-radius: 8px; }
   .library-tools label { display: block; margin-top: .6rem; }
   .library-tools summary { padding-block: .6rem; cursor: pointer; }
   .book-passages { padding-left: 1.3rem; }
   .book-passages li { margin-block: .7rem; }
   .context nav { display: flex; flex-wrap: wrap; gap: .6rem; }
   .context nav button, .context nav a, #saved-passages { min-height: 44px; }
-  dialog { max-width: min(90vw, 42rem); background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; }
-  dialog::backdrop { background: #0008; }
+  dialog {
+    max-width: min(90vw, 42rem); background: var(--paper); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.15); padding: 1.5rem 1.75rem;
+  }
+  dialog::backdrop { background: rgba(10, 16, 24, 0.4); backdrop-filter: blur(4px); }
   #bookmark-list p { display: flex; gap: .8rem; align-items: center; }
   #bookmark-list a { flex: 1; overflow-wrap: anywhere; }
   #bookmark-list button { min-height: 44px; }
@@ -678,10 +886,33 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = ""
   .log-wrap { overflow-x: auto; }
   table.log { border-collapse: collapse; font-size: .8125rem; width: 100%; }
   .log th, .log td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--rule); }
-  .ask button { min-height: 44px; min-width: 44px; }
+  .ask button { min-height: 38px; min-width: 38px; }
   @media (prefers-reduced-motion: reduce) { .waiting { animation: none; } }
 </style>
 ${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
+<div class="sky" aria-hidden="true">
+  <div class="sky-glow"></div>
+  <div class="cloud cloud-1">
+    <svg viewBox="0 0 260 100" fill="currentColor">
+      <path d="M 45 75 Q 20 75 20 54 Q 20 34 42 32 Q 52 14 78 14 Q 98 14 110 26 Q 124 16 145 16 Q 170 16 178 32 Q 200 32 205 50 Q 212 75 185 75 Z"/>
+    </svg>
+  </div>
+  <div class="cloud cloud-2">
+    <svg viewBox="0 0 320 110" fill="currentColor">
+      <path d="M 50 85 Q 20 85 20 62 Q 20 40 46 38 Q 58 18 88 18 Q 112 18 126 30 Q 142 18 168 18 Q 198 18 208 34 Q 235 34 242 54 Q 250 85 220 85 Z"/>
+    </svg>
+  </div>
+  <div class="cloud cloud-3">
+    <svg viewBox="0 0 220 90" fill="currentColor">
+      <path d="M 40 68 Q 18 68 18 50 Q 18 32 38 30 Q 48 15 70 15 Q 88 15 98 25 Q 110 16 128 16 Q 150 16 156 30 Q 176 30 180 44 Q 186 68 162 68 Z"/>
+    </svg>
+  </div>
+  <div class="cloud cloud-4">
+    <svg viewBox="0 0 290 105" fill="currentColor">
+      <path d="M 45 80 Q 18 80 18 58 Q 18 36 42 34 Q 54 16 82 16 Q 105 16 118 28 Q 132 16 156 16 Q 184 16 194 32 Q 218 32 224 50 Q 232 80 204 80 Z"/>
+    </svg>
+  </div>
+</div>
 <div class="sheet" data-reader="${escape(reader)}" data-history="${escape(profile.historyKey)}">
 <header>
   <!-- The eclipse. A ring drawn as two subpaths under evenodd, the inner circle pushed down
@@ -704,8 +935,18 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
   `<option value="${b.id}" data-tradition="${escape(detailsFor(b)?.tradition || "")}" data-edition="${escape(detailsFor(b)?.edition || "")}"${b.id === choice.selected ? " selected" : ""}>${escape(bookLabel(b, choice.books))}</option>`).join("")}</select></div>${picker(choice.books, choice.compare)}` : ""}
 <form id="ask-form" class="ask" method="post" action="/ask">
   <input name="q" aria-label="Question for your library" maxlength="${MAX_QUERY}" placeholder="Ask ${guest ? "the library" : "your library"}&hellip;" autofocus>
-  <button class="alt" formaction="/find" title="Passages only, no composed answer">Find</button>
-  <button>Ask</button>
+  <div class="mode-toggle" role="radiogroup" aria-label="Search mode">
+    <input type="radio" id="mode-ask" name="mode" value="ask" checked>
+    <label for="mode-ask" title="Ask with verbatim citations">Ask</label>
+    <input type="radio" id="mode-find" name="mode" value="find">
+    <label for="mode-find" title="Find passages only">Find</label>
+  </div>
+  <button type="submit" class="ask-submit" aria-label="Submit question" title="Submit">
+    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <line x1="4" y1="10" x2="16" y2="10"></line>
+      <polyline points="11 5 16 10 11 15"></polyline>
+    </svg>
+  </button>
 </form>
 <p class="note meta" role="status">${escape(meta)}</p>
 <div id="out"><div id="hist"></div>${body}</div>
@@ -817,10 +1058,20 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
     await show();
   });
 
+  const modeRadios = form.querySelectorAll('input[name="mode"]');
+  const syncMode = () => {
+    const isFind = form.mode?.value === "find";
+    form.action = isFind ? "/find" : "/ask";
+    const base = ${guest ? '"the library"' : '"your library"'};
+    form.q.placeholder = isFind ? ("Find passages in " + base + "…") : ("Ask " + base + "…");
+  };
+  for (const r of modeRadios) r.addEventListener("change", syncMode);
+
   form.addEventListener("submit", async (e) => {
     const q = form.q.value.trim();
+    const isFind = form.mode?.value === "find" || (e.submitter && e.submitter.getAttribute("formaction") === "/find");
     const book = document.getElementById("book")?.value || "";
-    const payload = new URLSearchParams({ q, book });
+    const payload = new URLSearchParams({ q, book, mode: isFind ? "find" : "ask" });
     for (const option of document.getElementById("compare")?.selectedOptions || []) payload.append("compare", option.value);
     if (past.length) {
       const recent = past.slice(0, 3).map((p) => ({ q: p.q, a: p.html ? p.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300) : "" }));
@@ -829,8 +1080,8 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
     if (!q) return;
     e.preventDefault();
 
-    // Two submit buttons, one form: Find retrieves passages with no model in the loop.
-    if (e.submitter && e.submitter.getAttribute("formaction") === "/find") {
+    // Mode toggle: Find retrieves passages with no model in the loop.
+    if (isFind) {
       const cur = entry(q, '<p class="note waiting">searching the shelves</p>');
       hist.prepend(cur);
       form.q.value = "";
@@ -954,7 +1205,7 @@ if (process.argv.includes("--selfcheck")) {
   }
   assert.match(PAGE("", true, true), /reading as a guest/);
   assert.match(PAGE("", true, true), /composed answers to spend/, "a guest is told what they have");
-  assert.match(PAGE("", true, true), /formaction="\/find"/, "Find stays open to guests");
+  assert.match(PAGE("", true, true), /value="find"/, "Find stays open to guests");
 
   // A showcase deployment draws none of it, for anyone. The operator still has every route;
   // this only stops putting a destructive control a typed word away from the ask box on a
@@ -1264,10 +1515,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     } finally { db.close(); }
   }
 
-  // Retrieval without composition: hybrid search only, no answer model in the loop, so it
-  // costs next to nothing per use and stays open to guests.
-  if (req.method === "POST" && req.url === "/find") {
-    const form = new URLSearchParams(await body(req));
+  const runFind = async (form: URLSearchParams) => {
     const q = form.get("q")?.trim() ?? "";
     const db = userLibrary(user);
     try {
@@ -1296,6 +1544,13 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
       if (error instanceof BookSelectionError) return send(400, page(`<p>${escape(error.message)}</p>`, "", { books: listBooks(db) }));
       throw error;
     } finally { db.close(); }
+  };
+
+  // Retrieval without composition: hybrid search only, no answer model in the loop, so it
+  // costs next to nothing per use and stays open to guests.
+  if (req.method === "POST" && req.url === "/find") {
+    const form = new URLSearchParams(await body(req));
+    return runFind(form);
   }
 
   if (req.method === "PUT" && req.url?.startsWith("/upload")) {
@@ -1398,6 +1653,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   if (req.method !== "POST" || req.url !== "/ask") return send(404, page("<p>Not found.</p>"));
 
   const form = new URLSearchParams(await body(req));
+  if (form.get("mode") === "find") return runFind(form);
   const query = form.get("q")?.trim() ?? "";
   let history: { q: string; a?: string }[] | undefined;
   const rawHistory = form.get("history");

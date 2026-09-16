@@ -123,6 +123,8 @@ try {
   assert.match(scoped.html, /From Shared Title, Writer \(second\.pdf, 2\)/);
   const withoutJs = await fetch(`${base}/find`, { method: "POST", headers, body: "q=bright+red+bird&book=2" }).then((r) => r.text());
   assert.match(withoutJs, /<option value="2"[^>]* selected>/, "the source selection survives a normal form submission");
+  const delegatedFind = await fetch(`${base}/ask`, { method: "POST", headers: { ...headers, accept: "application/json" }, body: "q=bright+red+bird&mode=find" }).then((r) => r.json());
+  assert.match(delegatedFind.html, /Passages only/, "mode toggle delegates find queries cleanly");
   for (const endpoint of ["find", "ask"]) {
     for (const book of ["9999", "1 OR 1=1", "-1"]) {
       assert.equal((await fetch(`${base}/${endpoint}`, { method: "POST", headers, body: new URLSearchParams({ q: "bird", book }) })).status, 400);
