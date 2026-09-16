@@ -17,10 +17,11 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { open } from "../src/store.ts";
 
 const PORT = 8952;
-const ASKS = 2;
+const ASKS = 5;
 const DEVICES = 2;
 const dir = mkdtempSync(join(tmpdir(), "guru-quota-"));
 const starter = open(join(dir, "starter.db"));
@@ -39,9 +40,11 @@ const srv = spawn("node", ["src/server.ts"], {
     GURU_LOG_DB: join(dir, "log.db"),
     GURU_USER_DIR: join(dir, "users"),
     GURU_SINGLE_USER: "reader",
-    GURU_BASIC_AUTH: "reader:pw",
+    GURU_BASIC_AUTH: "reader:pw,owner:ownerpw",
+    GURU_OPERATORS: "owner",
+    GURU_LIBRARIAN: "owner",
+    GURU_DEMO: "1",
     GURU_GUEST: "guest",
-    GURU_GUEST_ASKS: String(ASKS),
     GURU_GUEST_DEVICES: String(DEVICES),
     // Port 9 is "discard" and undici refuses it outright, so an allowed ask fails instantly
     // instead of waiting on a timeout.
@@ -122,7 +125,26 @@ try {
   // A different network is untouched by this one's spending.
   assert.ok(!spent(await ask(await browser(), "8.8.8.8")), "another address still has its own");
 
-  console.log("guest quota tests ok");
+  const counters = new Database(join(dir, "log.db"));
+  counters.prepare("update ask_allowance set trial_ended = '2000-01-01', day = '2000-01-01', daily_used = 0").run();
+  assert(!spent(await ask(a, HERE)), "returning guest gets first daily request");
+  assert(!spent(await ask(a, HERE)), "returning guest gets second daily request");
+  assert(spent(await ask(a, HERE)), "third daily request refused");
+  const auth = { authorization: 'Basic ' + Buffer.from('reader:pw').toString('base64') };
+  const signedAsk = () => fetch(base + '/ask', { method: 'POST', headers: auth, body: 'q=stillness' }).then((r) => r.status);
+  for (let i = 0; i < 5; i++) assert(!spent(await signedAsk()), "signed-in initial request allowed");
+  assert(spent(await signedAsk()), "signed-in sixth initial request refused");
+  counters.prepare("update ask_allowance set trial_ended = '2000-01-01', day = '2000-01-01', daily_used = 0 where key = 'reader:reader'").run();
+  const simultaneous = await Promise.all(Array.from({ length: 5 }, signedAsk));
+  assert.equal(simultaneous.filter((code) => !spent(code)).length, 2, "parallel requests reserve only two daily slots");
+  const ownerAuth = { authorization: 'Basic ' + Buffer.from('owner:ownerpw').toString('base64') };
+  const ownerHome = await (await fetch(base + '/', { headers: ownerAuth })).text();
+  assert.match(ownerHome, /Owner access. Ask requests are unlimited/);
+  assert.match(ownerHome, /Add a book/, "owner controls remain visible in demo mode");
+  for (let i = 0; i < 7; i++) assert(!spent(await fetch(base + '/ask', { method: 'POST', headers: ownerAuth, body: 'q=stillness' }).then((r) => r.status)), "owner bypasses request allowance");
+  assert.equal(counters.prepare("select count(*) n from ask_allowance where key = 'reader:owner'").get().n, 0);
+  counters.close();
+  console.log("guest and signed-in quota tests ok");
 } finally {
   cleanup();
 }

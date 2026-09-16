@@ -175,10 +175,10 @@ export function reconcileStarter(db: Database.Database, starterPath = process.en
       select id, title, author, source, paginated,
              ${colSql("pdf")},
              ${colSql("page_offset", "0")},
-             ${colSql("revision", "lower(hex(randomblob(16)))")},
+             ${cols.has("revision") ? "coalesce(revision, lower(hex(randomblob(16)))) as revision" : "lower(hex(randomblob(16))) as revision"},
              ${colSql("extraction_quality")}
       from starter_src.books
-      where (title, author) not in (select title, author from books)
+      where source not in (select source from books where source is not null)
     `).all() as { id: number; title: string; author: string; source: string; paginated: number; pdf: Buffer | null; page_offset: number; revision: string | null; extraction_quality: string | null }[];
 
     if (!missing.length) return 0;
@@ -187,9 +187,10 @@ export function reconcileStarter(db: Database.Database, starterPath = process.en
       "insert into books (title, author, source, paginated, pdf, page_offset, revision, extraction_quality) values (?,?,?,?,?,?,?,?)"
     );
     const getChunks = db.prepare(`
-      select c.chunk_id, c.text, c.page_start, c.page_end, v.embedding
+      select c.chunk_id, c.text, c.page_start, c.page_end, v.embedding, f.text indexed_text
       from starter_src.chunks c
-      join starter_src.chunks_vec v on v.rowid = c.id
+      left join starter_src.chunks_vec v on v.rowid = c.id
+      left join starter_src.chunks_fts f on f.rowid = c.id
       where c.book_id = ?
       order by c.id
     `);
@@ -201,13 +202,14 @@ export function reconcileStarter(db: Database.Database, starterPath = process.en
 
     db.transaction(() => {
       for (const b of missing) {
+        const chunks = getChunks.all(b.id) as { chunk_id: number; text: string; page_start: string; page_end: string; embedding: Buffer; indexed_text: string }[];
+        if (!chunks.length || chunks.some((c) => c.embedding?.length !== DIM * 4 || !c.indexed_text)) throw new Error(`Incomplete starter index: ${b.source}`);
         const bookId = insertBook.run(
           b.title, b.author, b.source, b.paginated, b.pdf, b.page_offset, b.revision, b.extraction_quality
         ).lastInsertRowid as number;
-        const chunks = getChunks.all(b.id) as { chunk_id: number; text: string; page_start: string; page_end: string; embedding: Buffer }[];
         for (const c of chunks) {
           const chunkId = insertChunk.run(bookId, c.chunk_id, c.text, c.page_start, c.page_end).lastInsertRowid as number;
-          insertFts.run(BigInt(chunkId), c.text);
+          insertFts.run(BigInt(chunkId), c.indexed_text);
           insertVec.run(BigInt(chunkId), c.embedding);
         }
         count++;

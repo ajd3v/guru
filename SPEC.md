@@ -226,7 +226,8 @@ one. Model choice for the answer step is a quality decision, not a cost decision
 ## Pricing
 
 ~$10-15/mo subscription. Fair-use caps: ~50 books ingested (enforced), and a daily question
-allowance (`GURU_MAX_ASKS`, default 40).
+allowance (five initial requests, then two per UTC day starting the following day).
+Explicit operators are exempt.
 
 **The cost model here was backwards, and measuring it inverted both halves.** Ingest is not the
 spike: embeddings are local `bge-base` on CPU (no API call anywhere in the embed path, weights

@@ -92,6 +92,26 @@ try {
   assert.equal(legacyBook.page_offset, 0);
   assert(legacyBook.revision, "revision should be assigned");
 
+  // A renamed copy is still the same source. A different edition is a separate book.
+  const update = open(starterPath);
+  update.prepare("update books set title = 'Walden, corrected title' where source = 'walden.epub'").run();
+  assert.equal(reconcileStarter(readerDb, starterPath), 0);
+  const id = update.prepare("insert into books (title,author,source,paginated,revision) values ('Walden','Henry David Thoreau','walden-edition-two.epub',0,null)").run().lastInsertRowid;
+  const chunkId = update.prepare("insert into chunks (book_id,chunk_id,text,page_start,page_end) values (?,0,'Second edition passage.','1','1')").run(id).lastInsertRowid;
+  update.prepare("insert into chunks_fts (rowid,text) values (?, 'Walden context. Second edition passage.')").run(chunkId);
+  update.prepare("insert into chunks_vec (rowid,embedding) values (?, ?)").run(BigInt(chunkId), Buffer.from(new Float32Array(768).buffer));
+  assert.equal(reconcileStarter(readerDb, starterPath), 1);
+  const edition = readerDb.prepare("select id,revision from books where source = 'walden-edition-two.epub'").get() as {id:number;revision:string};
+  assert(edition.revision);
+  assert.equal(readerDb.prepare("select f.text from chunks_fts f join chunks c on c.id=f.rowid where c.book_id=?").get(edition.id).text, 'Walden context. Second edition passage.');
+  // Never import a partial book when its search index is damaged.
+  update.prepare("insert into books (title,author,source,paginated) values ('Incomplete','Writer','incomplete.epub',0)").run();
+  const incomplete = update.prepare("select id from books where source='incomplete.epub'").get().id;
+  update.prepare("insert into chunks (book_id,chunk_id,text,page_start,page_end) values (?,0,'Missing vector','1','1')").run(incomplete);
+  assert.throws(() => reconcileStarter(readerDb, starterPath), /Incomplete starter index/);
+  assert.equal(readerDb.prepare("select count(*) n from books where source='incomplete.epub'").get().n, 0);
+  update.close();
+
   readerDb.close();
   console.error("starter reconciliation tests ok");
 } finally {

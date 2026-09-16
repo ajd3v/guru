@@ -37,6 +37,14 @@
       "title": "Meditations",
       "author": "Marcus Aurelius",
       "tradition": "Stoicism"
+    },
+    {
+      "title": "Cosmic Consciousness",
+      "author": "Richard Maurice Bucke",
+      "edition": "1905 Innes & Sons scan. Citations use PDF page numbers."
     }
-  ]
+  ],
+  "styles": "assets/garden.css",
+  "themeColor": "#2e6549",
+  "backgroundColor": "#13271f"
 }

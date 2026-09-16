@@ -25,8 +25,9 @@ import { mkdir, rm } from "node:fs/promises";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { askedToday, bookPdf, BookSelectionError, cite, libraryPath, listBooks, recordAsk, search, selectedBook, userLibrary, type Hit, type LibraryBook } from "./store.ts";
+import { bookPdf, BookSelectionError, cite, libraryPath, listBooks, recordAsk, search, selectedBook, userLibrary, type Hit, type LibraryBook } from "./store.ts";
 import { ask, plainDashes } from "./llm.ts";
+import { accountSeed, allowanceText, initAllowances, readAllowance, reserveAsk, INITIAL_ASKS, DAILY_ASKS, type Bucket } from "./quota.ts";
 import { retrieveQuestion } from "./retrieval.ts";
 import { bookLink, browseBook, detailsFor, picker, selection } from "./library.ts";
 import { SourceChanged, sourceBook, sourceContext, streamPdf } from "./source.ts";
@@ -60,25 +61,6 @@ function materializePdf(db: SqliteDatabase.Database, user: string, identity: str
   }
   return { path, pageOffset: row.page_offset };
 }
-
-/**
- * Questions per reader per UTC day.
- *
- * Not a nicety: an answer costs roughly $0.04 in model calls (four rerank batches plus the
- * answer), so an uncapped reader on a ~$12/month plan turns a profit into a loss somewhere
- * around ten questions a day. This has to exist before there is anything to bill.
- */
-const MAX_ASKS = Number(process.env.GURU_MAX_ASKS ?? 40);
-
-/**
- * Composed answers a guest may have, per address, ever.
- *
- * Five is enough to form a real opinion: ask something the shelf covers well, something it
- * covers badly, and something it does not cover at all, and the decline is the interesting
- * one. It is not a daily allowance, because a reading room that resets every midnight is a
- * free tier, and this is a demonstration.
- */
-const GUEST_ASKS = Number(process.env.GURU_GUEST_ASKS ?? 5);
 
 /**
  * A deployment that is a showcase rather than a workspace.
@@ -415,20 +397,21 @@ function blocked(ip: string) {
  * failure here must NOT be swallowed: a quota that silently stops counting is an open bar.
  */
 const GUEST_DEVICES = Number(process.env.GURU_GUEST_DEVICES ?? 4);
+if (!Number.isSafeInteger(GUEST_DEVICES) || GUEST_DEVICES < 1) throw new Error("GURU_GUEST_DEVICES must be a positive integer");
 logdb.exec("create table if not exists guest_quota (ip text primary key, n integer not null default 0, first_at text default (datetime('now')), last_at text)");
 logdb.exec("create table if not exists guest_device (id text primary key, n integer not null default 0, first_at text default (datetime('now')), last_at text)");
 logdb.exec("create table if not exists kv (k text primary key, v text not null)");
 
-const quotaGet = logdb.prepare("select n from guest_quota where ip = ?");
-const quotaBump = logdb.prepare(
-  "insert into guest_quota (ip, n, last_at) values (?, 1, datetime('now')) " +
-    "on conflict(ip) do update set n = n + 1, last_at = datetime('now') returning n",
-);
-const deviceGet = logdb.prepare("select n from guest_device where id = ?");
-const deviceBump = logdb.prepare(
-  "insert into guest_device (id, n, last_at) values (?, 1, datetime('now')) " +
-    "on conflict(id) do update set n = n + 1, last_at = datetime('now') returning n",
-);
+initAllowances(logdb);
+function allowanceBuckets(user: string, guest: boolean, device: string, ip: string, library: SqliteDatabase.Database): Bucket[] {
+  if (!guest) return [{ key: "reader:" + user, seed: accountSeed(library) }];
+  const legacy = (table: string, column: string, key: string, scale = 1): Bucket => {
+    const row = logdb.prepare(`select n, coalesce(last_at, first_at) at from ${table} where ${column} = ?`).get(key) as { n: number; at: string } | undefined;
+    return { key: (table === "guest_device" ? "device:" : "ip:") + key, scale,
+      seed: { used: row?.n ?? 0, trial_ended: row && row.n >= INITIAL_ASKS * scale ? (row.at || "1970-01-01").slice(0, 10) : null } };
+  };
+  return [legacy("guest_device", "id", device), legacy("guest_quota", "ip", ip, GUEST_DEVICES)];
+}
 
 /**
  * The key that signs device ids.
@@ -525,6 +508,7 @@ function bookLabel(book: LibraryBook, books: LibraryBook[]) {
 const scopeNote = (books: LibraryBook[] = []) => books.length ? `<p class="note scope-note">From ${books.map((book) => escape(sourceLabel(book))).join("<br>")}</p>` : "";
 const loggedQuestion = (query: string, books: LibraryBook[] = []) => books.length ? `${query}\n[Source: ${books.map(sourceLabel).join(" | ")}]` : query;
 const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = "", reader = "", choice?: SourceChoice) => `<!doctype html>
+<html lang="en">
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escape(profile.name)}</title>
 <meta name="theme-color" content="${profile.themeColor}">
@@ -890,6 +874,7 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = ""
   @media (prefers-reduced-motion: reduce) { .waiting { animation: none; } }
 </style>
 ${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
+<link rel="stylesheet" href="/layout.css">
 <div class="sky" aria-hidden="true">
   <div class="sky-glow"></div>
   <div class="cloud cloud-1">
@@ -934,7 +919,7 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
 <select id="book" name="book" form="ask-form"><option value="">All books</option>${choice.books.map((b) =>
   `<option value="${b.id}" data-tradition="${escape(detailsFor(b)?.tradition || "")}" data-edition="${escape(detailsFor(b)?.edition || "")}"${b.id === choice.selected ? " selected" : ""}>${escape(bookLabel(b, choice.books))}</option>`).join("")}</select></div>${picker(choice.books, choice.compare)}` : ""}
 <form id="ask-form" class="ask" method="post" action="/ask">
-  <input name="q" aria-label="Question for your library" maxlength="${MAX_QUERY}" placeholder="Ask ${guest ? "the library" : "your library"}&hellip;" autofocus>
+  <input name="q" aria-label="Question for your library" maxlength="${MAX_QUERY}" placeholder="Ask ${guest ? "the library" : "your library"}&hellip;" required>
   <div class="mode-toggle" role="radiogroup" aria-label="Search mode">
     <input type="radio" id="mode-ask" name="mode" value="ask" checked>
     <label for="mode-ask" title="Ask with verbatim citations">Ask</label>
@@ -953,7 +938,7 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
 <footer>
   <span class="note">${loggingEnabled(reader) ? "Questions are stored for operator review." : "Question logging is off."} Browser history stays on this device.</span>
   ${guest
-    ? `<span class="note">You are reading as a guest, with ${GUEST_ASKS} composed answers to spend. Find is free and uncounted.</span>`
+    ? `<span class="note">You are reading as a guest, with ${INITIAL_ASKS} initial Ask requests, then ${DAILY_ASKS} per day from the following day. Find stays free.</span>`
     : demo
       ? `<span class="note">A fixed shelf, open to read and search.</span>`
       : `${librarian
@@ -967,6 +952,7 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
     <button>Delete all</button>
   </form>`}
   ${!guest ? '<a class="note" href="/privacy">Privacy and history</a>' : ""}
+  ${!guest && isOperator(reader) ? '<a class="note" href="/log">Usage log</a>' : ""}
   <button type="button" id="saved-passages" class="note">Bookmarks</button>
 </footer>
 <dialog id="bookmark-dialog"><h2>Saved passages</h2><div id="bookmark-list"></div><form method="dialog"><button>Close</button></form></dialog>
@@ -1074,7 +1060,7 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
     const payload = new URLSearchParams({ q, book, mode: isFind ? "find" : "ask" });
     for (const option of document.getElementById("compare")?.selectedOptions || []) payload.append("compare", option.value);
     if (past.length) {
-      const recent = past.slice(0, 3).map((p) => ({ q: p.q, a: p.html ? p.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300) : "" }));
+      const recent = past.slice(0, 3).map((p) => ({ q: p.q, a: p.html ? p.html.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").trim().slice(0, 300) : "" }));
       payload.set("history", JSON.stringify(recent));
     }
     if (!q) return;
@@ -1204,7 +1190,7 @@ if (process.argv.includes("--selfcheck")) {
     assert.doesNotMatch(PAGE("", true, true), gone, `guest chrome must not offer ${gone}`);
   }
   assert.match(PAGE("", true, true), /reading as a guest/);
-  assert.match(PAGE("", true, true), /composed answers to spend/, "a guest is told what they have");
+  assert.match(PAGE("", true, true), /5 initial Ask requests, then 2 per day/, "a guest is told what they have");
   assert.match(PAGE("", true, true), /value="find"/, "Find stays open to guests");
 
   // A showcase deployment draws none of it, for anyone. The operator still has every route;
@@ -1374,10 +1360,10 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
       }),
     );
   }
-  if (req.method === "GET" && (req.url === "/icon-180.png" || req.url === "/icon-512.png")) {
+  if (req.method === "GET" && ["/icon-180.png", "/icon-512.png", "/garden.webp"].includes(req.url ?? "")) {
     try {
       const png = readFileSync(join(profile.assets, req.url.slice(1)));
-      res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=604800" });
+      res.writeHead(200, { "content-type": req.url.endsWith(".webp") ? "image/webp" : "image/png", "cache-control": "public, max-age=604800" });
       return void res.end(png);
     } catch {
       return void res.writeHead(404, { "content-type": "text/plain" }).end("not found");
@@ -1392,7 +1378,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   if (req.method === "GET") {
     const path = new URL(req.url ?? "/", "http://local").pathname;
     let asset: string | undefined;
-    if (["/reader.js", "/reader.css", "/library.js"].includes(path)) asset = join(ENGINE_ROOT, "web", path.slice(1));
+    if (["/reader.js", "/reader.css", "/library.js", "/layout.css"].includes(path)) asset = join(ENGINE_ROOT, "web", path.slice(1));
     const vendor = /^\/pdfjs\/((?:build\/pdf(?:\.worker)?\.mjs)|(?:web\/pdf_viewer\.css)|(?:(?:cmaps|standard_fonts|wasm)\/[a-zA-Z0-9_.-]+))$/.exec(path);
     if (vendor) asset = join(PDFJS_ROOT, vendor[1]);
     if (asset && existsSync(asset)) {
@@ -1430,14 +1416,16 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   // page once can call them again by hand. A guest is never a librarian whatever the env says,
   // because the reading room's shelf belongs to the operator, not to whoever walked in.
   const librarian = !guest && isLibrarian(user);
-  const page = (html = "", meta = "", choice?: SourceChoice) => PAGE(html, librarian, guest, DEMO, meta, user, choice);
+  const operator = !guest && isOperator(user);
+  const ownerAllowance = "Owner access. Ask requests are unlimited.";
+  const page = (html = "", meta = "", choice?: SourceChoice) => PAGE(html, librarian, guest, DEMO && !operator, meta, user, choice);
 
   if (req.method === "GET" && req.url === "/") {
     const db = userLibrary(user);
-    const left = Math.max(0, MAX_ASKS - askedToday(db));
+    const meta = operator ? ownerAllowance : allowanceText(readAllowance(logdb, allowanceBuckets(user, guest, device.id, clientAddress(req), db)[0]));
     const books = listBooks(db);
     db.close();
-    return send(200, page(reading(user) + shelf(user), profile.showQuota ? `${left} of ${MAX_ASKS} questions left today` : "", { books }));
+    return send(200, page(reading(user) + shelf(user), meta, { books }));
   }
   if (req.url === "/privacy" || req.url === "/privacy/export" || req.url === "/privacy/clear") {
     if (guest) return send(403, page("<p>Sign in to manage personal history.</p>"));
@@ -1446,7 +1434,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
       let asks;
       try { asks = db.prepare("select at from asks order by at").all(); } finally { db.close(); }
       res.writeHead(200, { "content-type": "application/json", "content-disposition": 'attachment; filename="question-history.json"' });
-      return void res.end(JSON.stringify({ user, logging: loggingEnabled(user), asks, events: logdb.prepare("select at, event, q, flag, outcome from log where user = ? order by rowid").all(user) }, null, 2));
+      return void res.end(JSON.stringify({ user, logging: loggingEnabled(user), asks, allowance: logdb.prepare("select used, trial_ended, day, daily_used from ask_allowance where key = ?").get("reader:" + user) ?? null, events: logdb.prepare("select at, event, q, flag, outcome from log where user = ? order by rowid").all(user) }, null, 2));
     }
     let cleared = false;
     if (req.method === "POST") {
@@ -1464,7 +1452,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
       <form method="post" action="/privacy"><button name="logging" value="${loggingEnabled(user) ? "off" : "on"}">Turn logging ${loggingEnabled(user) ? "off" : "on"}</button></form>
       <p><a href="/privacy/export">Export question history</a></p>
       <form method="post" action="/privacy/clear"><label for="clear-history">Type CLEAR to delete question history</label><input id="clear-history" name="confirm" autocomplete="off"><button>Clear question history</button></form>
-      <p class="note">Clearing removes your server question log and this browser's answer history. Your books and bookmarks stay. Daily usage timestamps still enforce the question allowance. Other devices keep their own browser history. Backups expire under the operator's retention settings.</p>
+      <p class="note">Clearing removes your server question log and this browser's answer history. Your books and bookmarks stay. Usage counts and dates remain to enforce the Ask allowance, even after library deletion. Other devices keep their own browser history. Backups expire under the operator's retention settings.</p>
       <p><a href="/">Return to library</a></p>`));
   }
   if (req.method === "GET" && new URL(req.url ?? "/", "http://local").pathname === "/log") {
@@ -1489,7 +1477,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
       if (sourceUrl.pathname === "/reader") {
         if (!book.bytes) return send(404, page("<p>The original PDF is not stored for this edition. Source text is still available from its citation.</p>"));
         res.setHeader("content-security-policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' blob:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
-        return send(200, readFileSync(join(ENGINE_ROOT, "web/reader.html"), "utf8").replaceAll("__READER__", escape(user)).replaceAll("__HISTORY__", escape(profile.historyKey)));
+        return send(200, readFileSync(join(ENGINE_ROOT, "web/reader.html"), "utf8").replaceAll("__READER__", escape(user)).replaceAll("__HISTORY__", escape(profile.historyKey)).replaceAll("__THEME__", profile.themeColor));
       }
       if (sourceUrl.pathname === "/pdf-meta") {
         res.writeHead(200, { "content-type": "application/json" });
@@ -1569,7 +1557,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     const db = userLibrary(user);
     const held = (db.prepare("select count(*) n from books").get() as { n: number }).n;
     db.close();
-    if (held + countActive(jobs, user) >= MAX_BOOKS) {
+    if (!operator && held + countActive(jobs, user) >= MAX_BOOKS) {
       return text(409, `Library is full (${MAX_BOOKS} books).`);
     }
 
@@ -1640,6 +1628,13 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     // rather than a bare POST.
     if (form.get("confirm") !== "DELETE") return send(400, page("<p>Type DELETE to confirm.</p>"));
 
+    // Preserve old usage before removing the library that held its timestamps.
+    if (!operator) {
+      const library = userLibrary(user);
+      try { readAllowance(logdb, allowanceBuckets(user, false, device.id, ip, library)[0]); }
+      finally { library.close(); }
+    }
+
     for (const j of listJobs(jobs, user, 1000)) await rm(j.path, { force: true });
     jobs.prepare("delete from jobs where user_id = ?").run(user);
     logdb.prepare("delete from log where user = ?").run(user);
@@ -1678,43 +1673,13 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     Object.assign(choice, selected.choice);
     if (!query) return send(400, page("<p>Ask something.</p>", "", choice));
     if (query.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>", "", choice));
-    // A guest gets a handful of composed answers so the room can actually be judged rather
-    // than just looked at. The allowance is this browser's; the address only sets a ceiling
-    // on how many browsers it may hand one to. Search stays free and uncounted.
-    if (guest) {
-      const ip = clientAddress(req);
-      const spent = (deviceGet.get(device.id) as { n: number } | undefined)?.n ?? 0;
-      const fromHere = (quotaGet.get(ip) as { n: number } | undefined)?.n ?? 0;
-      if (spent >= GUEST_ASKS || fromHere >= GUEST_ASKS * GUEST_DEVICES) {
-        // Which limit was hit changes what the reader should do about it, so say which.
-        const why =
-          spent >= GUEST_ASKS
-            ? `That is ${GUEST_ASKS} composed answers, which is what the reading room offers.`
-            : `This network has spent what the reading room offers it.`;
-        return send(
-          429,
-          page(
-            `<p>${why} ` +
-              `Find still works and costs nothing, so the shelf is still open to search. ` +
-              `For a library of your own, <a href="mailto:alandevaney@gmail.com">ask for an account</a>.</p>`, "", choice,
-          ),
-        );
-      }
+    const reservation = operator ? undefined : reserveAsk(logdb, allowanceBuckets(user, guest, device.id, clientAddress(req), db));
+    if (reservation && !reservation.allowed) {
+      res.setHeader("retry-after", String(Math.max(1, Math.ceil((Date.parse(reservation.allowance.resetAt) - Date.now()) / 1000))));
+      const reason = reservation.network ? "This network has reached its request limit today." : "You have used your Ask allowance for today.";
+      return send(429, page(`<p>${reason} Your allowance renews at 00:00 UTC. Find and source reading are still available.</p>`, allowanceText(reservation.allowance), choice));
     }
-
     const logId = logEvent(user, "ask", loggedQuestion(query, chosen));
-    // Counted before the work and after validation: the model calls happen whether or not the
-    // pipeline finds anything, and a failed question that refunds its slot is a free retry loop.
-    if (guest) {
-      deviceBump.run(device.id);
-      quotaBump.run(clientAddress(req));
-    }
-
-    // Counted before the work, not after: the cost is incurred whether or not the pipeline
-    // finds an answer, and a failed question that refunds its slot is a free retry loop.
-    if (askedToday(db) >= MAX_ASKS) {
-      return send(429, page(`<p>That's ${MAX_ASKS} questions today. Back tomorrow.</p>`, "", choice));
-    }
     recordAsk(db);
 
     /**
@@ -1736,7 +1701,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
       emit = (event, data) => void res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     }
 
-    if (profile.showQuota) emit("quota", { text: `${Math.max(0, MAX_ASKS - askedToday(db))} of ${MAX_ASKS} questions left today` });
+    emit("quota", { text: reservation ? allowanceText(reservation.allowance) : ownerAllowance });
     emit("stage", { text: "searching your library" });
     const retrieval = await retrieveQuestion(db, query, { bookIds: chosen.length ? chosen.map((b) => b.id) : undefined, history });
     const hits = retrieval.hits;

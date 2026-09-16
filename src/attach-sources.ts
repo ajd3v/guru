@@ -24,11 +24,15 @@ try {
       if (hash(JSON.stringify(chunks)) !== row.contentHash) throw new Error(`Stored text or page mapping changed: ${row.book.source}`);
       const pdf = readFileSync(files ? join(files, basename(row.path)) : row.path);
       if (hash(pdf) !== row.sha256 || pdf.subarray(0, 5).toString() !== "%PDF-" || !Number.isSafeInteger(row.pageOffset)) throw new Error(`Original file changed: ${row.book.source}`);
-      if (apply) db.prepare("update books set pdf = ?, page_offset = ?, extraction_quality = ?, revision = lower(hex(randomblob(16))) where id = ?").run(pdf, row.pageOffset, JSON.stringify(row.quality), (book as { id: number }).id);
+      if (apply) {
+        const current = db.prepare("select pdf, page_offset from books where id = ?").get((book as { id: number }).id) as { pdf: Buffer | null; page_offset: number };
+        if (current.pdf && hash(current.pdf) === row.sha256 && current.page_offset === row.pageOffset) continue;
+        db.prepare("update books set pdf = ?, page_offset = ?, extraction_quality = ?, revision = lower(hex(randomblob(16))) where id = ?").run(pdf, row.pageOffset, JSON.stringify(row.quality), (book as { id: number }).id);
+      }
       attached++;
     }
     return attached;
   };
   const count = apply ? db.transaction(run)() : run();
-  console.log(`${apply ? "Attached" : "Validated"} ${count}/${plan.rows.length} sources. ${apply ? "Text and indexes unchanged. Source revisions replaced." : "No database writes."}`);
+  console.log(`${apply ? "Attached" : "Validated"} ${count}/${plan.rows.length} sources. ${apply ? "Text and indexes unchanged. Identical files keep their revisions." : "No database writes."}`);
 } finally { db.close(); }

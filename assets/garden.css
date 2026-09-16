@@ -1,0 +1,48 @@
+:root {
+  color-scheme: light dark;
+  --sheet-width: 56rem;
+  --paper: #f7faf4;
+  --paper-card: rgba(249, 251, 246, .96);
+  --field: #edf2e8;
+  --ink: #21392c;
+  --quiet: #536657;
+  --rule: #cedacc;
+  --moss: #2e6549;
+  --moss-hover: #214c37;
+  --moss-soft: #e1ecdf;
+}
+body { background: #aebeb0; padding-top: clamp(2rem, 7vh, 5.5rem); }
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none;
+  background: linear-gradient(rgba(222, 236, 221, .12), rgba(31, 61, 43, .2)), url('/garden.webp') center / cover;
+}
+.sky { display: none; }
+.sheet { border: 1px solid rgba(235, 248, 232, .5); box-shadow: 0 16px 64px #142a2530; backdrop-filter: none; }
+header { padding-block: .5rem; }
+h1 { font-size: clamp(1.7rem, 4vw, 2.2rem); letter-spacing: .24em; }
+.tagline { color: var(--quiet); font-size: 1rem; }
+.mark .corona { fill: var(--moss); }
+.ask { border-radius: 18px; box-shadow: none; background: var(--paper); }
+.ask input { font-style: normal; }
+.mode-toggle { background: var(--field); }
+.mode-toggle input:checked + label { background: var(--moss); color: #fff; }
+blockquote { background: var(--field); box-shadow: none; }
+cite { opacity: 1; }
+.scope select, .library-tools input, .library-tools select { background: var(--paper); color: var(--ink); border: 1px solid var(--rule); }
+a { color: var(--moss); text-underline-offset: .2em; }
+.shelf a { text-decoration-thickness: 1px; }
+footer { margin-top: 2.5rem; }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #13271f; --paper-card: rgba(18, 38, 29, .96); --field: #1b3227;
+    --ink: #e5eee1; --quiet: #b0c4b4; --rule: #395345;
+    --moss: #a0cfaa; --moss-hover: #bde4c1; --moss-soft: #274c35;
+  }
+  body { background: #14291f; }
+  body::before { background-image: linear-gradient(#0d251a80, #0b2017ad), url('/garden.webp'); }
+  .sheet { border-color: #5c78634d; }
+  .mode-toggle input:checked + label { color: #13271f; background: var(--moss); }
+}
+@media (prefers-reduced-data: reduce) { body::before { background-image: none; } }
+header { animation: none; }
+.mark .corona { animation: none; opacity: .9; }

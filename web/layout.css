@@ -1,0 +1,42 @@
+/* Shared reader layout. Product themes set the palette and reading width. */
+.sheet { width: 100%; max-width: var(--sheet-width, 44rem); padding: clamp(1.15rem, 5vw, 3rem); }
+.sheet > * { min-width: 0; }
+.ask { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: .5rem; padding: .4rem .5rem .4rem 1rem; }
+.ask > input { width: 100%; min-width: 0; min-height: 44px; font-size: max(1rem, 16px); }
+.mode-toggle label { min-height: 44px; min-width: 48px; }
+.ask .ask-submit { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
+.scope { min-width: 0; }
+.scope select { width: 100%; min-width: 0; min-height: 44px; text-overflow: ellipsis; }
+.library-tools input, .library-tools select { padding: .5rem; font-size: max(1rem, 16px); }
+.library-tools select[multiple] { min-height: 10rem; }
+summary { min-height: 44px; display: flex; align-items: center; gap: .35rem; }
+.shelf a, .book-passages .source { display: inline-block; padding-block: .5rem; }
+ul.shelf { margin-top: 1rem; }
+.shelf li, .source, h2 { overflow-wrap: anywhere; }
+#out .answer, #out .reflection, .synopsis { max-width: 68ch; margin-inline: auto; }
+.meta { margin: -1.5rem 0 2rem; line-height: 1.6; }
+footer { gap: .75rem 1rem; }
+footer a, footer button, footer .file { display: inline-flex; align-items: center; min-height: 44px; }
+footer form { flex-wrap: wrap; }
+:focus-visible { outline: 2px solid var(--blue, var(--moss)); outline-offset: 3px; }
+@media (min-width: 800px) {
+  ul.shelf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2rem; }
+}
+@media (max-width: 540px) {
+  body { padding: 1rem .65rem 3rem; }
+  .sheet { border-radius: 20px; }
+  header { margin-bottom: 1.5rem; }
+  .scope { flex-direction: column; align-items: stretch; gap: .35rem; }
+  .ask { grid-template-columns: 1fr auto; padding: .65rem .75rem; border-radius: 18px; }
+  .ask > input { grid-column: 1 / -1; border-bottom: 1px solid var(--rule); padding: .5rem 0 .75rem; margin-bottom: .15rem; }
+  .mode-toggle { justify-self: start; }
+  .ask-submit { justify-self: end; }
+  blockquote { padding: 1rem; margin-inline: 0; }
+  blockquote p { font-size: 1.0625rem; }
+  .library-tools { margin-top: 1rem; }
+  footer { margin-top: 2rem; }
+  footer form { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; }
+}

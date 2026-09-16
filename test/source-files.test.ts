@@ -25,6 +25,10 @@ try {
   db = open(path); assert.deepEqual(db.prepare("select * from chunks").all(), before);
   const attached = db.prepare("select pdf,revision from books").get() as any;
   assert.deepEqual(attached.pdf, readFileSync(pdf)); assert.notEqual(attached.revision, "a".repeat(32));
+  db.close();
+  execFileSync(process.execPath, [...args, "--apply"]);
+  db = open(path);
+  assert.equal((db.prepare("select revision from books").get() as any).revision, attached.revision, "repeating the same attachment preserves source links");
   db.prepare("update chunks set page_start='9999' where id=1").run(); db.close();
   assert.notEqual(spawnSync(process.execPath, [...args, "--apply"]).status, 0, "changed stored page mappings reject attachment");
   execFileSync(PYTHON, ["ingest/verify_source.py", path, "--files", directory, "--manifest", manifest, "--output", plan]);

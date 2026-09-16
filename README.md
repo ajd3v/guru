@@ -215,7 +215,7 @@ exclude a book from the library.
 
 Signed-in readers can open `/privacy` even on a fixed shelf. Export question history,
 turn future question logging off, or clear the server log and this browser's answer
-history. Books and bookmarks stay. Usage timestamps still enforce the daily allowance.
+history. Books and bookmarks stay. Usage counts and dates still enforce the Ask allowance, even after library deletion.
 Other browsers retain their local history. Existing backups retain their snapshots
 until the configured retention expires.
 
@@ -276,3 +276,5 @@ The checker validates pending file hashes as well as database integrity.
 When `GURU_BACKUP_REMOTE` is configured, failed transfers return an error. Off-host
 recovery still needs a configured destination and a restore test using a downloaded
 archive. A local archive does not cover loss of the host.
+
+Ask gives each reader five initial requests. After those are used, two requests become available each day starting the following day at 00:00 UTC. Find and source reading are free. Guest limits use a signed browser cookie with a shared network ceiling. Explicit `GURU_OPERATORS` (or the configured `GURU_LIBRARIAN` fallback) have unlimited Ask access and retain library controls in demo mode.
