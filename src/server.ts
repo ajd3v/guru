@@ -697,10 +697,10 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = ""
   }
   .ask input {
     flex: 1; min-width: 0; border: 0; background: transparent; color: inherit;
-    font: 1.0625rem/1.5 var(--serif); padding: .35rem 0;
+    font: 1.0625rem/1.5 var(--serif); padding: .35rem 0; outline: none;
   }
   .ask input::placeholder { color: var(--quiet); opacity: .75; font-style: italic; }
-  .ask input:focus { outline: none; }
+  .ask input:focus, .ask input:focus-visible { outline: none; box-shadow: none; }
 
   /* Segmented mode toggle */
   .mode-toggle {
@@ -846,7 +846,6 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = ""
   @keyframes rise { from { opacity: 0; transform: translateY(.4rem); } to { opacity: 1; transform: none; } }
   .source { color: inherit; font: inherit; text-align: left; background: none; border: 0; padding: .25rem 0; cursor: pointer; }
   .source:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--moss); outline-offset: 4px; }
-  .ask input:focus-visible { outline: 2px solid var(--moss); outline-offset: 4px; }
   .reading { white-space: pre-wrap; }
   .library-tools { margin-bottom: 1rem; }
   .library-tools input, .library-tools select { width: 100%; min-height: 44px; font: inherit; border-radius: 8px; }
