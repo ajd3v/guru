@@ -166,8 +166,17 @@ export function reconcileStarter(db: Database.Database, starterPath = process.en
     return 0;
   }
   try {
+    const cols = new Set(
+      (db.pragma("starter_src.table_info(books)") as { name: string }[]).map((c) => c.name)
+    );
+    const colSql = (name: string, fallback = "null") => cols.has(name) ? name : `${fallback} as ${name}`;
+
     const missing = db.prepare(`
-      select id, title, author, source, paginated, pdf, page_offset, revision, extraction_quality
+      select id, title, author, source, paginated,
+             ${colSql("pdf")},
+             ${colSql("page_offset", "0")},
+             ${colSql("revision", "lower(hex(randomblob(16)))")},
+             ${colSql("extraction_quality")}
       from starter_src.books
       where (title, author) not in (select title, author from books)
     `).all() as { id: number; title: string; author: string; source: string; paginated: number; pdf: Buffer | null; page_offset: number; revision: string | null; extraction_quality: string | null }[];

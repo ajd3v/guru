@@ -68,6 +68,30 @@ try {
   const secondPass = reconcileStarter(readerDb, starterPath);
   assert.equal(secondPass, 0, "subsequent reconciliation should add zero books");
 
+  // Legacy starter schema without modern columns (pdf, page_offset, revision, extraction_quality)
+  const legacyStarterPath = join(dir, "legacy_starter.db");
+  const legacyStarter = new (await import("better-sqlite3")).default(legacyStarterPath);
+  (await import("sqlite-vec")).load(legacyStarter);
+  legacyStarter.exec(`
+    create table books (id integer primary key, title text, author text, source text unique, paginated integer);
+    create table chunks (id integer primary key, book_id integer, chunk_id integer, text text, page_start text, page_end text);
+    create virtual table chunks_fts using fts5(text);
+    create virtual table chunks_vec using vec0(embedding float[768]);
+    insert into books (id, title, author, source, paginated) values (1, 'Legacy Wisdom', 'Ancient Sage', 'legacy.epub', 0);
+  `);
+  legacyStarter.prepare("insert into chunks (id, book_id, chunk_id, text, page_start, page_end) values (1, 1, 0, 'Ancient timeless sentence.', '1', '1')").run();
+  legacyStarter.prepare("insert into chunks_fts (rowid, text) values (1, 'Ancient timeless sentence.')").run();
+  const dummyVec = new Float32Array(768);
+  legacyStarter.prepare("insert into chunks_vec (rowid, embedding) values (1, ?)").run(Buffer.from(dummyVec.buffer));
+  legacyStarter.close();
+
+  const legacyAdded = reconcileStarter(readerDb, legacyStarterPath);
+  assert.equal(legacyAdded, 1, "legacy starter book should be reconciled smoothly");
+  const legacyBook = readerDb.prepare("select * from books where title = 'Legacy Wisdom'").get() as { title: string; revision: string; page_offset: number };
+  assert.equal(legacyBook.title, "Legacy Wisdom");
+  assert.equal(legacyBook.page_offset, 0);
+  assert(legacyBook.revision, "revision should be assigned");
+
   readerDb.close();
   console.error("starter reconciliation tests ok");
 } finally {
