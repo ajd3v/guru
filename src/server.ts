@@ -368,6 +368,7 @@ const logOutcome = (event: { token: string; user: string } | undefined, outcome:
 };
 const suspicious = (q: string) => /\b(ignore|disregard|forget)\b.{0,40}\b(instructions?|prompt|rules|above)\b|\bsystem prompt\b|\bjailbreak\b|<\/?(question|system)>/i.test(q) ? "steering" : "";
 const failures = new Map<string, { count: number; until: number }>();
+const inflight = new Set<string>();
 function authFailed(ip: string) {
   const now = Date.now();
   for (const [key, value] of failures) if (value.until <= now) failures.delete(key);
@@ -918,7 +919,7 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
 <select id="book" name="book" form="ask-form"><option value="">All books</option>${choice.books.map((b) =>
   `<option value="${b.id}" data-tradition="${escape(detailsFor(b)?.tradition || "")}" data-edition="${escape(detailsFor(b)?.edition || "")}"${b.id === choice.selected ? " selected" : ""}>${escape(bookLabel(b, choice.books))}</option>`).join("")}</select></div>${picker(choice.books, choice.compare)}` : ""}
 <form id="ask-form" class="ask" method="post" action="/ask">
-  <input name="q" aria-label="Question for your library" maxlength="${MAX_QUERY}" placeholder="Ask ${guest ? "the library" : "your library"}&hellip;" required>
+  <input name="q" aria-label="Question for your library" maxlength="${MAX_QUERY}" data-library="${guest ? "the library" : "your library"}" placeholder="Ask ${guest ? "the library" : "your library"}&hellip;" required>
   <div class="mode-toggle" role="radiogroup" aria-label="Search mode">
     <input type="radio" id="mode-ask" name="mode" value="ask" checked>
     <label for="mode-ask" title="Ask with verbatim citations">Ask</label>
@@ -1047,7 +1048,9 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
   const syncMode = () => {
     const isFind = form.mode?.value === "find";
     form.action = isFind ? "/find" : "/ask";
-    const base = ${guest ? '"the library"' : '"your library"'};
+    // Read from markup, never interpolated: the CSP hash is taken from one blank page, so
+    // any byte of the script that varies by reader blocks the script for everyone else.
+    const base = form.q.dataset.library;
     form.q.placeholder = isFind ? ("Find passages in " + base + "…") : ("Ask " + base + "…");
   };
   for (const r of modeRadios) r.addEventListener("change", syncMode);
@@ -1191,6 +1194,12 @@ if (process.argv.includes("--selfcheck")) {
   assert.match(PAGE("", true, true), /reading as a guest/);
   assert.match(PAGE("", true, true), /5 initial Ask requests, then 2 per day/, "a guest is told what they have");
   assert.match(PAGE("", true, true), /value="find"/, "Find stays open to guests");
+  // The CSP hash comes from the blank page. Every variant must carry byte-identical code or
+  // the browser silently drops the script and the ask box falls back to a blind form post.
+  const variants = [PAGE("", true, true), PAGE("", false, false, true), PAGE("x", true, false, false, "meta", "reader", { books: [] })];
+  for (const [tag, hash] of [["script", codeHash("script")], ["style", codeHash("style")]]) {
+    for (const v of variants) assert.equal(createHash("sha256").update(v.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1] ?? "").digest("base64"), hash, `${tag} must not vary by reader`);
+  }
 
   // A showcase deployment draws none of it, for anyone. The operator still has every route;
   // this only stops putting a destructive control a typed word away from the ask box on a
@@ -1664,6 +1673,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   }
   const db = userLibrary(user);
   let chosen: LibraryBook[] = [];
+  let lock: string | undefined;
   const choice: SourceChoice = { books: [] };
   try {
     choice.books = listBooks(db);
@@ -1672,7 +1682,13 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     Object.assign(choice, selected.choice);
     if (!query) return send(400, page("<p>Ask something.</p>", "", choice));
     if (query.length > MAX_QUERY) return send(413, page("<p>That question is too long.</p>", "", choice));
-    const reservation = operator ? undefined : reserveAsk(logdb, allowanceBuckets(user, guest, device.id, clientAddress(req), db));
+    const buckets = allowanceBuckets(user, guest, device.id, clientAddress(req), db);
+    // ponytail: one answer at a time per reader. A blind double submit (no script, an
+    // impatient second click) used to spend two allowances on one question. Sliding-window
+    // rate limiting can replace this if the daily allowance proves too coarse.
+    if (inflight.has(buckets[0].key)) return send(429, page("<p>Your previous question is still being answered. Wait for it before asking another.</p>", "", choice));
+    inflight.add(buckets[0].key); lock = buckets[0].key;
+    const reservation = operator ? undefined : reserveAsk(logdb, buckets);
     if (reservation && !reservation.allowed) {
       res.setHeader("retry-after", String(Math.max(1, Math.ceil((Date.parse(reservation.allowance.resetAt) - Date.now()) / 1000))));
       const reason = reservation.network ? "This network has reached its request limit today." : "You have used your Ask allowance for today.";
@@ -1763,7 +1779,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     } else {
       send(502, page(failed, "", choice));
     }
-  } finally { db.close(); }
+  } finally { db.close(); if (lock) inflight.delete(lock); }
 };
 createServer((req, res) => {
   void handleRequest(req, res).catch((error) => {
