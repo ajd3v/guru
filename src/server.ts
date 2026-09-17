@@ -1192,7 +1192,7 @@ if (process.argv.includes("--selfcheck")) {
     assert.doesNotMatch(PAGE("", true, true), gone, `guest chrome must not offer ${gone}`);
   }
   assert.match(PAGE("", true, true), /reading as a guest/);
-  assert.match(PAGE("", true, true), /5 initial Ask requests, then 2 per day/, "a guest is told what they have");
+  assert.match(PAGE("", true, true), /5 initial Ask requests, then 5 per day/, "a guest is told what they have");
   assert.match(PAGE("", true, true), /value="find"/, "Find stays open to guests");
   // The CSP hash comes from the blank page. Every variant must carry byte-identical code or
   // the browser silently drops the script and the ask box falls back to a blind form post.

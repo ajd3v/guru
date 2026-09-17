@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 
 export const INITIAL_ASKS = 5;
-export const DAILY_ASKS = 2;
+export const DAILY_ASKS = 5;
 type Counter = { used: number; trial_ended: string | null; day: string; daily_used: number };
 export type Allowance = { remaining: number; phase: "initial" | "daily"; resetAt: string };
 export type Bucket = { key: string; scale?: number; seed?: Partial<Counter> };

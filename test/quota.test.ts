@@ -127,16 +127,15 @@ try {
 
   const counters = new Database(join(dir, "log.db"));
   counters.prepare("update ask_allowance set trial_ended = '2000-01-01', day = '2000-01-01', daily_used = 0").run();
-  assert(!spent(await ask(a, HERE)), "returning guest gets first daily request");
-  assert(!spent(await ask(a, HERE)), "returning guest gets second daily request");
-  assert(spent(await ask(a, HERE)), "third daily request refused");
+  for (let i = 0; i < 5; i++) assert(!spent(await ask(a, HERE)), `returning guest gets daily request ${i + 1}`);
+  assert(spent(await ask(a, HERE)), "sixth daily request refused");
   const auth = { authorization: 'Basic ' + Buffer.from('reader:pw').toString('base64') };
   const signedAsk = () => fetch(base + '/ask', { method: 'POST', headers: auth, body: 'q=stillness' }).then((r) => r.status);
   for (let i = 0; i < 5; i++) assert(!spent(await signedAsk()), "signed-in initial request allowed");
   assert(spent(await signedAsk()), "signed-in sixth initial request refused");
   counters.prepare("update ask_allowance set trial_ended = '2000-01-01', day = '2000-01-01', daily_used = 0 where key = 'reader:reader'").run();
-  const simultaneous = await Promise.all(Array.from({ length: 5 }, signedAsk));
-  assert.equal(simultaneous.filter((code) => !spent(code)).length, 2, "parallel requests reserve only two daily slots");
+  const simultaneous = await Promise.all(Array.from({ length: 8 }, signedAsk));
+  assert.equal(simultaneous.filter((code) => !spent(code)).length, 5, "parallel requests reserve only five daily slots");
   const ownerAuth = { authorization: 'Basic ' + Buffer.from('owner:ownerpw').toString('base64') };
   const ownerHome = await (await fetch(base + '/', { headers: ownerAuth })).text();
   assert.match(ownerHome, /Owner access. Ask requests are unlimited/);

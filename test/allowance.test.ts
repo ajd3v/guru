@@ -6,10 +6,10 @@ const first = new Date("2026-09-16T23:50:00Z"), next = new Date("2026-09-17T00:0
 const a = { key: "reader:a" };
 for (let i = 0; i < 5; i++) assert(reserveAsk(db, [a], first).allowed);
 assert(!reserveAsk(db, [a], first).allowed, "no extra daily requests on the fifth request's day");
-assert.equal(readAllowance(db, a, next).remaining, 2);
-for (let i = 0; i < 2; i++) assert(reserveAsk(db, [a], next).allowed);
+assert.equal(readAllowance(db, a, next).remaining, 5);
+for (let i = 0; i < 5; i++) assert(reserveAsk(db, [a], next).allowed);
 assert(!reserveAsk(db, [a], next).allowed);
-assert.equal(readAllowance(db, a, new Date("2026-09-18T00:00:00Z")).remaining, 2);
+assert.equal(readAllowance(db, a, new Date("2026-09-18T00:00:00Z")).remaining, 5);
 const b = { key: "reader:b" };
 assert(reserveAsk(db, [b], first).allowed); assert.equal(readAllowance(db, b, next).remaining, 4, "initial allowance spans days");
 const network = { key: "ip:shared", scale: 2 };
@@ -17,9 +17,10 @@ for (let i = 0; i < 10; i++) assert(reserveAsk(db, [{ key: "device:" + i }, netw
 const fresh = { key: "device:blocked" };
 assert.equal(reserveAsk(db, [fresh, network], first).network, true);
 assert.equal(readAllowance(db, fresh, first).remaining, 5, "network refusals do not consume personal allowance");
-assert.equal(readAllowance(db, network, next).remaining, 4);
+assert.equal(readAllowance(db, network, next).remaining, 10);
 db.exec("create table asks (id integer primary key, at text); insert into asks(at) values ('2026-09-15'),('2026-09-15'),('2026-09-15'),('2026-09-15'),('2026-09-15'),('2026-09-16')");
 const legacy = { key: "reader:legacy", seed: accountSeed(db, first) };
-assert.equal(readAllowance(db, legacy, first).remaining, 1);
-assert(reserveAsk(db, [legacy], first).allowed); assert(!reserveAsk(db, [legacy], first).allowed);
+assert.equal(readAllowance(db, legacy, first).remaining, 4);
+for (let i = 0; i < 4; i++) assert(reserveAsk(db, [legacy], first).allowed);
+assert(!reserveAsk(db, [legacy], first).allowed);
 db.close(); console.log("initial and daily allowance tests ok");
