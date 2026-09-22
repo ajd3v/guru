@@ -129,8 +129,9 @@ assert.deepEqual(
 seen.length = 0;
 replies = ["Supported claim. [P0S0]\n\nUnsupported claim. [P9S9]"];
 const partial = await ask("q", [passage]);
-assert(!partial.answer.includes("Supported claim"), "generated prose cannot become a source claim");
+assert(partial.answer.includes("Supported claim.") && !/^> .*Supported claim/m.test(partial.answer), "the claim stays as prose, never as a quotation");
 assert(partial.answer.includes("The Tao that can be trodden"));
+assert(!partial.answer.includes("P0S0"), "the id is replaced by the quotation");
 assert(!partial.answer.includes("Unsupported claim"), "claim with only invented ids is dropped");
 
 // If nothing at all survives, say so rather than shipping unsourced prose.
@@ -164,7 +165,7 @@ assert.equal((await ask("q", [passage])).answer, "No supporting passage was foun
 // answer body is the author's words and repunctuating them would be a silent misquote.
 seen.length = 0;
 const dashedSource = hit(1, "The Tao that can be trodden—that one—is not the enduring Tao.");
-replies = [`SYNOPSIS: the way named—the spoken one—is not the lasting way\nA claim [P0S0]`];
+replies = [`SYNOPSIS: the way named—the spoken one—is not the lasting way [P0S0]\nA claim [P0S0]`];
 const dashed = await ask("q", [dashedSource]);
 assert.equal(dashed.synopsis, "The way named, the spoken one, is not the lasting way", "the synopsis is kept, in the page's own punctuation");
 assert(dashed.answer.includes("trodden—that one—is"), "the author's em-dash survives in the quote");

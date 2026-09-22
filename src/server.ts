@@ -1754,7 +1754,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
         }
       },
     });
-    logOutcome(logId, declined ? "declined" : /^>/.test(answer) ? "answered" : "ungrounded");
+    logOutcome(logId, declined ? "declined" : passages.length ? "answered" : "ungrounded");
     // A decline means nothing retrieved bore on the question, so listing what was read under
     // "Passages consulted" would claim a relevance the answer just denied.
     const shelfNote = declined ? "" : consulted;
@@ -1764,7 +1764,10 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     // Set apart from the passages on purpose. It is the model's own summary, and the one
     // thing this page must never do is let its own prose look like somebody's book.
     const lead = synopsis ? `<p class="synopsis">${escape(synopsis)}</p>` : "";
-    const content = passages.length ? passages.map((p) => `<blockquote><p>${escape(p.text)}</p>${citationMarkup(p.hit)}</blockquote>`).join("") : render(answer);
+    // The model's prose and the spliced quotations, in the order it wrote them. The renderer
+    // is the one place that tells the two apart, so the prose gets plain punctuation and the
+    // quotations keep their author's.
+    const content = render(answer, hits);
     const missing = chosen.length > 1 ? chosen.filter((book) => !passages.some((p) => p.hit.book_id === book.id)).map((book) => `<p class="note">No quoted support selected from ${escape(sourceLabel(book))}. This comparison may be incomplete.</p>`).join("") : "";
     const composed = `${scopeNote(chosen)}${missing}${lead}<div class="answer">${content}</div>`;
 

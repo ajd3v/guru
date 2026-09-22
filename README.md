@@ -31,9 +31,10 @@ See [CONFIGURATION.md](CONFIGURATION.md) to run another library on the same engi
 The model is never allowed to type a quotation. It cites a sentence id and the exact wording
 is spliced in from the source, so a misquote is not expressible rather than merely detected.
 The renderer builds each quotation and its citation from the selected source record.
-Generated claims are discarded. The one line of model prose kept is the synopsis above the
-quotations, set apart in the page's own voice so it can never pass for a book. An explicit
-refusal produces a fixed message.
+The model's own prose is kept only where it rests on a sentence id, and the quotation that
+id names is spliced in beside it. A claim whose ids do not resolve is dropped with them. The
+synopsis above the answer is the model's summary, set apart in the page's own voice so it can
+never pass for a book. An explicit refusal produces a fixed message.
 
 The tests verify this contract against stub model responses. Historical model scores in
 SPEC.md predate the current renderer and must be remeasured before comparing answer quality.
