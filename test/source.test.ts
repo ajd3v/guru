@@ -71,8 +71,7 @@ try {
   }
   const home = await fetch(base, { headers });
   const html = await home.text();
-  assert.match(html, /<label for="book"[^>]*>Search in<\/label>/);
-  assert.match(html, /<select id="book" name="book" form="ask-form">/);
+  assert.match(html, /<select id="book" name="book" class="scope" aria-label="Search in"/, "the book scope is a chip inside the ask box");
   assert.match(html, /Shared Title, Writer \(first\.pdf, 1\)/, "duplicate titles include a source filename");
   assert.match(html, /Shared Title, Writer \(second\.pdf, 2\)/);
   for (const tag of ["style", "script"]) {

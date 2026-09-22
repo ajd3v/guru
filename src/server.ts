@@ -753,15 +753,18 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = ""
     .ask-submit { color: #0d151c; }
   }
 
-  .scope { display: flex; gap: .75rem; align-items: center; margin-bottom: 1.25rem; }
-  .scope label { flex-shrink: 0; }
-  .scope select {
-    flex: 1; min-width: 0; max-width: 100%; min-height: 42px; padding: .45rem .8rem;
-    border: 1px solid var(--rule); border-radius: 12px;
-    background: var(--paper-card); color: var(--ink); font: .9375rem/1.4 var(--serif);
-    box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+  /* Book scope, a chip inside the ask box like the model and tool pickers in chat apps. */
+  select.scope {
+    appearance: none; -webkit-appearance: none; cursor: pointer;
+    max-width: 11rem; min-height: 32px; padding: .35rem 1.6rem .35rem .85rem;
+    border: 0; border-radius: 9999px; background: rgba(120, 138, 128, 0.12) no-repeat right .6rem center;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23788a80' stroke-width='1.5' stroke-linecap='round'/></svg>");
+    color: var(--quiet); font: 500 .8125rem/1 var(--sans); letter-spacing: .02em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .scope select:focus-visible { outline: 2px solid var(--moss); outline-offset: 2px; }
+  select.scope:hover { color: var(--moss); }
+  select.scope:focus-visible { outline: 2px solid var(--moss); outline-offset: 2px; }
+  @media (prefers-color-scheme: dark) { select.scope { background-color: rgba(255, 255, 255, 0.08); } }
 
   h2 { font-size: 1.25rem; font-weight: 400; font-style: italic; color: var(--quiet);
        margin: 0 0 2rem; text-wrap: balance; }
@@ -915,10 +918,9 @@ ${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
        own view without ever owning it. This does the same with books. -->
   <p class="tagline">${escape(profile.tagline)}</p>
 </header>
-${choice?.books.length ? `<div class="scope"><label for="book" class="note">Search in</label>
-<select id="book" name="book" form="ask-form"><option value="">All books</option>${choice.books.map((b) =>
-  `<option value="${b.id}" data-tradition="${escape(detailsFor(b)?.tradition || "")}" data-edition="${escape(detailsFor(b)?.edition || "")}"${b.id === choice.selected ? " selected" : ""}>${escape(bookLabel(b, choice.books))}</option>`).join("")}</select></div>${picker(choice.books, choice.compare)}` : ""}
 <form id="ask-form" class="ask" method="post" action="/ask">
+  ${choice?.books.length ? `<select id="book" name="book" class="scope" aria-label="Search in" title="Search in"><option value="">All books</option>${choice.books.map((b) =>
+  `<option value="${b.id}" data-tradition="${escape(detailsFor(b)?.tradition || "")}" data-edition="${escape(detailsFor(b)?.edition || "")}"${b.id === choice.selected ? " selected" : ""}>${escape(bookLabel(b, choice.books))}</option>`).join("")}</select>` : ""}
   <input name="q" aria-label="Question for your library" maxlength="${MAX_QUERY}" data-library="${guest ? "the library" : "your library"}" placeholder="Ask ${guest ? "the library" : "your library"}&hellip;" required>
   <div class="mode-toggle" role="radiogroup" aria-label="Search mode">
     <input type="radio" id="mode-ask" name="mode" value="ask" checked>
@@ -933,6 +935,7 @@ ${choice?.books.length ? `<div class="scope"><label for="book" class="note">Sear
     </svg>
   </button>
 </form>
+${choice?.books.length ? picker(choice.books, choice.compare) : ""}
 <p class="note meta" role="status">${escape(meta)}</p>
 <div id="out"><div id="hist"></div>${body}</div>
 <footer>
@@ -1194,6 +1197,11 @@ if (process.argv.includes("--selfcheck")) {
   assert.match(PAGE("", true, true), /reading as a guest/);
   assert.match(PAGE("", true, true), /5 initial Ask requests, then 5 per day/, "a guest is told what they have");
   assert.match(PAGE("", true, true), /value="find"/, "Find stays open to guests");
+  // The book scope lives inside the ask box, first in tab order, so the no-script form post
+  // still carries it and the reader sees it where the question is typed.
+  const scoped = PAGE("", true, false, false, "", "r", { books: [{ id: 1, title: "T", author: "A", source: "a.pdf" } as unknown as LibraryBook] });
+  assert.match(scoped, /<form id="ask-form"[^>]*>\s*<select id="book" name="book" class="scope"/, "the scope chip is the first control in the ask box");
+  assert.doesNotMatch(PAGE("", true), /<select id="book"/, "no chip without books");
   // The CSP hash comes from the blank page. Every variant must carry byte-identical code or
   // the browser silently drops the script and the ask box falls back to a blind form post.
   const variants = [PAGE("", true, true), PAGE("", false, false, true), PAGE("x", true, false, false, "meta", "reader", { books: [] })];

@@ -28,7 +28,8 @@ h1 { font-size: clamp(1.7rem, 4vw, 2.2rem); letter-spacing: .24em; }
 .mode-toggle input:checked + label { background: var(--moss); color: #fff; }
 blockquote { background: var(--field); box-shadow: none; }
 cite { opacity: 1; }
-.scope select, .library-tools input, .library-tools select { background: var(--paper); color: var(--ink); border: 1px solid var(--rule); }
+select.scope { background-color: var(--field); }
+.library-tools input, .library-tools select { background: var(--paper); color: var(--ink); border: 1px solid var(--rule); }
 a { color: var(--moss); text-underline-offset: .2em; }
 .shelf a { text-decoration-thickness: 1px; }
 footer { margin-top: 2.5rem; }
