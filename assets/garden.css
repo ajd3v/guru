@@ -1,6 +1,7 @@
 :root {
   color-scheme: light dark;
-  --sheet-width: 56rem;
+  /* Grows with the window and stops at 80rem, which fills a laptop and sits comfortably on a 1440 or 1920 wide screen. */
+  --sheet-width: clamp(44rem, 88vw, 80rem);
   --paper: #f7faf4;
   --paper-card: rgba(249, 251, 246, .96);
   --field: #edf2e8;
@@ -47,3 +48,6 @@ footer { margin-top: 2.5rem; }
 @media (prefers-reduced-data: reduce) { body::before { background-image: none; } }
 header { animation: none; }
 .mark .corona { animation: none; opacity: .9; }
+@media (min-width: 1200px) {
+  ul.shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
