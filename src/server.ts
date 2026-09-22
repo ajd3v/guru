@@ -843,6 +843,19 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = ""
   }
   footer button:hover, .file:hover { color: var(--ink); }
   .file input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  /* Library management lives behind Settings so the page shows only what reading needs. Native
+     popover: no script to open it, light dismiss, and a no-script reader still gets the form. */
+  #settings {
+    inset: auto 0 0 auto; position: fixed; margin: 0 1.25rem 1.25rem 0; width: min(92vw, 22rem);
+    display: none; flex-direction: column; gap: .75rem; padding: 1.25rem 1.5rem;
+    background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+  }
+  #settings:popover-open { display: flex; }
+  #settings h2 { margin: 0 0 .25rem; font-size: 1rem; font-style: normal; }
+  #settings .danger { flex-direction: column; align-items: stretch; gap: .5rem; margin: .5rem 0 0; padding-top: .75rem; border-top: 1px solid var(--rule); }
+  #settings .danger input { width: auto; }
+  #settings .note:empty { display: none; }
   .waiting { animation: breathe 3.2s ease-in-out infinite; }
   .waiting::after { content: "\\2026"; }
   .answer, h2 { animation: rise .5s ease-out both; }
@@ -942,21 +955,23 @@ ${choice?.books.length ? picker(choice.books, choice.compare) : ""}
   <span class="note">${loggingEnabled(reader) ? "Questions are stored for operator review." : "Question logging is off."} Browser history stays on this device.</span>
   ${guest
     ? `<span class="note">You are reading as a guest, with ${INITIAL_ASKS} initial Ask requests, then ${DAILY_ASKS} per day from the following day. Find stays free.</span>`
-    : demo
-      ? `<span class="note">A fixed shelf, open to read and search.</span>`
-      : `${librarian
-        ? `<label class="file">Add a book
-    <input type="file" accept=".pdf,.epub" id="f"></label>
-  <span class="note" id="s"></span>
-  <a class="note" href="/export">Export</a>`
-        : ""}
-  <form method="post" action="/delete">
-    <input aria-label="Type DELETE to delete your library" name="confirm" placeholder="type DELETE">
-    <button>Delete all</button>
-  </form>`}
-  ${!guest ? '<a class="note" href="/privacy">Privacy and history</a>' : ""}
-  ${!guest && isOperator(reader) ? '<a class="note" href="/log">Usage log</a>' : ""}
+    : demo ? `<span class="note">A fixed shelf, open to read and search.</span>` : ""}
   <button type="button" id="saved-passages" class="note">Bookmarks</button>
+  ${!guest && !demo ? `<button type="button" class="note" popovertarget="settings">Settings</button>
+  <div id="settings" popover>
+    <h2>Settings</h2>
+    ${librarian ? `<label class="file">Add a book
+      <input type="file" accept=".pdf,.epub" id="f"></label>
+    <span class="note" id="s"></span>
+    <a class="note" href="/export">Export</a>` : ""}
+    <a class="note" href="/privacy">Privacy and history</a>
+    ${isOperator(reader) ? '<a class="note" href="/log">Usage log</a>' : ""}
+    <form method="post" action="/delete" class="danger">
+      <span class="note">Delete your library and its question history.</span>
+      <input aria-label="Type DELETE to delete your library" name="confirm" placeholder="type DELETE">
+      <button>Delete all</button>
+    </form>
+  </div>` : ""}
 </footer>
 <dialog id="bookmark-dialog"><h2>Saved passages</h2><div id="bookmark-list"></div><form method="dialog"><button>Close</button></form></dialog>
 </div>
