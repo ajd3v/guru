@@ -166,7 +166,7 @@ seen.length = 0;
 const dashedSource = hit(1, "The Tao that can be trodden—that one—is not the enduring Tao.");
 replies = [`SYNOPSIS: the way named—the spoken one—is not the lasting way\nA claim [P0S0]`];
 const dashed = await ask("q", [dashedSource]);
-assert.equal(dashed.synopsis, "", "a generated synopsis cannot bypass source verification");
+assert.equal(dashed.synopsis, "The way named, the spoken one, is not the lasting way", "the synopsis is kept, in the page's own punctuation");
 assert(dashed.answer.includes("trodden—that one—is"), "the author's em-dash survives in the quote");
 
 // The near-miss reply is not a decline. Its own wording points at the passages, so hiding
@@ -204,7 +204,7 @@ assert(!bogus.answer.includes("P9S9"), "no broken marker is shown");
 // A valid sentence id cannot authorize adjacent model prose or a forged citation.
 replies = [`SYNOPSIS: An invented conclusion.\n\nAn unsupported claim.\n\n> Fabricated words [Wrong Writer, Wrong Book, p. 900]\n\n[P0S0]\n\nA second unsupported claim. [P0S1]`];
 const guarded = await ask("q", [passage]);
-assert.equal(guarded.synopsis, "");
+assert.equal(guarded.synopsis, "An invented conclusion.", "the synopsis is model prose set apart from the quotes, never a quote");
 assert(!/invented conclusion|unsupported claim|Wrong Writer|Fabricated/.test(guarded.answer));
 assert.equal(guarded.answer.split("\n").filter((line) => line.startsWith("> ")).length, 1);
 assert(guarded.answer.includes(cite(passage)));
