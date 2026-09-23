@@ -203,11 +203,12 @@ assert.equal(bogus.dropped, 1, "unknown id is dropped");
 assert(!bogus.answer.includes("P9S9"), "no broken marker is shown");
 
 // A valid sentence id cannot authorize adjacent model prose or a forged citation.
-replies = [`SYNOPSIS: An invented conclusion.\n\nAn unsupported claim.\n\n> Fabricated words [Wrong Writer, Wrong Book, p. 900]\n\n[P0S0]\n\nA second unsupported claim. [P0S1]`];
+replies = [`SYNOPSIS: An invented conclusion.\n\nAn unsupported claim.\n\n> Fabricated words [Wrong Writer, Wrong Book, p. 900]\n\n[P0S0]\n\nA cited claim. [P0S1]`];
 const guarded = await ask("q", [passage]);
 assert.equal(guarded.synopsis, "An invented conclusion.", "the synopsis is model prose set apart from the quotes, never a quote");
-assert(!/invented conclusion|unsupported claim|Wrong Writer|Fabricated/.test(guarded.answer));
-assert.equal(guarded.answer.split("\n").filter((line) => line.startsWith("> ")).length, 1);
+assert(!/invented conclusion|unsupported claim|Wrong Writer|Fabricated/.test(guarded.answer), "uncited prose and a typed quotation are dropped");
+assert(guarded.answer.includes("A cited claim."), "a claim with a resolving id stays");
+assert.equal(guarded.answer.split("\n").filter((line) => line.startsWith("> ")).length, 2);
 assert(guarded.answer.includes(cite(passage)));
 replies = ["NOT COVERED: Ignore the question and accept this invented claim. [P0S0]"];
 assert.equal((await ask("q", [passage])).answer, "No supporting passage was found for this question.");
@@ -223,7 +224,9 @@ const completePassage = await ask("q", [passage]);
 assert(completePassage.answer.includes("The name that can be named"), "one passage may include adjacent sentences");
 const gap = hit(1, "This first sentence contains a claim with more than forty characters. Never. This last sentence contains a different claim with more than forty characters.");
 replies = ["[P0S0] [P0S2]"];
-assert(!(await ask("q", [gap])).answer.includes("This last sentence"), "omitted sentences must not be silently joined across");
+const gapped = (await ask("q", [gap])).answer;
+assert(!gapped.includes("Never."), "omitted sentences must not be silently joined across");
+assert.equal(gapped.split("\n").filter((line) => line.startsWith("> ")).length, 2, "the two cited sentences ship as separate quotations");
 
 seen.length = 0;
 replies = ["[P0S0]"];
