@@ -39,6 +39,8 @@ The profile requires its own evaluation paths. It never falls back to the engine
 | `maxQuotesPerBook` | Maximum selected passages per indexed document. Default 1. Zero removes this limit. Adjacent selected sentences count as one passage. |
 | `vectorWeight` | Vector contribution to reciprocal rank fusion. Keyword weight stays 1. Default 1, Guru uses 2 after local measurement. Accepts numbers greater than zero and at most 10. `GURU_VECTOR_WEIGHT` overrides it. Measure against each library before changing it. |
 | `starterMode` | `automatic` builds a missing starter and refreshes it after source changes. `managed` requires an existing starter and never rebuilds it. `GURU_STARTER_MODE` overrides this setting. |
+| `pitch` | Optional one-sentence line under the tagline, shown to guests. Also the page description for search and link previews. |
+| `assets/showcase.json` | Optional landing content for guests: an example answer and suggested questions. Generate it with `node eval/showcase.ts`. |
 | `styles`, `mark` | Optional application CSS and SVG files. These are trusted deployment files. |
 | `themeColor`, `backgroundColor` | Six-digit hex colors for the installed web app. |
 | `showControls`, `showQuota` | Show library controls or the remaining question count. Route permissions apply independently. |

@@ -17,6 +17,7 @@ export type Profile = {
   name: string;
   shortName: string;
   tagline: string;
+  pitch: string;
   description: string;
   library: string;
   evaluation: string[];
@@ -40,7 +41,7 @@ export type Profile = {
 };
 
 const defaults = {
-  shortName: "", tagline: "", description: "A study companion for your library.",
+  shortName: "", tagline: "", pitch: "", description: "A study companion for your library.",
   sourceRegister: "the works in this library", queryExpansions: [], maxQuotesPerBook: 1, vectorWeight: 1,
   starterMode: "automatic", assets: "assets", themeColor: "#f3efe3", backgroundColor: "#14150f",
   showControls: true, showQuota: false, bookDetails: [],
@@ -57,7 +58,7 @@ export function loadProfile(path: string): Profile {
   for (const key of ["name", "library", "sourceRegister"]) {
     if (typeof p[key] !== "string" || !p[key].trim()) throw new Error(`Profile requires ${key}`);
   }
-  for (const key of ["shortName", "tagline", "description", "assets"]) {
+  for (const key of ["shortName", "tagline", "pitch", "description", "assets"]) {
     if (typeof p[key] !== "string") throw new Error(`Invalid profile ${key}`);
   }
   if (!Array.isArray(p.evaluation) || !p.evaluation.length || p.evaluation.some((s: unknown) => typeof s !== "string" || !s)) {

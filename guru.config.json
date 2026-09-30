@@ -3,6 +3,7 @@
   "id": "guru",
   "name": "guru",
   "tagline": "A garden of borrowed words.",
+  "pitch": "Ask a question and get an answer built from exact quotations across 127 classic books, each one checked against the page it came from.",
   "description": "A study companion for your own library that never misquotes.",
   "library": "starter/library.json",
   "evaluation": [

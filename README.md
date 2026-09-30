@@ -1,11 +1,14 @@
 # <img src="mark.svg" alt="" height="30"> guru
 
-A study companion for your own multi-tradition spiritual library that never misquotes.
-Every substantive claim is a verbatim quote cited with title, author, and page. No citation,
-no claim.
+Ask guru a question and it answers with exact quotations from 127 classic books of
+philosophy and scripture, each cited to the page it came from. The model never types a quote.
+It picks sentences by id, the app copies their wording from the book, and anything that fails
+that check is removed before you see it. When the shelf has nothing on your question, it says
+so instead of making something up.
 
-Ask it a question and it answers out of books you own, in their words rather than its own.
-A model that cannot find an answer in your shelf says so instead of writing one.
+![The guru landing page with an example answer](assets/screenshot-desktop.png)
+
+<img src="assets/screenshot-mobile.png" alt="The same page on a phone" width="300">
 
 **The reading room is open at [guru.alanj.dev](https://guru.alanj.dev).** Search the starter
 shelf, 127 public-domain books, as much as you like and with no model in the loop. Five
@@ -128,7 +131,7 @@ questions, and still export their own data, which is their ask history rather th
 
 `docker-compose.yml` builds one image and runs it twice, as `serve` and as `worker`. They
 share a volume because the worker writes into the reader's database. On first boot the
-entrypoint builds the starter library once onto the volume, hours of CPU at 123 books, and it
+entrypoint builds the starter library once onto the volume, hours of CPU at 127 books, and it
 is rebuilt when the book list or the extractor changes. Only the first build blocks: a rebuild
 runs in the background and the old shelf keeps answering until it is ready.
 

@@ -508,10 +508,37 @@ function bookLabel(book: LibraryBook, books: LibraryBook[]) {
 }
 const scopeNote = (books: LibraryBook[] = []) => books.length ? `<p class="note scope-note">From ${books.map((book) => escape(sourceLabel(book))).join("<br>")}</p>` : "";
 const loggedQuestion = (query: string, books: LibraryBook[] = []) => books.length ? `${query}\n[Source: ${books.map(sourceLabel).join(" | ")}]` : query;
+/**
+ * What a first-time visitor sees before asking: one example answer and a few questions to try.
+ * The answer is a real Ask run against the starter library and saved by eval/showcase.ts, so
+ * its quotations are spliced from the source like any other. Optional per profile.
+ */
+type Showcase = { question: string; html: string; suggestions?: string[] };
+const SHOWCASE = (() => {
+  try { return JSON.parse(readFileSync(join(profile.assets, "showcase.json"), "utf8")) as Showcase; } catch { return undefined; }
+})();
+const showcase = () => SHOWCASE?.html
+  ? `<section class="showcase" aria-label="Example answer"><p class="note showcase-label">An example answer from the library</p><h2>${escape(SHOWCASE.question)}</h2>${SHOWCASE.html}</section>`
+  : "";
+// Link previews need an absolute image URL, and only the deployment knows its own host.
+const ORIGIN = process.env.GURU_CANONICAL_HOST ? `https://${process.env.GURU_CANONICAL_HOST}` : "";
+const OG_IMAGE = existsSync(join(profile.assets, "og.png"));
 const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = "", reader = "", choice?: SourceChoice) => `<!doctype html>
 <html lang="en">
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escape(profile.name)}</title>
+<meta name="description" content="${escape(profile.pitch || profile.description)}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="${escape(profile.name)}">
+<meta property="og:description" content="${escape(profile.pitch || profile.description)}">
+${ORIGIN ? `<meta property="og:url" content="${ORIGIN}/">` : ""}
+${OG_IMAGE ? `<meta property="og:image" content="${ORIGIN}/og.png">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">` : ""}
+<meta name="twitter:card" content="${OG_IMAGE ? "summary_large_image" : "summary"}">
+<meta name="twitter:title" content="${escape(profile.name)}">
+<meta name="twitter:description" content="${escape(profile.pitch || profile.description)}">
+${OG_IMAGE ? `<meta name="twitter:image" content="${ORIGIN}/og.png">` : ""}
+<link rel="icon" href="/icon-180.png" type="image/png">
 <meta name="theme-color" content="${profile.themeColor}">
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
 <link rel="apple-touch-icon" href="/icon-180.png">
@@ -673,6 +700,25 @@ const PAGE = (body = "", librarian = true, guest = false, demo = DEMO, meta = ""
   h1 { margin: .8rem 0 .3rem; font-size: 1.5rem; font-weight: 400; letter-spacing: .28em;
        text-indent: .28em; text-transform: lowercase; }
   .tagline { margin: 0; color: var(--quiet); font-size: .9375rem; font-style: italic; text-wrap: balance; }
+  .pitch { margin: 1.1rem auto 0; max-width: 34rem; font-size: 1.0625rem; line-height: 1.6; text-wrap: balance; }
+  .trust {
+    display: inline-flex; align-items: center; gap: .4rem; margin: .9rem 0 0; padding: .3rem .8rem;
+    border-radius: 9999px; background: var(--moss-soft); color: var(--moss);
+    font: 500 .75rem/1.4 var(--sans); letter-spacing: .02em;
+  }
+  .trust svg { width: 12px; height: 12px; flex-shrink: 0; }
+  .suggest { display: flex; flex-wrap: wrap; gap: .5rem; margin: -1.5rem 0 2.5rem; }
+  .suggest button {
+    border: 1px solid var(--rule); border-radius: 9999px; background: var(--field); color: var(--quiet);
+    padding: .45rem .9rem; min-height: 36px; font: .8125rem/1.4 var(--sans); text-align: left; cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .suggest button:hover { color: var(--moss); border-color: var(--moss); }
+  .showcase-label { margin: 0 0 .4rem; font: 500 .75rem/1.6 var(--sans); letter-spacing: .06em; text-transform: uppercase; }
+  .showcase h2 { margin-bottom: 1.5rem; }
+  .showcase .answer cite, .showcase .answer cite:hover { cursor: auto; color: var(--quiet); }
+  /* The example makes way for the visitor's own first answer. */
+  #hist:not(:empty) ~ .showcase { display: none; }
 
   /* Organic pill search bar */
   .ask {
@@ -930,6 +976,8 @@ ${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
   <!-- Shakkei, borrowed scenery: a garden composes the landscape beyond its wall into its
        own view without ever owning it. This does the same with books. -->
   <p class="tagline">${escape(profile.tagline)}</p>
+  ${guest || demo ? `${profile.pitch ? `<p class="pitch">${escape(profile.pitch)}</p>` : ""}
+  <p class="trust" title="The model picks sentences by id. The app copies their wording from the book, and a quotation that fails the check is removed."><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="2 6.5 5 9.5 10 3"></polyline></svg>Every quotation checked against its source</p>` : ""}
 </header>
 <form id="ask-form" class="ask" method="post" action="/ask">
   ${choice?.books.length ? `<select id="book" name="book" class="scope" aria-label="Search in" title="Search in"><option value="">All books</option>${choice.books.map((b) =>
@@ -948,6 +996,7 @@ ${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
     </svg>
   </button>
 </form>
+${guest && SHOWCASE?.suggestions?.length ? `<div class="suggest" role="group" aria-label="Questions to try">${SHOWCASE.suggestions.map((q) => `<button type="button" data-q="${escape(q)}">${escape(q)}</button>`).join("")}</div>` : ""}
 ${choice?.books.length ? picker(choice.books, choice.compare) : ""}
 <p class="note meta" role="status">${escape(meta)}</p>
 <div id="out"><div id="hist"></div>${body}</div>
@@ -1072,6 +1121,15 @@ ${choice?.books.length ? picker(choice.books, choice.compare) : ""}
     form.q.placeholder = isFind ? ("Find passages in " + base + "…") : ("Ask " + base + "…");
   };
   for (const r of modeRadios) r.addEventListener("change", syncMode);
+  // A suggested question is asked exactly as if it had been typed.
+  document.querySelector(".suggest")?.addEventListener("click", (ev) => {
+    const chip = ev.target.closest("button[data-q]");
+    if (!chip) return;
+    form.q.value = chip.dataset.q;
+    document.getElementById("mode-ask").checked = true;
+    syncMode();
+    form.requestSubmit();
+  });
 
   form.addEventListener("submit", async (e) => {
     const q = form.q.value.trim();
@@ -1391,7 +1449,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
       }),
     );
   }
-  if (req.method === "GET" && ["/icon-180.png", "/icon-512.png", "/garden.webp"].includes(req.url ?? "")) {
+  if (req.method === "GET" && ["/icon-180.png", "/icon-512.png", "/garden.webp", "/og.png"].includes(req.url ?? "")) {
     try {
       const png = readFileSync(join(profile.assets, req.url.slice(1)));
       res.writeHead(200, { "content-type": req.url.endsWith(".webp") ? "image/webp" : "image/png", "cache-control": "public, max-age=604800" });
@@ -1456,7 +1514,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     const meta = operator ? ownerAllowance : allowanceText(readAllowance(logdb, allowanceBuckets(user, guest, device.id, clientAddress(req), db)[0]));
     const books = listBooks(db);
     db.close();
-    return send(200, page(reading(user) + shelf(user), meta, { books }));
+    return send(200, page((guest || (DEMO && !operator) ? showcase() : "") + reading(user) + shelf(user), meta, { books }));
   }
   if (req.url === "/privacy" || req.url === "/privacy/export" || req.url === "/privacy/clear") {
     if (guest) return send(403, page("<p>Sign in to manage personal history.</p>"));
