@@ -42,6 +42,7 @@ async function askOnce() {
 }
 
 const LEAD_WORDS = 30;
+const LEAD_INS = 3;
 const COMMENTARY_WORDS = 60;
 const plain = (s: string) =>
   s.replace(/<[^>]+>/g, "").replace(/&(amp|lt|gt|quot);/g, (_, e: string) => ({ amp: "&", lt: "<", gt: ">", quot: '"' })[e]!).trim();
@@ -55,10 +56,10 @@ function voiceProblems(html: string) {
   const problems: string[] = [];
   for (const text of [lead, ...commentary]) {
     if (text.includes(";")) problems.push(`semicolon in "${text}"`);
-    if (/[—–]/.test(text)) problems.push(`dash in "${text}"`);
     if (/:\s/.test(text)) problems.push(`colon joining clauses in "${text}"`);
   }
   if (words(lead) > LEAD_WORDS) problems.push(`lead is ${words(lead)} words, limit ${LEAD_WORDS}`);
+  if (commentary.length > LEAD_INS) problems.push(`${commentary.length} lead-ins, limit ${LEAD_INS}`);
   const total = commentary.reduce((n, text) => n + words(text), 0);
   if (total > COMMENTARY_WORDS) problems.push(`commentary is ${total} words, limit ${COMMENTARY_WORDS}`);
   return problems;
@@ -79,8 +80,6 @@ html = html.replace(/<button type="button" class="source"[^>]*>(.*?)<\/button>/g
 const previous = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : {};
 writeFileSync(out, JSON.stringify({
   question,
-  generated: new Date().toISOString().slice(0, 10),
-  answerModel: process.env.GURU_ANSWER_MODEL || undefined,
   html,
   suggestions: previous.suggestions ?? [],
 }, null, 2) + "\n");

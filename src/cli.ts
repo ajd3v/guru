@@ -211,6 +211,11 @@ async function selfcheck() {
     cite({ ...top, paginated: 0, page_start: "well-being, para. 1" } as any),
     "[Patanjali, Yoga Sutras, well-being, para. 1]",
   );
+  // A heading's own closing period would sit in front of the locator's comma.
+  assert.equal(
+    cite({ ...top, paginated: 0, page_start: '"A SELECTION FROM THE DISCOURSES OF EPICTETUS.", para. 197' } as any),
+    "[Patanjali, Yoga Sutras, A SELECTION FROM THE DISCOURSES OF EPICTETUS, para. 197]",
+  );
   // Page ranges are built with a hyphen after this runs, so they are untouched by it.
   assert.equal(cite({ ...top, page_start: "12", page_end: "13" } as any), "[Patanjali, Yoga Sutras, p. 12-13]");
 

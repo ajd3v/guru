@@ -235,5 +235,12 @@ assert(brief.answer.includes("> Be still."), "short source answers must remain s
 assert(!brief.answer.includes("> I."), "section numbering is not offered as a sentence");
 assert(JSON.stringify(seen[0].messages).includes('Laozi'), "selection includes source metadata");
 
+// A bare numeral heading opens its chunk on its own line and joins the first sentence. It is
+// dropped when it is the section in the locator, and a pronoun "I" in that section is kept.
+replies = ["[P0S0] [P0S1]"];
+const heading = (await ask("q", [{ ...hit(1, "I\nThere are things which are within our power, and there\nare things beyond it. I\nchoose what is mine."), paginated: 0, page_start: '"I", para. 1' }])).answer;
+assert(heading.includes("> There are things which are within our power"), "a section heading is not part of the quotation");
+assert(heading.includes("I choose what is mine."), "the pronoun I survives");
+
 server.close();
 console.error("llm stub tests ok");

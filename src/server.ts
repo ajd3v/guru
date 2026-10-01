@@ -1515,7 +1515,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     const meta = operator ? ownerAllowance : allowanceText(readAllowance(logdb, allowanceBuckets(user, guest, device.id, clientAddress(req), db)[0]));
     const books = listBooks(db);
     db.close();
-    return send(200, page((guest || (DEMO && !operator) ? showcase() : "") + reading(user) + shelf(user), meta, { books }));
+    return send(200, page((guest ? showcase() : "") + reading(user) + shelf(user), meta, { books }));
   }
   if (req.url === "/privacy" || req.url === "/privacy/export" || req.url === "/privacy/clear") {
     if (guest) return send(403, page("<p>Sign in to manage personal history.</p>"));

@@ -404,6 +404,8 @@ export function cite(h: Hit) {
         .replace(/\s+/g, " ")
         .replace(/,\s*,/g, ",")
         .replace(/[\s,]+$/, "")
+        // A heading that ends in a period ("...OF EPICTETUS.") reads as a typo before ", para."
+        .replace(/(?<!\.)\.(?=,)/g, "")
         .trim();
   // Author, then title, then locator: the order a reader expects and the one the daily
   // readings this is modelled on use. Title-first read like a catalogue entry.

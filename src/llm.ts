@@ -480,8 +480,14 @@ function catalogue(hits: Hit[]) {
       // the sentence and reads as a typo once quoted.
       const rawStart = hit.text.indexOf(raw, cursor);
       cursor = rawStart + raw.length;
-      const text = raw.trim();
-      const start = rawStart + raw.indexOf(text);
+      let text = raw.trim();
+      let start = rawStart + raw.indexOf(text);
+      // A chunk opens on its heading, so a bare numeral heading ("I") arrives glued to the first
+      // sentence by the newline between units. It goes only when it opens the passage and is
+      // exactly the section named in the locator, which a pronoun "I" never is.
+      const section = /^"([IVXLCDM]+)[.)]?"/.exec(String(hit.page_start))?.[1];
+      const heading = start === 0 && section ? new RegExp(`^${section}[.)]?[ \\t]*\\n\\s*`).exec(text) : null;
+      if (heading) { text = text.slice(heading[0].length); start += heading[0].length; }
       if ((text.match(/\p{L}/gu) ?? []).length < 2 || /^[IVXLCDM]+[.)]?$/i.test(text)) return;
       const id = `P${hi}S${++si}`;
       byId.set(id, { text, hit, start, end: start + text.length });
@@ -500,14 +506,14 @@ The quotations carry the answer. Your sentences only lead the reader into them, 
 Lay it out like this, with your own words and ids in place of these:
 SYNOPSIS: One or two plain sentences.
 
-A short lead-in. [P0S0][P0S1]
+A short lead-in. [PaSb][PaSc]
 
-[P1S3]
+[PdSe]
 
-Another short lead-in. [P2S0]
+Another short lead-in. [PfSg]
 
 Sound like a well-read friend answering, not a lecture or a press release. Use short, concrete sentences and plain words.
-Never use a semicolon, an em dash or an en dash. Never join two clauses with a colon. Write two sentences instead.
+Never use a semicolon, an em dash or an en dash. Never join two clauses with a colon. Write two sentences instead. The SYNOPSIS: label is not a clause, and the first line must still start with it.
 No lists of three adjectives or phrases. No "not X, but Y" and no "it's not just X, it's Y". No rhetorical questions.
 Avoid these words and phrases: robust, seamless, delve, leverage, utilize, tapestry, journey, landscape, "at its core", "it's worth noting", "ultimately".
 Build each point on the passage that says it best. Quote a book again only when a second passage adds something the first did not. A second voice agreeing is worth more than the same voice continuing. If two books differ, that disagreement is the answer and both belong in it.
