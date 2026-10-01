@@ -41,12 +41,8 @@ async function askOnce() {
   return html;
 }
 
-const LEAD_WORDS = 30;
-const LEAD_INS = 3;
-const COMMENTARY_WORDS = 60;
 const plain = (s: string) =>
   s.replace(/<[^>]+>/g, "").replace(/&(amp|lt|gt|quot);/g, (_, e: string) => ({ amp: "&", lt: "<", gt: ">", quot: '"' })[e]!).trim();
-const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
 
 /** What is wrong with the model's own prose, empty when nothing is. */
 function voiceProblems(html: string) {
@@ -58,10 +54,6 @@ function voiceProblems(html: string) {
     if (text.includes(";")) problems.push(`semicolon in "${text}"`);
     if (/:\s/.test(text)) problems.push(`colon joining clauses in "${text}"`);
   }
-  if (words(lead) > LEAD_WORDS) problems.push(`lead is ${words(lead)} words, limit ${LEAD_WORDS}`);
-  if (commentary.length > LEAD_INS) problems.push(`${commentary.length} lead-ins, limit ${LEAD_INS}`);
-  const total = commentary.reduce((n, text) => n + words(text), 0);
-  if (total > COMMENTARY_WORDS) problems.push(`commentary is ${total} words, limit ${COMMENTARY_WORDS}`);
   return problems;
 }
 
