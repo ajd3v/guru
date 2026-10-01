@@ -13,7 +13,7 @@
   ],
   "sourceRegister": "classic works of philosophy or scripture",
   "vectorWeight": 2,
-  "maxQuotesPerBook": 3,
+  "maxQuotesPerBook": 5,
   "bookDetails": [
     {
       "title": "Tao Teh King",
