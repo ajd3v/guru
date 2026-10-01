@@ -499,17 +499,16 @@ function catalogue(hits: Hit[]) {
 
 /**
  * One worked answer to a question none of the eval cases ask, so the model sees advice to the
- * reader rather than a tour of the sources. Rules alone left DeepSeek V4.1 Flash retelling each
- * passage just above the quotation that said it. On 10 reader questions judged blind beside the
- * previous prompt and four other rewrites, this one with the rules above scored 3.4 out of 5
- * overall against 2.15 for the previous prompt, and raw copied 8-word runs fell from 242 to 3.
- * Its ids can never parse, so an example copied into an answer has nothing to splice and is
- * dropped as ungrounded.
+ * reader rather than a tour of the sources. Its ids can never parse, so an example copied into
+ * an answer has nothing to splice and is dropped as ungrounded.
  */
 const EXAMPLE = `An example of the shape, for a different question. Its ids are placeholders and never valid, so write your own answer from the sentences given.
 Question: "How do I stop comparing myself to other people?"
+
 SYNOPSIS: Put your attention back on your own work and your own day. You cannot win a contest with someone else's life, and you do not have to enter it.
+
 When you catch yourself measuring your life against someone else's, stop and ask what you actually want. Usually it is something you can start on today. [PaSb]
+
 Then do one small thing toward it before the urge to check on others comes back. Visible progress quiets envy better than any argument against it. [PcSd] [PcSe]`;
 
 const SELECT_SYSTEM = `Answer the reader's question from the numbered source sentences.
@@ -527,8 +526,8 @@ No lists of three adjectives or phrases. No "not X, but Y" and no "it's not just
 Avoid these words and phrases: robust, seamless, delve, leverage, utilize, tapestry, journey, landscape, "at its core", "it's worth noting", "ultimately".
 Build each point on the passage that says it best. Quote a book again only when a second passage adds something the first did not. A second voice agreeing is worth more than the same voice continuing. If two books differ, that disagreement is the answer and both belong in it.
 Match the register of the question, plainly for a plain question. Never be arch or clever about suffering, grief, dying, illness or addiction. When in doubt, be plain.
-${EXAMPLE}
-If nothing supplied bears on the question, output NOT COVERED. If the passages speak to it only in part, answer with what they do say and no more.`;
+If nothing supplied bears on the question, output NOT COVERED. If the passages speak to it only in part, answer with what they do say and no more.
+${EXAMPLE}`;
 
 /**
  * Plain punctuation in the model's own prose.
@@ -542,11 +541,12 @@ If nothing supplied bears on the question, output NOT COVERED. If the passages s
 export const plainDashes = (s: string) => s.replace(/\s*[—–]\s*/g, ", ").replace(/,\s*,/g, ",");
 
 /**
- * The model's own sentences, minus any that share an 8-word run with an offered passage, or that
- * appear whole in one. The prompt forbids copying, the model does it anyway, and copied prose is
- * never checked. A short archaic line ("For say on each occasion, It seemed so to him.") has too
- * few long words for the 8-word rule, so a sentence of five words or more found verbatim in a
- * passage goes too. Ceiling: exact runs only, so a close paraphrase still gets through.
+ * The model's own sentences, minus any that share an 8-word run with an offered passage, and minus
+ * any of five words or more found verbatim in one. Under eight words that needs two words longer
+ * than four letters, so "That is the real test." stays. The prompt forbids copying, the model does
+ * it anyway, and copied prose is never checked. A short archaic line ("For say on each occasion,
+ * It seemed so to him.") has too few long words for the 8-word rule, which is why the whole
+ * sentence is checked too. Ceiling: exact runs only, so a close paraphrase still gets through.
  */
 const words = (s: string) => (s.normalize("NFKC").toLowerCase().replace(/[\u2018\u2019\u02bc]/g, "'").match(/[\p{L}\p{N}']+/gu) ?? [])
   .map((w) => w.replace(/^'+|'+$/g, "")).filter(Boolean);
@@ -567,7 +567,8 @@ function sentences(text: string) {
 function withoutCopies(prose: string, source: string) {
   return sentences(prose).filter((sentence) => {
     const w = words(sentence);
-    if (w.length >= 5 && source.includes(` ${w.join(" ")} `)) return false;
+    const long = w.filter((x) => x.length > 4).length;
+    if (w.length >= 5 && (w.length >= 8 || long >= 2) && source.includes(` ${w.join(" ")} `)) return false;
     for (let i = 0; i + 8 <= w.length; i++) {
       const run = w.slice(i, i + 8);
       // A run of short common words ("is one of the most important things in") is ordinary English.
@@ -609,12 +610,13 @@ export async function ask(
   // model reaches for however it is told is stripped, since the standfirst styling already
   // says this is editorial. Only when "that" or a colon follows, so a whole clause is left.
   // Without one, "The passages advise you to catch anger early" became "You to catch anger early."
-  const synopsis = plainDashes((rawDraft.match(/^[ \t]*SYNOPSIS:[ \t]*(.+)$/im)?.[1] ?? "").replace(/\s*\[?\bP\d+S\d+\b\]?/g, "").replace(/\s+([.,;:])/g, "$1").trim())
+  const synopsis = plainDashes((rawDraft.match(/^[ \t]*SYNOPSIS:[ \t]*(.+)$/im)?.[1] ?? "").replace(/\s*\[?\bP\d+S\d+\b\]?|\s*\[P[^\]\s]*S[^\]\s]*\]/g, "").replace(/\s+([.,;:])/g, "$1").trim())
     .replace(/^(?:these|the|this|those)\s+(?:passages?|texts?|excerpts?|readings?|books?)\b[^,.]{0,60}?\b(?:suggests?|say|offer|counsel|show|remind us|tell us|tell you|point|indicate|advise|describe|teach|urge|argue|recommend|present)\b(?:\s+that\b[:,]?|\s*:)\s*/i, "")
     .replace(/^./, (c) => c.toUpperCase());
   const draft = rawDraft.replace(/^[ \t]*SYNOPSIS:.*$/im, "").trim();
   if (/^\s*NOT COVERED\b/i.test(draft)) return decline;
-  const source = ` ${hits.map((hit) => words(hit.text).join(" ")).join(" | ")} `;
+  // The example's sentences are guarded like a passage's, so example advice cannot pass for an answer.
+  const source = ` ${[...hits.map((hit) => hit.text), EXAMPLE].map((text) => words(text).join(" ")).join(" | ")} `;
 
   // Only source records cross this seam as quotations. The model's prose is kept as prose,
   // and only while the ids it rests on resolve: a claim whose quotes are all gone goes with
@@ -627,6 +629,8 @@ export async function ask(
   for (const block of draft.replace(/^\s*SYNOPSIS:.*$/gim, "").split(/\n\s*\n/)) {
     const groups: { hit: Hit; start: number; end: number }[] = [];
     const quotes: string[] = [];
+    // A placeholder like the example's [PaSb] can never resolve, so it counts as invented.
+    invented += [...block.matchAll(/\[P[^\]\s]*S[^\]\s]*\]/g)].filter((m) => !/^\[P\d+S\d+\]$/.test(m[0])).length;
     for (const match of block.matchAll(/\[(P\d+S\d+)\]/g)) {
       const id = match[1];
       const record = byId.get(id);
@@ -654,7 +658,7 @@ export async function ask(
     // The prose with its ids lifted out. A line the model opened with ">" is a quotation it
     // typed itself, which is never allowed through, whatever it says.
     const prose = withoutCopies(block.split("\n").filter((line) => !line.trimStart().startsWith(">")).join(" ")
-      .replace(/\[?\bP\d+S\d+\b\]?/g, "").replace(/\s+([.,;:])/g, "$1").replace(/\s+/g, " ").replace(/^[.,;:\s]+/, "").trim(), source);
+      .replace(/\[?\bP\d+S\d+\b\]?|\[P[^\]\s]*S[^\]\s]*\]/g, "").replace(/\s+([.,;:])/g, "$1").replace(/\s+/g, " ").replace(/^[.,;:\s]+/, "").trim(), source);
     blocks.push(/[\p{L}\p{N}]/u.test(prose) ? `${prose}\n\n${quotes.join("\n\n")}` : quotes.join("\n\n"));
   }
   return {

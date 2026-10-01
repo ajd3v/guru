@@ -284,6 +284,9 @@ replies = ["SYNOPSIS: Let the insult pass. For say on each occasion, It seemed s
 const archaic = await ask("q", [occasion]);
 assert.equal(archaic.synopsis, "Let the insult pass.", "a whole copied sentence leaves the synopsis");
 assert(archaic.answer.startsWith("Remember the person thought they were right.\n\n> For say on each occasion"), "a whole copied sentence leaves the paragraph and its quotation stays");
+const plainLine = hit(4, "Hold back the chariot. That is the real test.");
+replies = ["Stop before you act. That is the real test. [P0S0]"];
+assert((await ask("q", [plainLine])).answer.startsWith("Stop before you act. That is the real test.\n\n>"), "a short plain sentence found in a passage is not a copy");
 
 // The worked example in the prompt uses ids that never parse. A model that hands it back has
 // grounded nothing, so it reads as an ungrounded answer rather than the example passing for one.
@@ -293,10 +296,21 @@ await ask("q", [passage]);
 const system = String(seen[0].system);
 const example = system.slice(system.indexOf("SYNOPSIS: Put your attention"), system.indexOf("[PcSd] [PcSe]") + 13);
 assert(example.includes("[PaSb]"), "the example is in the prompt");
-replies = [example.split("\n").join("\n\n")];
+assert(/\[PaSb\]\n\nThen/.test(example), "the example separates paragraphs with blank lines, as the parser splits them");
+replies = [example];
 const parroted = await ask("q", [passage]);
 assert(/could not ground/.test(parroted.answer), "a copied example grounds nothing");
 assert.equal(parroted.passages.length, 0);
+// A placeholder beside a real id leaves no bracket behind and counts as invented.
+replies = ["SYNOPSIS: Be still. [PaSb]\n\nNaming has limits. [PaSb] [P0S0]"];
+const mixed = await ask("q", [passage]);
+assert.equal(mixed.synopsis, "Be still.");
+assert(mixed.answer.startsWith("Naming has limits.\n\n> The Tao that can be trodden"), "the placeholder is stripped and the real id is spliced");
+assert(!/\[P[^\]\s]*S/.test(mixed.answer), "no placeholder leaks");
+assert.equal(mixed.invented, 1, "the placeholder counts as invented");
+// The example's own sentences are copies like any passage's, so its advice cannot pass for an answer.
+replies = ["Visible progress quiets envy better than any argument against it. Naming has limits. [P0S0]"];
+assert((await ask("q", [passage])).answer.startsWith("Naming has limits.\n\n>"), "an example sentence is dropped from the prose");
 
 server.close();
 console.error("llm stub tests ok");
