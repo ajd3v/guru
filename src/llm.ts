@@ -552,9 +552,10 @@ export async function ask(
   // id parsing runs and rendered apart from the passages, in the page's voice, so it can be
   // neither a misquote nor mistaken for one. The "These passages suggest that" opener the
   // model reaches for however it is told is stripped, since the standfirst styling already
-  // says this is editorial.
+  // says this is editorial. Only when "that" or a colon follows, so a whole clause is left.
+  // Without one, "The passages advise you to catch anger early" became "You to catch anger early."
   const synopsis = plainDashes((rawDraft.match(/^[ \t]*SYNOPSIS:[ \t]*(.+)$/im)?.[1] ?? "").replace(/\s*\[?\bP\d+S\d+\b\]?/g, "").replace(/\s+([.,;:])/g, "$1").trim())
-    .replace(/^(?:these|the|this|those)\s+(?:passages?|texts?|excerpts?|readings?|books?)\b[^,.]{0,60}?\b(?:suggest|say|offer|counsel|show|remind us|tell us|point|indicate|advise|describe|teach|urge|argue|recommend|present)\b(?:\s+that)?[:,]?\s*/i, "")
+    .replace(/^(?:these|the|this|those)\s+(?:passages?|texts?|excerpts?|readings?|books?)\b[^,.]{0,60}?\b(?:suggest|say|offer|counsel|show|remind us|tell us|point|indicate|advise|describe|teach|urge|argue|recommend|present)\b(?:\s+that\b[:,]?|\s*:)\s*/i, "")
     .replace(/^./, (c) => c.toUpperCase());
   const draft = rawDraft.replace(/^[ \t]*SYNOPSIS:.*$/im, "").trim();
   if (/^\s*NOT COVERED\b/i.test(draft)) return decline;

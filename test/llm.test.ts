@@ -168,6 +168,12 @@ const dashedSource = hit(1, "The Tao that can be trodden—that one—is not the
 replies = [`SYNOPSIS: the way named—the spoken one—is not the lasting way [P0S0]\nA claim [P0S0]`];
 const dashed = await ask("q", [dashedSource]);
 assert.equal(dashed.synopsis, "The way named, the spoken one, is not the lasting way", "the synopsis is kept, in the page's own punctuation");
+// A stripped opener has to leave a sentence behind. "The passages advise" came off the
+// front of the next synopsis and left the fragment "You to catch anger early."
+replies = [`SYNOPSIS: The passages advise you to catch anger early.\nA claim [P0S0]`];
+assert.equal((await ask("q", [passage])).synopsis, "The passages advise you to catch anger early.");
+replies = [`SYNOPSIS: These passages suggest that anger passes.\nA claim [P0S0]`];
+assert.equal((await ask("q", [passage])).synopsis, "Anger passes.");
 assert(dashed.answer.includes("trodden—that one—is"), "the author's em-dash survives in the quote");
 
 // The near-miss reply is not a decline. Its own wording points at the passages, so hiding
