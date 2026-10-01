@@ -277,5 +277,26 @@ assert.equal(parts[0], 'He told Mr. Smith "stop."', "an abbreviation does not en
 assert.equal(parts[2], 'He told Mr. Smith "stop." Then he left, and it is one of the most important things in life. Kindness is one of the most important things in life to practise.');
 assert.deepEqual(parts.map((p) => p.startsWith("> ") ? "quote" : "prose"), ["prose", "quote", "prose", "quote", "quote"], "an all-copied paragraph renders as its quotation alone");
 
+// A short archaic line has too few long words for the 8-word rule, so a sentence found whole in a
+// passage is dropped too. A short sentence that only shares words with the passage stays.
+const occasion = hit(3, "When any person treats you ill, remember that he acts as it seemed right to him. For say on each occasion, It seemed so to him.");
+replies = ["SYNOPSIS: Let the insult pass. For say on each occasion, It seemed so to him.\n\nRemember the person thought they were right. For say on each occasion, It seemed so to him. [P0S1]"];
+const archaic = await ask("q", [occasion]);
+assert.equal(archaic.synopsis, "Let the insult pass.", "a whole copied sentence leaves the synopsis");
+assert(archaic.answer.startsWith("Remember the person thought they were right.\n\n> For say on each occasion"), "a whole copied sentence leaves the paragraph and its quotation stays");
+
+// The worked example in the prompt uses ids that never parse. A model that hands it back has
+// grounded nothing, so it reads as an ungrounded answer rather than the example passing for one.
+seen.length = 0;
+replies = ["[P0S0]"];
+await ask("q", [passage]);
+const system = String(seen[0].system);
+const example = system.slice(system.indexOf("SYNOPSIS: Put your attention"), system.indexOf("[PcSd] [PcSe]") + 13);
+assert(example.includes("[PaSb]"), "the example is in the prompt");
+replies = [example.split("\n").join("\n\n")];
+const parroted = await ask("q", [passage]);
+assert(/could not ground/.test(parroted.answer), "a copied example grounds nothing");
+assert.equal(parroted.passages.length, 0);
+
 server.close();
 console.error("llm stub tests ok");
