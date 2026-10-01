@@ -248,5 +248,13 @@ const heading = (await ask("q", [{ ...hit(1, "I\nThere are things which are with
 assert(heading.includes("> There are things which are within our power"), "a section heading is not part of the quotation");
 assert(heading.includes("I choose what is mine."), "the pronoun I survives");
 
+// Prose that copies a passage loses the copied sentence and keeps its quotation. The model was
+// told never to do this and retyped whole paragraphs anyway, which no check ever saw.
+replies = ["SYNOPSIS: The name that can be named is not the enduring and unchanging name. Names fall short.\n\nThis is where the book begins. The Tao that can be trodden is not the enduring and unchanging Tao, it says. [P0S0]"];
+const copying = await ask("q", [passage]);
+assert.equal(copying.synopsis, "Names fall short.", "a copied synopsis sentence is dropped");
+assert(copying.answer.startsWith("This is where the book begins.\n\n> The Tao that can be trodden"), "the framing sentence and the quotation stay");
+assert(!copying.answer.includes("it says"), "the sentence that copies the passage is dropped");
+
 server.close();
 console.error("llm stub tests ok");

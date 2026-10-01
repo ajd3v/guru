@@ -524,6 +524,25 @@ If nothing supplied bears on the question, output NOT COVERED. If the passages s
  */
 export const plainDashes = (s: string) => s.replace(/\s*[—–]\s*/g, ", ").replace(/,\s*,/g, ",");
 
+/**
+ * The model's own sentences, minus any that copy a passage.
+ *
+ * The prompt forbids copying the source's wording into the prose, and DeepSeek did it anyway in
+ * about one answer in six, once retyping two Enchiridion paragraphs whole. Copied text outside a
+ * quotation is never checked, so it reads as the page's voice while being an author's words.
+ * A sentence sharing 8 consecutive words with any offered passage is dropped and the quotations
+ * stay, as oneQuotePerBook enforces its rule in code. The ceiling: exact 8-word runs only, so a
+ * close paraphrase or a copy with one word changed every few words still gets through.
+ */
+const words = (s: string) => s.toLowerCase().replace(/[\u2018\u2019]/g, "'").match(/[\p{L}\p{N}']+/gu) ?? [];
+function withoutCopies(prose: string, source: string) {
+  return prose.split(/(?<=[.?!])\s+/).filter((sentence) => {
+    const w = words(sentence);
+    for (let i = 0; i + 8 <= w.length; i++) if (source.includes(` ${w.slice(i, i + 8).join(" ")} `)) return false;
+    return true;
+  }).join(" ").trim();
+}
+
 export async function ask(
   query: string,
   hits: Hit[],
@@ -561,6 +580,7 @@ export async function ask(
     .replace(/^./, (c) => c.toUpperCase());
   const draft = rawDraft.replace(/^[ \t]*SYNOPSIS:.*$/im, "").trim();
   if (/^\s*NOT COVERED\b/i.test(draft)) return decline;
+  const source = ` ${hits.map((hit) => words(hit.text).join(" ")).join(" | ")} `;
 
   // Only source records cross this seam as quotations. The model's prose is kept as prose,
   // and only while the ids it rests on resolve: a claim whose quotes are all gone goes with
@@ -599,13 +619,14 @@ export async function ask(
     if (!quotes.length) continue;
     // The prose with its ids lifted out. A line the model opened with ">" is a quotation it
     // typed itself, which is never allowed through, whatever it says.
-    const prose = block.split("\n").filter((line) => !line.trimStart().startsWith(">")).join(" ")
+    let prose = block.split("\n").filter((line) => !line.trimStart().startsWith(">")).join(" ")
       .replace(/\[?\bP\d+S\d+\b\]?/g, "").replace(/\s+([.,;:])/g, "$1").replace(/\s+/g, " ").replace(/^[.,;:\s]+/, "").trim();
+    prose = withoutCopies(prose, source);
     blocks.push(/[\p{L}\p{N}]/u.test(prose) ? `${prose}\n\n${quotes.join("\n\n")}` : quotes.join("\n\n"));
   }
   return {
     ...empty,
-    synopsis: selected.length ? synopsis : "",
+    synopsis: selected.length ? withoutCopies(synopsis, source) : "",
     passages: selected,
     answer: selected.length ? blocks.join("\n\n") : "I could not ground an answer in the retrieved passages.",
     declined: false,
