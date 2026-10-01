@@ -715,6 +715,7 @@ ${OG_IMAGE ? `<meta name="twitter:image" content="${ORIGIN}/og.png">` : ""}
   }
   .suggest button:hover { color: var(--moss); border-color: var(--moss); }
   .showcase-label { margin: 0 0 .4rem; font: 500 .75rem/1.6 var(--sans); letter-spacing: .06em; text-transform: uppercase; }
+  .showcase > .showcase-label, .showcase > h2 { max-width: min(100%, 78ch); margin-inline: auto; }
   .showcase h2 { margin-bottom: 1.5rem; }
   .showcase .answer cite, .showcase .answer cite:hover { cursor: auto; color: var(--quiet); }
   /* The example makes way for the visitor's own first answer. */
