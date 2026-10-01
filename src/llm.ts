@@ -525,20 +525,34 @@ If nothing supplied bears on the question, output NOT COVERED. If the passages s
 export const plainDashes = (s: string) => s.replace(/\s*[—–]\s*/g, ", ").replace(/,\s*,/g, ",");
 
 /**
- * The model's own sentences, minus any that copy a passage.
- *
- * The prompt forbids copying the source's wording into the prose, and DeepSeek did it anyway in
- * about one answer in six, once retyping two Enchiridion paragraphs whole. Copied text outside a
- * quotation is never checked, so it reads as the page's voice while being an author's words.
- * A sentence sharing 8 consecutive words with any offered passage is dropped and the quotations
- * stay, as oneQuotePerBook enforces its rule in code. The ceiling: exact 8-word runs only, so a
- * close paraphrase or a copy with one word changed every few words still gets through.
+ * The model's own sentences, minus any that share an 8-word run with an offered passage. The
+ * prompt forbids copying, the model does it anyway, and copied prose is never checked.
+ * Ceiling: exact 8-word runs only, so a close paraphrase still gets through.
  */
-const words = (s: string) => s.toLowerCase().replace(/[\u2018\u2019]/g, "'").match(/[\p{L}\p{N}']+/gu) ?? [];
+const words = (s: string) => (s.normalize("NFKC").toLowerCase().replace(/[\u2018\u2019\u02bc]/g, "'").match(/[\p{L}\p{N}']+/gu) ?? [])
+  .map((w) => w.replace(/^'+|'+$/g, "")).filter(Boolean);
+// A full stop after a title, an abbreviation or a lone initial ("A. Smith") does not end a sentence.
+const ABBREVIATION = /\b(?:mr|mrs|ms|dr|st|mt|vs|etc|e\.g|i\.e)\.$/i;
+const INITIAL = /(?<!\p{L})[A-HJ-Z]\.$/u;
+function sentences(text: string) {
+  const out: string[] = [];
+  let start = 0;
+  for (const m of text.matchAll(/[.?!]["'\u201d\u2019)\]]*\s+/g)) {
+    const head = text.slice(start, m.index + 1);
+    if (m[0][0] === "." && (ABBREVIATION.test(head) || INITIAL.test(head))) continue;
+    out.push(text.slice(start, m.index + m[0].length).trim());
+    start = m.index + m[0].length;
+  }
+  return [...out, text.slice(start).trim()].filter(Boolean);
+}
 function withoutCopies(prose: string, source: string) {
-  return prose.split(/(?<=[.?!])\s+/).filter((sentence) => {
+  return sentences(prose).filter((sentence) => {
     const w = words(sentence);
-    for (let i = 0; i + 8 <= w.length; i++) if (source.includes(` ${w.slice(i, i + 8).join(" ")} `)) return false;
+    for (let i = 0; i + 8 <= w.length; i++) {
+      const run = w.slice(i, i + 8);
+      // A run of short common words ("is one of the most important things in") is ordinary English.
+      if (run.filter((x) => x.length > 4).length >= 3 && source.includes(` ${run.join(" ")} `)) return false;
+    }
     return true;
   }).join(" ").trim();
 }
@@ -576,7 +590,7 @@ export async function ask(
   // says this is editorial. Only when "that" or a colon follows, so a whole clause is left.
   // Without one, "The passages advise you to catch anger early" became "You to catch anger early."
   const synopsis = plainDashes((rawDraft.match(/^[ \t]*SYNOPSIS:[ \t]*(.+)$/im)?.[1] ?? "").replace(/\s*\[?\bP\d+S\d+\b\]?/g, "").replace(/\s+([.,;:])/g, "$1").trim())
-    .replace(/^(?:these|the|this|those)\s+(?:passages?|texts?|excerpts?|readings?|books?)\b[^,.]{0,60}?\b(?:suggest|say|offer|counsel|show|remind us|tell us|point|indicate|advise|describe|teach|urge|argue|recommend|present)\b(?:\s+that\b[:,]?|\s*:)\s*/i, "")
+    .replace(/^(?:these|the|this|those)\s+(?:passages?|texts?|excerpts?|readings?|books?)\b[^,.]{0,60}?\b(?:suggests?|say|offer|counsel|show|remind us|tell us|tell you|point|indicate|advise|describe|teach|urge|argue|recommend|present)\b(?:\s+that\b[:,]?|\s*:)\s*/i, "")
     .replace(/^./, (c) => c.toUpperCase());
   const draft = rawDraft.replace(/^[ \t]*SYNOPSIS:.*$/im, "").trim();
   if (/^\s*NOT COVERED\b/i.test(draft)) return decline;
@@ -619,9 +633,8 @@ export async function ask(
     if (!quotes.length) continue;
     // The prose with its ids lifted out. A line the model opened with ">" is a quotation it
     // typed itself, which is never allowed through, whatever it says.
-    let prose = block.split("\n").filter((line) => !line.trimStart().startsWith(">")).join(" ")
-      .replace(/\[?\bP\d+S\d+\b\]?/g, "").replace(/\s+([.,;:])/g, "$1").replace(/\s+/g, " ").replace(/^[.,;:\s]+/, "").trim();
-    prose = withoutCopies(prose, source);
+    const prose = withoutCopies(block.split("\n").filter((line) => !line.trimStart().startsWith(">")).join(" ")
+      .replace(/\[?\bP\d+S\d+\b\]?/g, "").replace(/\s+([.,;:])/g, "$1").replace(/\s+/g, " ").replace(/^[.,;:\s]+/, "").trim(), source);
     blocks.push(/[\p{L}\p{N}]/u.test(prose) ? `${prose}\n\n${quotes.join("\n\n")}` : quotes.join("\n\n"));
   }
   return {

@@ -174,6 +174,10 @@ replies = [`SYNOPSIS: The passages advise you to catch anger early.\nA claim [P0
 assert.equal((await ask("q", [passage])).synopsis, "The passages advise you to catch anger early.");
 replies = [`SYNOPSIS: These passages suggest that anger passes.\nA claim [P0S0]`];
 assert.equal((await ask("q", [passage])).synopsis, "Anger passes.");
+replies = [`SYNOPSIS: This passage suggests that anger passes.\nA claim [P0S0]`];
+assert.equal((await ask("q", [passage])).synopsis, "Anger passes.");
+replies = [`SYNOPSIS: The passages tell you that anger passes.\nA claim [P0S0]`];
+assert.equal((await ask("q", [passage])).synopsis, "Anger passes.");
 assert(dashed.answer.includes("trodden—that one—is"), "the author's em-dash survives in the quote");
 
 // The near-miss reply is not a decline. Its own wording points at the passages, so hiding
@@ -255,6 +259,23 @@ const copying = await ask("q", [passage]);
 assert.equal(copying.synopsis, "Names fall short.", "a copied synopsis sentence is dropped");
 assert(copying.answer.startsWith("This is where the book begins.\n\n> The Tao that can be trodden"), "the framing sentence and the quotation stay");
 assert(!copying.answer.includes("it says"), "the sentence that copies the passage is dropped");
+// "Mr." and a stop inside closing quotes split where a reader would. A run of short common words
+// is not a copy. An all-copied paragraph leaves its quotation, an all-copied synopsis leaves "".
+const power = hit(2, "It is one of the most important things in life to be kind. There are things which are within our power, and there are things which are beyond our power. Within our power are opinion, aim, desire and aversion.");
+replies = [`SYNOPSIS: There are things which are within our power, and there are things which are beyond our power.
+
+He told Mr. Smith "stop." There are things which are within our power, and there are things which are beyond our power. [P0S0]
+
+He told Mr. Smith "stop." Then he left, and it is one of the most important things in life. Kindness is one of the most important things in life to practise. [P0S1]
+
+There are things which are within our power, and there are things which are beyond our power. [P0S2]`];
+const guarded2 = await ask("q", [power]);
+assert.equal(guarded2.synopsis, "", "an all-copied synopsis is empty");
+assert.equal(guarded2.passages.length, 3, "every quotation stays");
+const parts = guarded2.answer.split("\n\n");
+assert.equal(parts[0], 'He told Mr. Smith "stop."', "an abbreviation does not end the sentence");
+assert.equal(parts[2], 'He told Mr. Smith "stop." Then he left, and it is one of the most important things in life. Kindness is one of the most important things in life to practise.');
+assert.deepEqual(parts.map((p) => p.startsWith("> ") ? "quote" : "prose"), ["prose", "quote", "prose", "quote", "quote"], "an all-copied paragraph renders as its quotation alone");
 
 server.close();
 console.error("llm stub tests ok");
