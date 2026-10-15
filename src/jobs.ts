@@ -5,7 +5,7 @@
 // SQLite rather than a queue service: the jobs are low-volume, the database is already a
 // dependency, and a crashed worker leaves the row behind to be retried instead of losing it.
 import Database from "better-sqlite3";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 
 export type JobState = "queued" | "running" | "done" | "failed";
@@ -18,6 +18,7 @@ export type Job = {
   state: JobState;
   error: string | null;
   created_at: string;
+  attempts: number;
 };
 
 export function openJobs(path = process.env.GURU_JOBS_DB ?? "data/jobs.db") {
@@ -37,6 +38,8 @@ export function openJobs(path = process.env.GURU_JOBS_DB ?? "data/jobs.db") {
     create index if not exists jobs_by_user on jobs (user_id, id desc);
     create index if not exists jobs_by_state on jobs (state, id);
   `);
+  const columns = db.prepare("pragma table_info(jobs)").all() as { name: string }[];
+  if (!columns.some((c) => c.name === "attempts")) db.exec("alter table jobs add column attempts integer not null default 0");
   return db;
 }
 
@@ -56,7 +59,7 @@ export function enqueue(db: Database.Database, userId: string, path: string, fil
 export function claim(db: Database.Database): Job | undefined {
   return db
     .prepare(
-      `update jobs set state = 'running'
+      `update jobs set state = 'running', attempts = attempts + 1
        where id = (select id from jobs where state = 'queued' order by id limit 1)
        returning *`,
     )
@@ -73,7 +76,12 @@ export function finish(db: Database.Database, id: number, error?: string) {
 
 /** A worker killed mid-book leaves a row claimed forever. Hand them back at startup. */
 export function requeueStale(db: Database.Database) {
-  return db.prepare("update jobs set state = 'queued' where state = 'running'").run().changes;
+  const rows = db.prepare(`update jobs set
+    state = case when attempts >= 3 then 'failed' else 'queued' end,
+    error = case when attempts >= 3 then 'Worker stopped repeatedly while processing this file.' else null end
+    where state = 'running' returning path, state`).all() as { path: string; state: string }[];
+  for (const row of rows) if (row.state === "failed") rmSync(row.path, { force: true });
+  return rows.length;
 }
 
 export const listJobs = (db: Database.Database, userId: string, limit = 20) =>

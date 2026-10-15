@@ -45,7 +45,9 @@ const DB = process.env.GURU_DB ?? "data/library.db";
 /** The sidecar runs in its own process because PDF parsers are an RCE surface. */
 function extract(path: string, pageOffset = 0): Book {
   const args = [SIDECAR, path, ...(pageOffset ? ["--page-offset", String(pageOffset)] : [])];
-  const out = execFileSync(PY, args, { maxBuffer: 256 * 1024 * 1024, encoding: "utf8" });
+  const out = execFileSync(PY, args, {
+    timeout: 120_000, killSignal: "SIGKILL", maxBuffer: 256 * 1024 * 1024, encoding: "utf8",
+  });
   return { ...JSON.parse(out), page_offset: pageOffset };
 }
 

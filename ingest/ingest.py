@@ -8,6 +8,12 @@ Stdout is JSON only; diagnostics go to stderr.
 """
 import json, os, re, sys
 
+
+def limit_resources():
+    import resource
+    resource.setrlimit(resource.RLIMIT_AS, (1024 * 1024 * 1024, 1024 * 1024 * 1024))
+    resource.setrlimit(resource.RLIMIT_CPU, (120, 120))
+
 # ~4 chars/token. Overridable because chunk size is the single biggest retrieval lever
 # and the right value is an eval result, not a guess. See eval/.
 CHUNK_CHARS = int(os.environ.get("GURU_CHUNK_CHARS", 2000))
@@ -95,6 +101,11 @@ def read_epub(path, _page_offset):
     import ebooklib
     from ebooklib import epub
     from bs4 import BeautifulSoup
+    from zipfile import ZipFile
+    with ZipFile(path) as archive:
+        entries = archive.infolist()
+        if len(entries) > 10000 or sum(e.file_size for e in entries) > 256 * 1024 * 1024:
+            raise ValueError("EPUB exceeds extraction limits")
     book = epub.read_epub(path)
     title = (book.get_metadata("DC", "title") or [("", None)])[0][0]
     author = (book.get_metadata("DC", "creator") or [("", None)])[0][0]
@@ -344,10 +355,28 @@ def selfcheck():
         spans = [c for c in result["chunks"] if "Second page text" in c["text"]]
         assert all(str(c["page_end"]) == "2" for c in spans), spans
 
+        # Refuse expanded-size claims before the EPUB reader decompresses anything.
+        import struct
+        from zipfile import ZipFile
+        oversized = os.path.join(directory, "oversized.epub")
+        with ZipFile(oversized, "w") as archive:
+            archive.writestr("sample.xhtml", "synthetic")
+        with open(oversized, "rb") as source:
+            content = bytearray(source.read())
+        struct.pack_into("<I", content, content.index(b"PK\x01\x02") + 24, 256 * 1024 * 1024 + 1)
+        with open(oversized, "wb") as destination:
+            destination.write(content)
+        try:
+            read_epub(oversized, 0)
+            raise AssertionError("oversized EPUB was accepted")
+        except ValueError as error:
+            assert "extraction limits" in str(error), error
+
     print("selfcheck ok:", len(r["chunks"]), "chunks", file=sys.stderr)
 
 
 if __name__ == "__main__":
+    limit_resources()
     if "--selfcheck" in sys.argv:
         selfcheck()
     elif "--sample" in sys.argv:
