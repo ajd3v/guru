@@ -19,7 +19,7 @@ import SqliteDatabase from "better-sqlite3";
 import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
-import { authenticate, basicAuthUser, isLibrarian, isOperator, linkToken, tokenUser, readers, sessionCookie, sessionToken, SESSION_SECONDS, toWebRequest } from "./auth.ts";
+import { authenticate, basicAuthUser, isLibrarian, isOperator, linkToken, tokenUser, readers, sessionToken, SESSION_SECONDS, toWebRequest } from "./auth.ts";
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1437,17 +1437,22 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     }
   }
   const ip = clientAddress(req);
-  const loginQuery = new URL(req.url ?? "/", "http://local");
-  const credentialName = req.headers.authorization?.startsWith("Basic ") ?
-    Buffer.from(req.headers.authorization.slice(6), "base64").toString("utf8").split(":")[0] :
-    loginQuery.pathname === "/login" ? loginQuery.searchParams.get("u") : sessionCookie(req.headers.cookie)?.split(".")[0];
-  const account = credentialName && readers().includes(credentialName) ? credentialName : undefined;
-  if (failures.blocked(ip, account)) return send(429, PAGE("<p>Too many failed sign-ins. Try again later.</p>", false, true));
+  const passwordAttempt = req.headers.authorization?.startsWith("Basic ") === true;
+  const passwordName = passwordAttempt ? Buffer.from(req.headers.authorization!.slice(6), "base64").toString("utf8").split(":")[0] : undefined;
+  const account = (name: string | undefined) => name && readers().includes(name) ? name : undefined;
+  const limited = () => send(429, PAGE("<p>Too many failed sign-ins. Try again later.</p>", false, true));
   if (req.method === "GET" && new URL(req.url ?? "/", "http://local").pathname === "/login") {
     const query = new URL(req.url!, "http://local").searchParams;
     const name = query.get("u") ?? "";
     const user = query.has("t") ? tokenUser(name, query.get("t") ?? "") : basicAuthUser(req.headers.authorization);
-    if (!user) { failures.failed(ip, account); return send(401, PAGE("<p>That link is not valid.</p>", false, true)); }
+    if (!user) {
+      if (query.has("t") || passwordAttempt) {
+        const failedAccount = account(query.has("t") ? name : passwordName);
+        if (failures.blocked(ip, failedAccount)) return limited();
+        failures.failed(ip, failedAccount);
+      }
+      return send(401, PAGE("<p>That link is not valid.</p>", false, true));
+    }
     res.writeHead(302, {
       location: "/",
       "set-cookie": `__Host-${profile.cookieName}=${user}.${sessionToken(user)}; Max-Age=${SESSION_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Lax`,
@@ -1457,7 +1462,11 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method ?? "") && !safeMutation(req)) return send(403, PAGE("<p>Request origin rejected.</p>", false, true));
 
   const auth = await authenticate(req);
-  if (auth.kind === "respond" && auth.status === 401 && (req.headers.authorization !== undefined || sessionCookie(req.headers.cookie) !== undefined)) failures.failed(ip, account);
+  if (auth.kind === "respond" && auth.status === 401 && passwordAttempt) {
+    const failedAccount = account(passwordName);
+    if (failures.blocked(ip, failedAccount)) return limited();
+    failures.failed(ip, failedAccount);
+  }
   if (auth.kind === "respond") {
     // Clerk's headers carry the session cookie and redirect target; forward them as given.
     return res.writeHead(auth.status, Object.fromEntries(auth.headers)).end();
