@@ -36,7 +36,7 @@ export function signInFailures() {
     },
     blocked(ip: string, account?: string, now = Date.now()) {
       prune(now);
-      return entries.size >= 10_000 || keys(ip, account).some((key) => (entries.get(key)?.count ?? 0) >= 10);
+      return keys(ip, account).some((key) => (entries.get(key)?.count ?? 0) >= 10);
     },
   };
 }
