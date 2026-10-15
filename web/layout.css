@@ -18,6 +18,13 @@ ul.shelf { margin-top: 1rem; }
 footer { gap: .75rem 1rem; }
 footer a, footer button, footer .file { display: inline-flex; align-items: center; min-height: 44px; }
 footer form { flex-wrap: wrap; }
+form[action="/privacy"] button, form[action="/privacy/clear"] button, #clear-history {
+  min-height: 44px; max-width: 100%; border-radius: 8px; background: var(--field); color: var(--ink);
+  border: 1px solid var(--rule); padding: .5rem 1rem; font: inherit;
+}
+form[action="/privacy"] button, form[action="/privacy/clear"] button { cursor: pointer; }
+form[action="/privacy/clear"] { display: flex; flex-direction: column; gap: .5rem; align-items: flex-start; }
+form[action="/privacy/clear"] label { display: block; }
 :focus-visible { outline: 2px solid var(--blue, var(--moss)); outline-offset: 3px; }
 @media (min-width: 800px) {
   ul.shelf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2rem; }

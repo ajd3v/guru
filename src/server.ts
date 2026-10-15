@@ -938,6 +938,7 @@ ${profile.styles ? '<link rel="stylesheet" href="/theme.css">' : ""}
   ${guest || demo ? `${profile.pitch ? `<p class="pitch">${escape(profile.pitch)}</p>` : ""}
   <p class="trust" title="The model picks sentences by id. The app copies their wording from the book, and a quotation that fails the check is removed."><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="2 6.5 5 9.5 10 3"></polyline></svg>Every quotation checked against its source</p>` : ""}
 </header>
+<main id="main">
 <form id="ask-form" class="ask" method="post" action="/ask">
   ${choice?.books.length ? `<select id="book" name="book" class="scope" aria-label="Search in" title="Search in"><option value="">All books</option>${choice.books.map((b) =>
   `<option value="${b.id}" data-tradition="${escape(detailsFor(b)?.tradition || "")}" data-edition="${escape(detailsFor(b)?.edition || "")}"${b.id === choice.selected ? " selected" : ""}>${escape(bookLabel(b, choice.books))}</option>`).join("")}</select>` : ""}
@@ -959,6 +960,7 @@ ${guest && SHOWCASE?.suggestions?.length ? `<div class="suggest" role="group" ar
 ${choice?.books.length ? picker(choice.books, choice.compare) : ""}
 <p class="note meta" role="status">${escape(meta)}</p>
 <div id="out"><div id="hist"></div>${body}</div>
+</main>
 <footer>
   <span class="note">${loggingEnabled(reader) ? "Questions are stored for operator review." : "Question logging is off."} Browser history stays on this device.</span>
   ${guest
