@@ -135,6 +135,7 @@ $("bookmark").onclick = () => {
   catch { status("This browser could not save the bookmark.", true); }
 };
 document.addEventListener("keydown", (event) => {
+  if ($("viewport").contains(event.target)) return;
   if (/INPUT|TEXTAREA|BUTTON/.test(event.target.tagName) || event.ctrlKey || event.metaKey || event.altKey) return;
   if (event.key === "ArrowLeft") { event.preventDefault(); go(pageNumber - 1); }
   if (event.key === "ArrowRight") { event.preventDefault(); go(pageNumber + 1); }
