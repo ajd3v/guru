@@ -36,4 +36,4 @@ cp "$SCRIPT_DIR/verify-snapshot.cjs" "$WORK/verify.cjs"
 
 # NODE_PATH because require() resolves from the script's own directory, and the script is
 # mounted at /r while better-sqlite3 lives in /app/node_modules.
-docker run --rm --network none -v "$WORK:/r:ro" -e NODE_PATH=/app/node_modules "$IMAGE" node /r/verify.cjs
+docker run --rm --network none --user "$(id -u):$(id -g)" -v "$WORK:/r:ro" -e NODE_PATH=/app/node_modules "$IMAGE" node /r/verify.cjs

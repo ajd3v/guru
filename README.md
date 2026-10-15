@@ -137,6 +137,18 @@ runs in the background and the old shelf keeps answering until it is ready.
 
 Set `GURU_URL` to the public URL, and the model provider variables from `.env.example`.
 
+The image runs as `node` (UID/GID 1000). Before upgrading an existing root-owned data
+volume, take a verified backup and stop both roles. Migrate its ownership once, then
+start the new image. Fresh named volumes get the image's ownership automatically.
+
+```sh
+docker compose stop guru worker
+docker compose run --rm --no-deps --user 0:0 --entrypoint sh guru -c 'chown -R node:node /app/data'
+docker compose up -d --build guru worker
+```
+
+Bind mounts need the same UID/GID ownership. Keep the source and dependencies root-owned.
+
 ### Backups
 
 A reader's whole library is one SQLite file, so a backup is a snapshot of that file, and

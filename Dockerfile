@@ -39,6 +39,9 @@ RUN node -e "const {embed}=await import('./'+process.env.GURU_ENGINE_DIR+'/src/e
 ENV NODE_ENV=production PORT=8080
 EXPOSE 8080
 
+RUN mkdir -p /app/data /app/.cache && chown -R node:node /app/data /app/.cache
+USER node
+
 # `serve` and `worker` are the two roles; the entrypoint builds the starter library once.
 ENTRYPOINT ["sh", "-c", "exec \"$GURU_ENGINE_DIR/deploy/entrypoint.sh\" \"$@\"", "guru"]
 CMD ["serve"]
