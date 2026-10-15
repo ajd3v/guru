@@ -11,7 +11,7 @@ try {
   // no .env; env vars may still be set externally
 }
 
-import { profile, ENGINE_ROOT, PYTHON as PY, SIDECAR, broaden } from "./profile.ts";
+import { profile, ENGINE_ROOT, broaden } from "./profile.ts";
 import { datedReading, monthDayIn, MONTHS } from "./reading.ts";
 import { excerpt } from "./excerpt.ts";
 import assert from "node:assert";
@@ -33,6 +33,10 @@ import { bookLink, browseBook, detailsFor, picker, selection } from "./library.t
 import { SourceChanged, sourceBook, sourceContext, streamPdf } from "./source.ts";
 import { createRequire } from "node:module";
 import { countActive, enqueue, listJobs, openJobs } from "./jobs.ts";
+import { renderPage, requestLimit } from "./render.ts";
+
+const guestPages = requestLimit(60);
+const guestFinds = requestLimit(10);
 
 const PDFJS_ROOT = join(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"), "..");
 const PORT = Number(process.env.PORT ?? 8080);
@@ -1500,6 +1504,10 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   }
   const user = auth.userId;
   const guest = auth.guest === true;
+  const requestPath = new URL(req.url ?? "/", "http://local").pathname;
+  if (guest && requestPath === "/pdf-page" && !guestPages(ip)) {
+    return send(429, PAGE("<p>Too many requests. Try again shortly.</p>", false, true));
+  }
 
   // Both doors that move books rather than answers. Enforced on the routes, not by hiding the
   // controls: the upload is a plain PUT and the export a plain GET, so anyone who has seen the
@@ -1583,7 +1591,8 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
       const n = Number(sourceUrl.searchParams.get("page")) - book.page_offset;
       if (!pdf || !Number.isInteger(n) || n < 1) return void res.writeHead(404).end("page unavailable");
       try {
-        const png = execFileSync(PY, [SIDECAR, "--render", pdf.path, String(n)], { maxBuffer: 32 * 1024 * 1024 });
+        const png = await renderPage(pdf.path, n);
+        if (!png) return void res.writeHead(429).end("page renderer busy");
         res.writeHead(200, { "content-type": "image/png" });
         return void res.end(png);
       } catch { return void res.writeHead(404).end("page unavailable"); }
@@ -1594,6 +1603,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   }
 
   const runFind = async (form: URLSearchParams) => {
+    if (guest && !guestFinds(ip)) return send(429, page("<p>Too many requests. Try again shortly.</p>"));
     const q = form.get("q")?.trim() ?? "";
     const db = userLibrary(user);
     try {

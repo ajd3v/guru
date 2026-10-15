@@ -101,6 +101,12 @@ try {
   assert.notEqual(a, b, "each browser gets its own id");
 
   const HERE = "9.9.9.9";
+  for (let i = 0; i < 11; i++) {
+    const response = await fetch(base + (i % 2 ? "/ask" : "/find"), {
+      method: "POST", headers: { "x-forwarded-for": "203.0.113.200" }, body: "mode=find&q=",
+    });
+    assert.equal(response.status, i < 10 ? 400 : 429, "Find aliases share the guest request limit");
+  }
   for (let i = 0; i < ASKS; i++) assert.ok(!spent(await ask(a, HERE)), `A ask ${i + 1} is allowed`);
   assert.ok(spent(await ask(a, HERE)), "A is out after its own allowance");
   const scopedLimit = await fetch(base + "/ask", {
