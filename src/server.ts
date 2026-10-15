@@ -1444,13 +1444,12 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   if (req.method === "GET" && new URL(req.url ?? "/", "http://local").pathname === "/login") {
     const query = new URL(req.url!, "http://local").searchParams;
     const name = query.get("u") ?? "";
+    const attempt = query.has("t") || passwordAttempt;
+    const attemptedAccount = account(query.has("t") ? name : passwordName);
+    if (attempt && failures.blocked(ip, attemptedAccount)) return limited();
     const user = query.has("t") ? tokenUser(name, query.get("t") ?? "") : basicAuthUser(req.headers.authorization);
     if (!user) {
-      if (query.has("t") || passwordAttempt) {
-        const failedAccount = account(query.has("t") ? name : passwordName);
-        if (failures.blocked(ip, failedAccount)) return limited();
-        failures.failed(ip, failedAccount);
-      }
+      if (attempt) failures.failed(ip, attemptedAccount);
       return send(401, PAGE("<p>That link is not valid.</p>", false, true));
     }
     res.writeHead(302, {
@@ -1461,11 +1460,10 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   }
   if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method ?? "") && !safeMutation(req)) return send(403, PAGE("<p>Request origin rejected.</p>", false, true));
 
+  if (passwordAttempt && failures.blocked(ip, account(passwordName))) return limited();
   const auth = await authenticate(req);
   if (auth.kind === "respond" && auth.status === 401 && passwordAttempt) {
-    const failedAccount = account(passwordName);
-    if (failures.blocked(ip, failedAccount)) return limited();
-    failures.failed(ip, failedAccount);
+    failures.failed(ip, account(passwordName));
   }
   if (auth.kind === "respond") {
     // Clerk's headers carry the session cookie and redirect target; forward them as given.

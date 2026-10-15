@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import http from "node:http";
+import crypto from "node:crypto";
 import { syncBuiltinESMExports } from "node:module";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -63,29 +64,57 @@ try {
   const login = await request("/login", valid);
   assert.equal(login.status, 302);
   const cookie = login.headers["set-cookie"].split(";")[0];
+  const { linkToken } = await import("../src/auth.ts");
+  const link = `/login?u=reader&t=${linkToken("reader")}`;
   for (let i = 0; i < 10; i++) {
-    assert.equal((await request("/login?u=reader&t=x", from(`198.51.100.${i + 1}`))).status, 401);
+    assert.equal((await request("/login?u=reader&t=x", from("198.51.100.1"))).status, 401);
   }
-  assert.equal((await request("/login?u=reader&t=x", from("203.0.113.1"))).status, 429);
-  assert.equal((await request("/", { ...valid, ...from("198.51.100.1") })).status, 200);
+  assert.equal((await request("/login?u=reader&t=x", from("198.51.100.1"))).status, 429);
+  const compare = crypto.timingSafeEqual;
+  let comparisons = 0;
+  crypto.timingSafeEqual = ((a, b) => { comparisons++; return compare(a, b); }) as typeof compare;
+  syncBuiltinESMExports();
+  try {
+    assert.equal((await request(link, from("198.51.100.1"))).status, 429, "a correct link is indistinguishable from a wrong link while locked");
+    for (const authorization of [valid, invalid]) {
+      assert.equal((await request("/", { ...authorization, ...from("198.51.100.1") })).status, 429);
+      assert.equal((await request("/login", { ...authorization, ...from("198.51.100.1") })).status, 429);
+    }
+    assert.equal(comparisons, 0, "locked requests never compare passwords or token signatures");
+    assert.equal((await request("/login", { ...valid, ...from("203.0.113.7") })).status, 302);
+    assert.ok(comparisons > 0, "the comparison spy observes an unlocked password check");
+    comparisons = 0;
+    assert.equal((await request(link, from("203.0.113.7"))).status, 302);
+    assert.ok(comparisons > 0, "the comparison spy observes an unlocked link check");
+  } finally {
+    crypto.timingSafeEqual = compare;
+    syncBuiltinESMExports();
+  }
   assert.equal((await request("/", { cookie, ...from("198.51.100.1") })).status, 200);
   assert.equal((await request("/login", valid)).status, 302);
-  const { linkToken } = await import("../src/auth.ts");
-  assert.equal((await request(`/login?u=reader&t=${linkToken("reader")}`)).status, 302);
-  assert.equal((await request("/", { ...invalid, ...from("203.0.113.2") })).status, 429);
+  assert.equal((await request(link, from("203.0.113.1"))).status, 302, "a different address can still sign in to the named account");
+  assert.equal((await request("/", { ...valid, ...from("203.0.113.1") })).status, 200);
+  assert.equal((await request("/", { ...invalid, ...from("203.0.113.2") })).status, 401);
   for (let i = 0; i < 10; i++) {
     assert.equal((await request("/", { authorization: basic("unknown:wrong"), ...from("203.0.113.3") })).status, 401);
   }
   assert.equal((await request("/", { authorization: basic("unknown:wrong"), ...from("203.0.113.3") })).status, 429);
   assert.equal((await request("/", from("203.0.113.3"))).status, 200, "guests and healthchecks survive address lockout");
-  assert.equal((await request("/", { ...valid, ...from("203.0.113.3") })).status, 200);
+  assert.equal((await request("/", { ...valid, ...from("203.0.113.3") })).status, 429);
+  assert.equal((await request("/login", { ...valid, ...from("203.0.113.3") })).status, 429);
+  assert.equal((await request(link, from("203.0.113.3"))).status, 429);
   assert.equal((await request("/", { cookie, ...from("203.0.113.3") })).status, 200);
+  for (let i = 0; i < 10; i++) {
+    assert.equal((await request("/login?u=reader&t=x", from(`198.51.100.${i + 10}`))).status, 401);
+  }
+  assert.equal((await request("/login", { ...valid, ...from("203.0.113.5") })).status, 302, "guesses from other addresses cannot globally lock the account");
   for (let i = 0; i < 12; i++) {
     assert.equal((await request("/", { cookie: "__Host-guru=other.stale", ...from("203.0.113.4") })).status, 401);
     assert.equal((await request("/login?u=other", from("203.0.113.4"))).status, 401);
   }
   assert.equal((await request("/", { authorization: basic("other:wrong"), ...from("203.0.113.4") })).status, 401, "stale cookies and bare logins do not fill counters");
-  assert.equal((await request("/", { cookie, ...invalid })).status, 429, "invalid Basic credentials still take precedence over cookies");
-  assert.equal((await request("/login?u=reader&t=x", valid)).status, 429, "explicit link checks retain their precedence");
+  assert.equal((await request("/", { cookie, ...invalid, ...from("203.0.113.3") })).status, 429, "an explicit Basic attempt cannot use a cookie to bypass lockout");
+  assert.equal((await request("/", { cookie, ...invalid, ...from("203.0.113.6") })).status, 401, "invalid Basic credentials still take precedence over cookies");
+  assert.equal((await request("/login?u=reader&t=x", valid)).status, 401, "explicit link checks retain their precedence");
   console.log("sign-in lockout regressions ok");
 } finally { rmSync(dir, { recursive: true, force: true }); }

@@ -23,7 +23,8 @@ export function requestOrigin(req: IncomingMessage, hops = TRUST_PROXY) {
 
 export function signInFailures() {
   const entries = new Map<string, { count: number; until: number }>();
-  const keys = (ip: string, account?: string) => [`ip:${ip}`, ...(account ? [`account:${account}`] : [])];
+  // An unproven account name must not lock out readers on another address.
+  const keys = (ip: string, account?: string) => [`ip:${ip}`, ...(account ? [`account:${JSON.stringify([ip, account])}`] : [])];
   const prune = (now: number) => { for (const [key, value] of entries) if (value.until <= now) entries.delete(key); };
   return {
     failed(ip: string, account?: string, now = Date.now()) {
