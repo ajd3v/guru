@@ -13,6 +13,7 @@ summary { min-height: 44px; display: flex; align-items: center; gap: .35rem; }
 .shelf a, .book-passages .source { display: inline-block; padding-block: .5rem; }
 ul.shelf { margin-top: 1rem; }
 .shelf li, .source, h2 { overflow-wrap: anywhere; }
+#out h3 { font-size: 1.125rem; font-weight: 400; color: var(--quiet); margin: 2rem 0 1rem; }
 #out .answer, #out .reflection, .synopsis { max-width: min(100%, 78ch); margin-inline: auto; }
 .meta { margin: -1.5rem 0 2rem; line-height: 1.6; }
 footer { gap: .75rem 1rem; }

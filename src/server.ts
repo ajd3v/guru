@@ -889,7 +889,7 @@ ${OG_IMAGE ? `<meta name="twitter:image" content="${ORIGIN}/og.png">` : ""}
   #clear-history { max-width: 100%; min-height: 44px; }
 
   .log-wrap { overflow-x: auto; }
-  table.log { border-collapse: collapse; font-size: .8125rem; width: 100%; }
+  table.log { border-collapse: collapse; font-size: .8125rem; width: 100%; min-width: 36rem; }
   .log th, .log td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--rule); }
   .ask button { min-height: 38px; min-width: 38px; }
   @media (prefers-reduced-motion: reduce) { .waiting { animation: none; } }
@@ -1316,7 +1316,7 @@ function shelf(user: string) {
   return (
     (pending.length ? `<ul class="shelf">${pending.join("")}</ul>` : "") +
     (shelved.length
-      ? `<details class="note"><summary>${shelved.length} books on your shelf</summary>` +
+      ? `<details class="note"><summary>${shelved.length} ${shelved.length === 1 ? "book" : "books"} on your shelf</summary>` +
         `<ul class="shelf">${shelved.join("")}</ul></details>`
       : "")
   );
@@ -1520,9 +1520,9 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     const limit = Math.max(1, Math.min(2000, Number(query.get("limit")) || 200));
     type Event = { at: string; user: string; event: string; q: string; outcome: string | null };
     const rows = (who ? logdb.prepare("select * from log where user = ? order by rowid desc limit ?").all(who, limit) : logdb.prepare("select * from log order by rowid desc limit ?").all(limit)) as Event[];
-    const table = rows.map((r) => `<tr><td>${escape(r.at)}</td><td>${escape(r.user)}</td><td>${escape(r.event)}</td><td>${escape(r.q)}</td><td>${escape(r.outcome ?? "")}</td></tr>`).join("");
+    const table = rows.map((r) => `<tr><td>${escape(r.at)}</td><td>${escape(r.user)}</td><td>${escape(r.event)}</td><td>${escape(r.q)}</td><td>${escape(r.outcome ?? "")}</td></tr>`).join("") || '<tr><td colspan="5" class="note">No log events recorded yet.</td></tr>';
     const links = readers().map((name) => `<li>${escape(name)} <a href="/login?u=${encodeURIComponent(name)}&amp;t=${linkToken(name)}">Sign-in link</a></li>`).join("");
-    return send(200, page(`<h2>Usage log</h2><div class="log-wrap"><table class="log"><thead><tr><th>Time</th><th>Reader</th><th>Action</th><th>Question</th><th>Outcome</th></tr></thead><tbody>${table}</tbody></table></div><details><summary>Reader links</summary><ul>${links}</ul></details>`));
+    return send(200, page(`<h2>Usage log</h2><div class="log-wrap" tabindex="0" role="region" aria-label="Usage log"><table class="log"><thead><tr><th scope="col">Time</th><th scope="col">Reader</th><th scope="col">Action</th><th scope="col">Question</th><th scope="col">Outcome</th></tr></thead><tbody>${table}</tbody></table></div><details><summary>Reader links</summary><ul>${links}</ul></details>`));
   }
 
   const sourceUrl = new URL(req.url ?? "/", "http://local");

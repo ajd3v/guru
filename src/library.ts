@@ -41,6 +41,11 @@ export function browseBook(db: Database.Database, book: Source, params: URLSearc
   const d = detailsFor(book);
   const heading = `<h2>${escape(book.title)}</h2><p>${escape(book.author)}</p>${d ? `<p class="note">${escape([d.tradition, d.edition].filter(Boolean).join(". "))}</p>` : ""}`;
   const pdf = book.bytes ? `<p><a href="/reader?book=${book.id}&revision=${book.revision}&page=${1 + book.page_offset}">Read original PDF</a></p>` : '<p class="note">The original PDF is not stored for this edition. Its source passages are available below.</p>';
-  const links = rows.slice(0, 100).map((row) => `<li><cite><button type="button" class="source" data-book="${book.id}" data-revision="${book.revision}" data-chunk="${row.id}" data-title="${escape(book.title)}" data-page="${escape(row.page_start)}" aria-expanded="false">${escape(book.paginated ? "Page " + row.page_start : row.page_start)}. ${escape(row.text.replace(/\s+/g, " ").slice(0, 85))}</button></cite></li>`).join("");
+  const links = rows.slice(0, 100).map((row) => {
+    const clean = row.text.replace(/\s+/g, " ").trim();
+    const end = clean.lastIndexOf(" ", 85);
+    const snippet = clean.length > 85 ? clean.slice(0, end > 0 ? end : 85).trimEnd() + "..." : clean;
+    return `<li><cite><button type="button" class="source" data-book="${book.id}" data-revision="${book.revision}" data-chunk="${row.id}" data-title="${escape(book.title)}" data-page="${escape(row.page_start)}" aria-expanded="false">${escape(book.paginated ? "Page " + row.page_start : row.page_start)}. ${escape(snippet)}</button></cite></li>`;
+  }).join("");
   return `${heading}${pdf}<h3>Pages and passages</h3><ol class="book-passages">${links}</ol><nav>${offset ? `<a href="${bookLink(book)}&offset=${Math.max(0, offset - 100)}">Previous passages</a> ` : ""}${rows.length > 100 ? `<a href="${bookLink(book)}&offset=${offset + 100}">Next passages</a>` : ""}</nav>`;
 }
