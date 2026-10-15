@@ -32,7 +32,7 @@ import { retrieveQuestion } from "./retrieval.ts";
 import { bookLink, browseBook, detailsFor, picker, selection } from "./library.ts";
 import { SourceChanged, sourceBook, sourceContext, streamPdf } from "./source.ts";
 import { createRequire } from "node:module";
-import { countActive, enqueue, listJobs, openJobs } from "./jobs.ts";
+import { reserveUpload, completeUpload, discardReceiving, listJobs, openJobs } from "./jobs.ts";
 import { renderPage, requestLimit } from "./render.ts";
 
 const guestPages = requestLimit(60);
@@ -99,7 +99,7 @@ async function body(req: IncomingMessage, limit = 64 * 1024) {
 }
 
 async function receive(req: IncomingMessage, dest: string, limit: number) {
-  const out = createWriteStream(dest);
+  const out = createWriteStream(dest, { flags: "wx" });
   const closed = new Promise<void>((resolve) => out.once("close", resolve));
   let size = 0;
   try {
@@ -341,6 +341,7 @@ if (process.argv.includes("--selfcheck")) {
 }
 
 const jobs = openJobs();
+discardReceiving(jobs);
 
 /**
  * The operator's usage log: who asked what, when, in one queryable file. This reverses the
@@ -1654,23 +1655,26 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     // sniffed. The name itself never becomes a path. See the generated destination below.
     if (!ACCEPTED.includes(ext)) return text(415, `Only ${ACCEPTED.join(" and ")} files.`);
 
-    const db = userLibrary(user);
-    const held = (db.prepare("select count(*) n from books").get() as { n: number }).n;
-    db.close();
-    if (!operator && held + countActive(jobs, user) >= MAX_BOOKS) {
-      return text(409, `Library is full (${MAX_BOOKS} books).`);
-    }
-
-    await mkdir(UPLOADS, { recursive: true });
     // Destination is generated, never derived from the upload's name: a filename is attacker
     // input, and `../../data/users/someone.db` would otherwise be a valid place to write.
-    const dest = join(UPLOADS, `${user}-${Date.now()}${ext}`);
+    const dest = join(UPLOADS, `${user}-${randomBytes(16).toString("hex")}${ext}`);
+    const id = reserveUpload(jobs, user, dest, name, () => {
+      const db = userLibrary(user);
+      try { return (db.prepare("select count(*) n from books").get() as { n: number }).n; }
+      finally { db.close(); }
+    }, operator ? Infinity : MAX_BOOKS, MAX_UPLOAD, 5 * MAX_UPLOAD);
+    if (id === undefined) return text(409, "Library or pending upload limit reached.");
     try {
-      await receive(req, dest, MAX_UPLOAD);
+      await mkdir(UPLOADS, { recursive: true });
+      const bytes = await receive(req, dest, MAX_UPLOAD);
+      if (!completeUpload(jobs, id, bytes, dest)) {
+        await rm(dest, { force: true });
+        return text(409, "Upload was cancelled.");
+      }
     } catch {
+      jobs.prepare("delete from jobs where id = ? and path = ? and state = 'receiving'").run(id, dest);
       return text(413, "That file is too large.");
     }
-    enqueue(jobs, user, dest, name);
     return text(202, "Queued. It will appear in your library shortly.");
   }
 

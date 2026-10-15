@@ -5,10 +5,10 @@
 // SQLite rather than a queue service: the jobs are low-volume, the database is already a
 // dependency, and a crashed worker leaves the row behind to be retried instead of losing it.
 import Database from "better-sqlite3";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 
-export type JobState = "queued" | "running" | "done" | "failed";
+export type JobState = "receiving" | "queued" | "running" | "done" | "failed";
 
 export type Job = {
   id: number;
@@ -38,8 +38,16 @@ export function openJobs(path = process.env.GURU_JOBS_DB ?? "data/jobs.db") {
     create index if not exists jobs_by_user on jobs (user_id, id desc);
     create index if not exists jobs_by_state on jobs (state, id);
   `);
-  const columns = db.prepare("pragma table_info(jobs)").all() as { name: string }[];
-  if (!columns.some((c) => c.name === "attempts")) db.exec("alter table jobs add column attempts integer not null default 0");
+  db.transaction(() => {
+    const columns = db.prepare("pragma table_info(jobs)").all() as { name: string }[];
+    if (!columns.some((c) => c.name === "attempts")) db.exec("alter table jobs add column attempts integer not null default 0");
+    if (!columns.some((c) => c.name === "upload_bytes")) {
+      db.exec("alter table jobs add column upload_bytes integer not null default 0");
+      const rows = db.prepare("select id, path from jobs where state in ('queued','running')").all() as { id: number; path: string }[];
+      for (const row of rows) db.prepare("update jobs set upload_bytes = ? where id = ?")
+        .run(statSync(row.path, { throwIfNoEntry: false })?.size ?? 0, row.id);
+    }
+  }).immediate();
   return db;
 }
 
@@ -92,6 +100,28 @@ export const listJobs = (db: Database.Database, userId: string, limit = 20) =>
 export const countActive = (db: Database.Database, userId: string) =>
   (
     db
-      .prepare("select count(*) n from jobs where user_id = ? and state in ('queued','running')")
+      .prepare("select count(*) n from jobs where user_id = ? and state in ('receiving','queued','running')")
       .get(userId) as { n: number }
   ).n;
+
+/** Reserve before reading the body. The queue lock also excludes worker completion. */
+export function reserveUpload(db: Database.Database, user: string, path: string, filename: string,
+  held: () => number, maxBooks: number, bytes: number, maxBytes: number) {
+  return db.transaction(() => {
+    const books = held();
+    const used = (db.prepare("select coalesce(sum(upload_bytes), 0) n from jobs where user_id = ? and state in ('receiving','queued','running')").get(user) as { n: number }).n;
+    if (books + countActive(db, user) >= maxBooks || used + bytes > maxBytes) return undefined;
+    return db.prepare("insert into jobs (user_id, path, filename, state, upload_bytes) values (?,?,?,'receiving',?)")
+      .run(user, path, filename, bytes).lastInsertRowid as number;
+  }).immediate();
+}
+
+export function completeUpload(db: Database.Database, id: number, bytes: number, path: string) {
+  return db.prepare("update jobs set state = 'queued', upload_bytes = ? where id = ? and path = ? and state = 'receiving'").run(bytes, id, path).changes === 1;
+}
+
+/** Only the server calls this at startup, before accepting new uploads. */
+export function discardReceiving(db: Database.Database) {
+  const rows = db.prepare("delete from jobs where state = 'receiving' returning path").all() as { path: string }[];
+  for (const row of rows) rmSync(row.path, { force: true });
+}
