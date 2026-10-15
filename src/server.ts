@@ -34,6 +34,7 @@ import { SourceChanged, sourceBook, sourceContext, streamPdf } from "./source.ts
 import { createRequire } from "node:module";
 import { reserveUpload, completeUpload, discardReceiving, listJobs, openJobs } from "./jobs.ts";
 import { renderPage, requestLimit } from "./render.ts";
+import { safeMutation } from "./request.ts";
 
 const guestPages = requestLimit(60);
 const guestFinds = requestLimit(10);
@@ -1495,7 +1496,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     });
     return void res.end();
   }
-  if (["POST", "PUT", "DELETE"].includes(req.method ?? "") && req.headers["sec-fetch-site"] === "cross-site") return send(403, PAGE("<p>Request origin rejected.</p>", false, true));
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method ?? "") && !safeMutation(req)) return send(403, PAGE("<p>Request origin rejected.</p>", false, true));
 
   const auth = await authenticate(req);
   if (auth.kind === "respond" && auth.status === 401 && (req.headers.authorization !== undefined || sessionCookie(req.headers.cookie) !== undefined)) authFailed(ip);
