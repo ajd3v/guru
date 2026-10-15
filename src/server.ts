@@ -34,7 +34,7 @@ import { SourceChanged, sourceBook, sourceContext, streamPdf } from "./source.ts
 import { createRequire } from "node:module";
 import { reserveUpload, completeUpload, discardReceiving, listJobs, openJobs } from "./jobs.ts";
 import { renderPage, requestLimit } from "./render.ts";
-import { safeMutation } from "./request.ts";
+import { safeMutation, clientAddress, signInFailures } from "./request.ts";
 
 const guestPages = requestLimit(60);
 const guestFinds = requestLimit(10);
@@ -241,9 +241,8 @@ if (process.argv.includes("--selfcheck")) {
   const plain = toWebRequest(fake({ host: "guru.app", cookie: "__session=abc" }));
   assert.equal(plain.url, "http://guru.app/ask");
   assert.equal(plain.headers.get("cookie"), "__session=abc");
-  // Behind a TLS-terminating proxy the scheme only survives in this header, and getting it
-  // wrong makes every session cookie look like it came from the wrong origin.
-  assert.match(toWebRequest(fake({ host: "guru.app", "x-forwarded-proto": "https" })).url, /^https:/);
+  // Forwarding headers are ignored unless a proxy is explicitly trusted.
+  assert.match(toWebRequest(fake({ host: "guru.app", "x-forwarded-proto": "https" })).url, /^http:/);
   assert.equal(toWebRequest(fake({ host: "guru.app", "set-cookie": ["a=1", "b=2"] })).headers.get("set-cookie"), "a=1, b=2");
 
   // With no keys configured, every request is the local dev user. That is the state this repo is
@@ -373,19 +372,8 @@ const logOutcome = (event: { token: string; user: string } | undefined, outcome:
   try { logdb.prepare("update log set outcome = ? where event_key = ? and user = ?").run(outcome, event.token, event.user); } catch {}
 };
 const suspicious = (q: string) => /\b(ignore|disregard|forget)\b.{0,40}\b(instructions?|prompt|rules|above)\b|\bsystem prompt\b|\bjailbreak\b|<\/?(question|system)>/i.test(q) ? "steering" : "";
-const failures = new Map<string, { count: number; until: number }>();
+const failures = signInFailures();
 const inflight = new Set<string>();
-function authFailed(ip: string) {
-  const now = Date.now();
-  for (const [key, value] of failures) if (value.until <= now) failures.delete(key);
-  const prior = failures.get(ip);
-  if (prior) prior.count++;
-  else if (failures.size < 10_000) failures.set(ip, { count: 1, until: now + 900_000 });
-}
-function blocked(ip: string) {
-  const value = failures.get(ip);
-  return !!value && value.count >= 10 && value.until > Date.now();
-}
 
 /**
  * The guest allowance, counted per browser and bounded per address.
@@ -469,20 +457,6 @@ export function readDevice(cookie: string | undefined, secret: string): string |
   // prefix oracle, which is enough to forge one byte at a time.
   if (sig.length !== expect.length) return undefined;
   return timingSafeEqual(Buffer.from(sig), Buffer.from(expect)) ? id : undefined;
-}
-
-/**
- * The visitor's address, as observed by our own proxy.
- *
- * Traefik APPENDS the peer it saw to any X-Forwarded-For the client sent, so the last entry
- * is the one our infrastructure observed and the earlier ones are the client's to invent.
- * Taking the last is what makes the ceiling worth having. With no header at all we are not
- * behind the proxy, so the socket is the truth.
- */
-function clientAddress(req: IncomingMessage) {
-  const xff = req.headers["x-forwarded-for"];
-  const chain = (Array.isArray(xff) ? xff.join(",") : xff ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  return chain.length ? chain[chain.length - 1] : (req.socket.remoteAddress ?? "unknown");
 }
 
 /**
@@ -1326,10 +1300,9 @@ if (process.argv.includes("--selfcheck")) {
   // Today's passage is gone; the front page is the shelf and the question.
   assert.doesNotMatch(PAGE(""), /Today.s passage/);
 
-  // The address the quota counts is the one OUR proxy observed, which is the last entry in
-  // the chain. A client that invents a header must not be able to mint itself new visitors.
+  // One explicitly trusted proxy appends the address it observed.
   const addr = (h: Record<string, unknown>, socket = "10.0.0.9") =>
-    clientAddress({ headers: h, socket: { remoteAddress: socket } } as any);
+    clientAddress({ headers: h, socket: { remoteAddress: socket } } as any, 1);
   assert.equal(addr({ "x-forwarded-for": "203.0.113.7" }), "203.0.113.7");
   assert.equal(
     addr({ "x-forwarded-for": "1.2.3.4, 203.0.113.7" }),
@@ -1484,12 +1457,17 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     }
   }
   const ip = clientAddress(req);
-  if (blocked(ip)) return send(429, PAGE("<p>Too many failed sign-ins. Try again later.</p>", false, true));
+  const loginQuery = new URL(req.url ?? "/", "http://local");
+  const credentialName = req.headers.authorization?.startsWith("Basic ") ?
+    Buffer.from(req.headers.authorization.slice(6), "base64").toString("utf8").split(":")[0] :
+    loginQuery.pathname === "/login" ? loginQuery.searchParams.get("u") : sessionCookie(req.headers.cookie)?.split(".")[0];
+  const account = credentialName && readers().includes(credentialName) ? credentialName : undefined;
+  if (failures.blocked(ip, account)) return send(429, PAGE("<p>Too many failed sign-ins. Try again later.</p>", false, true));
   if (req.method === "GET" && new URL(req.url ?? "/", "http://local").pathname === "/login") {
     const query = new URL(req.url!, "http://local").searchParams;
     const name = query.get("u") ?? "";
     const user = query.has("t") ? tokenUser(name, query.get("t") ?? "") : basicAuthUser(req.headers.authorization);
-    if (!user) { authFailed(ip); return send(401, PAGE("<p>That link is not valid.</p>", false, true)); }
+    if (!user) { failures.failed(ip, account); return send(401, PAGE("<p>That link is not valid.</p>", false, true)); }
     res.writeHead(302, {
       location: "/",
       "set-cookie": `__Host-${profile.cookieName}=${user}.${sessionToken(user)}; Max-Age=${SESSION_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Lax`,
@@ -1499,7 +1477,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method ?? "") && !safeMutation(req)) return send(403, PAGE("<p>Request origin rejected.</p>", false, true));
 
   const auth = await authenticate(req);
-  if (auth.kind === "respond" && auth.status === 401 && (req.headers.authorization !== undefined || sessionCookie(req.headers.cookie) !== undefined)) authFailed(ip);
+  if (auth.kind === "respond" && auth.status === 401 && (req.headers.authorization !== undefined || sessionCookie(req.headers.cookie) !== undefined)) failures.failed(ip, account);
   if (auth.kind === "respond") {
     // Clerk's headers carry the session cookie and redirect target; forward them as given.
     return res.writeHead(auth.status, Object.fromEntries(auth.headers)).end();

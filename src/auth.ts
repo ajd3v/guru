@@ -1,4 +1,5 @@
 import { profile } from "./profile.ts";
+import { requestOrigin } from "./request.ts";
 // Identity, isolated behind one function so the rest of the app only ever sees a user id.
 //
 // Clerk is used rather than anything hand-rolled: sessions, password storage, MFA, and token
@@ -210,8 +211,7 @@ export const isOperator = (userId: string, allowed = OPERATORS) => allowed.inclu
 
 /** Node's request is not a fetch Request, and Clerk wants the latter. Headers and URL only. */
 export function toWebRequest(req: IncomingMessage): Request {
-  const proto = (req.headers["x-forwarded-proto"] as string | undefined) ?? "http";
-  const url = new URL(req.url ?? "/", `${proto}://${req.headers.host ?? "localhost"}`);
+  const url = new URL(req.url ?? "/", requestOrigin(req));
 
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {

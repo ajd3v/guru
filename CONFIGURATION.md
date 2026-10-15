@@ -84,3 +84,9 @@ Sign-in links expire after 15 minutes. Session cookies expire after 24 hours. Bo
 revoked on a server restart or password change. Existing password-derived tokens and
 passwords in login URLs are refused. Basic-auth clients can request `/login` with their
 Authorization header to obtain a session cookie over HTTPS.
+
+`GURU_TRUST_PROXY` is the number of trusted proxy hops between the listener and clients.
+The listener defaults to 0 and ignores forwarded addresses and protocol. Compose sets 1
+for its single TLS-terminating proxy. Set a positive value only when the listener is
+reachable solely through that fixed proxy chain. `GURU_ORIGINS`, when set, is a
+comma-separated list of exact browser origins allowed for state changes.

@@ -46,6 +46,7 @@ const srv = spawn("node", ["src/server.ts"], {
     GURU_DEMO: "1",
     GURU_GUEST: "guest",
     GURU_GUEST_DEVICES: String(DEVICES),
+    GURU_TRUST_PROXY: "1",
     // Port 9 is "discard" and undici refuses it outright, so an allowed ask fails instantly
     // instead of waiting on a timeout.
     DEEPINFRA_API_KEY: "unused",

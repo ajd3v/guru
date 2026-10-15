@@ -14,6 +14,10 @@ services:
       - SERVICE_FQDN_GURU_8080=${GURU_URL:-http://localhost:8080}
       - NODE_ENV=production
       - PORT=8080
+      # This service is reachable only through the single TLS-terminating proxy.
+      # Use 0 for a direct listener. Adjust the count if another proxy is added.
+      - GURU_TRUST_PROXY=${GURU_TRUST_PROXY:-1}
+      - GURU_ORIGINS=${GURU_ORIGINS:-}
       - GURU_STARTER=/app/data/starter.db
       - GURU_STARTER_MODE=${GURU_STARTER_MODE:-automatic}
       - GURU_USER_DIR=/app/data/users
