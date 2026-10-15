@@ -4,7 +4,7 @@ import { profile } from "./profile.ts";
 // Clerk is used rather than anything hand-rolled: sessions, password storage, MFA, and token
 // rotation are the parts of a SaaS most worth not owning. See SPEC.md.
 import type { IncomingMessage } from "node:http";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createClerkClient, type ClerkClient } from "@clerk/backend";
 
 /**
@@ -78,14 +78,26 @@ if (PRODUCTION && SECRET && !AUTHORIZED_PARTIES.length) {
 if (PRODUCTION && SINGLE_USER && !BASIC_AUTH.length) {
   throw new Error("GURU_BASIC_AUTH (user:password) is required alongside GURU_SINGLE_USER in production");
 }
-/** Token cookies preserve installed sessions without storing passwords in new cookies. */
-export function linkToken(user: string, expected = BASIC_AUTH) {
-  const credential = expected.find((c) => username(c) === user);
-  return credential ? createHash("sha256").update(`${profile.tokenNamespace}:${credential}`).digest("base64url") : undefined;
+// Restarting the server revokes all links and sessions. No password-derived signing key.
+const signingKey = randomBytes(32);
+export const SESSION_SECONDS = 24 * 60 * 60;
+function signature(user: string, credential: string, proof: string, purpose: string) {
+  return createHmac("sha256", signingKey).update(JSON.stringify([profile.tokenNamespace, user, credential, proof, purpose])).digest("base64url");
 }
-export function tokenUser(user: string, token: string, expected = BASIC_AUTH) {
-  const want = linkToken(user, expected);
-  return want && timingSafeEqual(createHash("sha256").update(want).digest(), createHash("sha256").update(token).digest()) ? user : undefined;
+function issueToken(user: string, expected: string[], purpose: string, seconds: number) {
+  const credential = expected.find((c) => username(c) === user);
+  if (!credential) return undefined;
+  const proof = `${Math.floor(Date.now() / 1000) + seconds}.${randomBytes(24).toString("base64url")}`;
+  return `${proof}.${signature(user, credential, proof, purpose)}`;
+}
+export const linkToken = (user: string, expected = BASIC_AUTH) => issueToken(user, expected, "link", 15 * 60);
+export const sessionToken = (user: string, expected = BASIC_AUTH) => issueToken(user, expected, "session", SESSION_SECONDS);
+export function tokenUser(user: string, token: string, expected = BASIC_AUTH, purpose = "link") {
+  const credential = expected.find((c) => username(c) === user);
+  const parts = /^(\d{10})\.([A-Za-z0-9_-]{32})\.([A-Za-z0-9_-]{43})$/.exec(token);
+  if (!credential || !parts || Number(parts[1]) <= Math.floor(Date.now() / 1000)) return undefined;
+  const want = signature(user, credential, `${parts[1]}.${parts[2]}`, purpose);
+  return timingSafeEqual(Buffer.from(want), Buffer.from(parts[3])) ? user : undefined;
 }
 export const readers = (expected = BASIC_AUTH) => expected.map(username);
 export function sessionCookie(cookie: string | undefined) {
@@ -99,7 +111,7 @@ export function cookieUser(cookie: string | undefined) {
   const value = sessionCookie(cookie);
   if (!value) return undefined;
   const dot = value.indexOf(".");
-  return dot > 0 ? tokenUser(value.slice(0, dot), value.slice(dot + 1)) : basicAuthUser(`Basic ${value}`);
+  return dot > 0 ? tokenUser(value.slice(0, dot), value.slice(dot + 1), BASIC_AUTH, "session") : undefined;
 }
 export function passwordProblem(user: string, password: string) {
   if (password.length < 12) return "shorter than 12 characters";

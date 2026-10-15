@@ -19,7 +19,7 @@ import SqliteDatabase from "better-sqlite3";
 import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
-import { authenticate, basicAuthUser, isLibrarian, isOperator, linkToken, tokenUser, readers, sessionCookie, toWebRequest } from "./auth.ts";
+import { authenticate, basicAuthUser, isLibrarian, isOperator, linkToken, tokenUser, readers, sessionCookie, sessionToken, SESSION_SECONDS, toWebRequest } from "./auth.ts";
 import { createReadStream, createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { once } from "node:events";
@@ -1486,11 +1486,11 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   if (req.method === "GET" && new URL(req.url ?? "/", "http://local").pathname === "/login") {
     const query = new URL(req.url!, "http://local").searchParams;
     const name = query.get("u") ?? "";
-    const user = query.has("t") ? tokenUser(name, query.get("t") ?? "") : basicAuthUser(`Basic ${Buffer.from(`${name}:${query.get("p") ?? ""}`).toString("base64")}`);
+    const user = query.has("t") ? tokenUser(name, query.get("t") ?? "") : basicAuthUser(req.headers.authorization);
     if (!user) { authFailed(ip); return send(401, PAGE("<p>That link is not valid.</p>", false, true)); }
     res.writeHead(302, {
       location: "/",
-      "set-cookie": `__Host-${profile.cookieName}=${user}.${linkToken(user)}; Max-Age=31536000; Path=/; HttpOnly; Secure; SameSite=Lax`,
+      "set-cookie": `__Host-${profile.cookieName}=${user}.${sessionToken(user)}; Max-Age=${SESSION_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Lax`,
     });
     return void res.end();
   }

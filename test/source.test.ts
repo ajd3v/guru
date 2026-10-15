@@ -218,8 +218,10 @@ try {
   const crossSite = await fetch(`${base}/delete`, { method: "POST", headers: { ...headers, "sec-fetch-site": "cross-site" }, body: "confirm=DELETE" });
   assert.equal(crossSite.status, 403);
   const login = await fetch(`${base}/login?u=reader&p=very-long-test-password`, { redirect: "manual" });
-  assert.equal(login.status, 302);
-  const cookie = login.headers.get("set-cookie")!;
+  assert.equal(login.status, 401, "passwords in URLs are refused");
+  const signedIn = await fetch(`${base}/login`, { headers, redirect: "manual" });
+  assert.equal(signedIn.status, 302);
+  const cookie = signedIn.headers.get("set-cookie")!;
   assert.match(cookie, /^__Host-guru=reader\./);
   assert(!cookie.includes("very-long-test-password"));
   const authenticated = await fetch(base, { headers: { cookie: cookie.split(";")[0] } });

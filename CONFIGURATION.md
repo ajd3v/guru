@@ -44,7 +44,7 @@ The profile requires its own evaluation paths. It never falls back to the engine
 | `styles`, `mark` | Optional application CSS and SVG files. These are trusted deployment files. |
 | `themeColor`, `backgroundColor` | Six-digit hex colors for the installed web app. |
 | `showControls`, `showQuota` | Show library controls or the remaining question count. Route permissions apply independently. |
-| `cookieName`, `tokenNamespace`, `historyKey` | Preserve existing application sessions during migration. Defaults derive from `id`. |
+| `cookieName`, `tokenNamespace`, `historyKey` | Names for session cookies and browser state. Defaults derive from `id`. |
 | `dailyReading` | Optional `{ "book": "Notebook", "label": "Today's reading", "timezone": "UTC" }`. Selects dated entries headed by an English month and day. |
 
 The answer renderer accepts source sentence IDs only. It builds quotations and citations from stored records. Generated prose and model-written refusals never reach the answer. A valid quotation can still be irrelevant to a question. Corpus-specific evaluations must measure that separately.
@@ -79,3 +79,8 @@ Set `GURU_PYTHON` if the Python environment is outside `.venv`. Data paths remai
 Backups accept `GURU_CONTAINER` to select an application container. Give each deployment its own `GURU_BACKUP_DIR`. Set `GURU_BACKUP_ENV` to an application-specific environment file, or `/dev/null` to use only the current environment. Run both backup and restore verification before replacing a deployed engine version.
 
 Global logs and sign-in links require `GURU_OPERATORS`. When it is unset, an explicitly configured `GURU_LIBRARIAN` list supplies the operators. An empty list grants nobody access. Managing a personal library does not grant access to other readers. Browser history is scoped to the signed-in reader. Old unscoped browser history remains stored but is no longer displayed.
+
+Sign-in links expire after 15 minutes. Session cookies expire after 24 hours. Both are
+revoked on a server restart or password change. Existing password-derived tokens and
+passwords in login URLs are refused. Basic-auth clients can request `/login` with their
+Authorization header to obtain a session cookie over HTTPS.
