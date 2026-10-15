@@ -20,9 +20,8 @@ import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import { authenticate, basicAuthUser, isLibrarian, isOperator, linkToken, tokenUser, readers, sessionCookie, sessionToken, SESSION_SECONDS, toWebRequest } from "./auth.ts";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
-import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { bookPdf, BookSelectionError, cite, libraryPath, listBooks, recordAsk, search, selectedBook, userLibrary, type Hit, type LibraryBook } from "./store.ts";
@@ -35,6 +34,7 @@ import { createRequire } from "node:module";
 import { reserveUpload, completeUpload, discardReceiving, listJobs, openJobs } from "./jobs.ts";
 import { renderPage, requestLimit } from "./render.ts";
 import { safeMutation, clientAddress, signInFailures } from "./request.ts";
+import { receive } from "./upload.ts";
 
 const guestPages = requestLimit(60);
 const guestFinds = requestLimit(10);
@@ -97,28 +97,6 @@ async function body(req: IncomingMessage, limit = 64 * 1024) {
     chunks.push(c as Buffer);
   }
   return Buffer.concat(chunks).toString();
-}
-
-async function receive(req: IncomingMessage, dest: string, limit: number) {
-  const out = createWriteStream(dest, { flags: "wx" });
-  const closed = new Promise<void>((resolve) => out.once("close", resolve));
-  let size = 0;
-  try {
-    for await (const chunk of req) {
-      size += (chunk as Buffer).length;
-      if (size > limit) throw new Error("too large");
-      if (!out.write(chunk)) await once(out, "drain");
-    }
-    await new Promise<void>((resolve, reject) => out.end(() => resolve()).on("error", reject));
-    return size;
-  } catch (err) {
-    // Opening the file is asynchronous. Wait for close so it cannot appear after removal.
-    out.once("error", () => {});
-    out.destroy();
-    await closed;
-    await rm(dest, { force: true });
-    throw err;
-  }
 }
 
 // A question is user input crossing a trust boundary into an LLM prompt and an FTS5 query.

@@ -9,6 +9,8 @@ for (const key of Object.keys(env)) {
   if (/API_KEY|BASE_URL|CLERK_|GURU_(SINGLE_USER|BASIC_AUTH|GUEST|DEMO|PIPELINE_MODEL|ANSWER_MODEL|VECTOR_WEIGHT|CANDIDATES|SNIPPET)/.test(key)) delete env[key];
 }
 try {
+  const body = spawnSync(process.execPath, ["test/upload-body.test.ts"], { env, stdio: "inherit" });
+  if (body.status !== 0) process.exitCode = 1;
   const request = spawnSync(process.execPath, ["test/request.test.ts"], { env, stdio: "inherit" });
   if (request.status !== 0) process.exitCode = 1;
   const upload = spawnSync(process.execPath, ["test/upload.test.ts"], { env, stdio: "inherit" });
