@@ -60,7 +60,8 @@ export function signInFailures() {
     },
     blocked(ip: string, account?: string, now = Date.now()) {
       prune(now);
-      // During an active attack, a reader on a new device gets 429 until the window passes.
+      // During an active password attack, a reader on a new device can still sign in with a link.
+      // Token attempts use only the address counter.
       return (addresses.get(ip)?.count ?? 0) >= ADDRESS_LIMIT ||
         !!account && (accounts.get(account)?.count ?? 0) >= ACCOUNT_LIMIT &&
         (trusted.get(account)?.get(ip) ?? 0) <= now;

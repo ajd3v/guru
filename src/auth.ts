@@ -223,6 +223,14 @@ export function toWebRequest(req: IncomingMessage): Request {
   return new Request(url, { method: req.method, headers });
 }
 
+export function basicAuthFailure() {
+  return {
+    kind: "respond" as const,
+    status: 401,
+    headers: new Headers({ "www-authenticate": `Basic realm="${profile.id}", charset="UTF-8"` }),
+  };
+}
+
 export async function authenticate(req: IncomingMessage): Promise<Auth> {
   // Checked before Clerk: if both are configured, the explicit choice wins rather than
   // leaving which one applies to the order of two environment variables.
@@ -239,11 +247,7 @@ export async function authenticate(req: IncomingMessage): Promise<Auth> {
       // No credential at all, and a reading room is open: the visitor is the guest. A wrong
       // credential still 401s, so a typo never silently demotes a reader.
       if (GUEST && credential === undefined) return { kind: "user", userId: GUEST, guest: true };
-      return {
-        kind: "respond",
-        status: 401,
-        headers: new Headers({ "www-authenticate": `Basic realm="${profile.id}", charset="UTF-8"` }),
-      };
+      return basicAuthFailure();
     }
     return { kind: "user", userId: user };
   }

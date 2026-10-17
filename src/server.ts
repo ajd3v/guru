@@ -19,7 +19,7 @@ import SqliteDatabase from "better-sqlite3";
 import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
-import { authenticate, basicAuthUser, isLibrarian, isOperator, linkToken, tokenUser, readers, sessionToken, SESSION_SECONDS, toWebRequest } from "./auth.ts";
+import { authenticate, basicAuthFailure, basicAuthUser, isLibrarian, isOperator, linkToken, tokenUser, readers, sessionToken, SESSION_SECONDS, toWebRequest } from "./auth.ts";
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1445,9 +1445,10 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
     const query = new URL(req.url!, "http://local").searchParams;
     const name = query.get("u") ?? "";
     const attempt = query.has("t") || passwordAttempt;
-    const attemptedAccount = account(query.has("t") ? name : passwordName);
-    if (attempt && failures.blocked(ip, attemptedAccount)) return limited();
-    const user = query.has("t") ? tokenUser(name, query.get("t") ?? "") : basicAuthUser(req.headers.authorization);
+    const attemptedAccount = query.has("t") ? undefined : account(passwordName);
+    if (attempt && failures.blocked(ip)) return limited();
+    const user = attempt && failures.blocked(ip, attemptedAccount) ? undefined :
+      query.has("t") ? tokenUser(name, query.get("t") ?? "") : basicAuthUser(req.headers.authorization);
     if (!user) {
       if (attempt) failures.failed(ip, attemptedAccount);
       return send(401, PAGE("<p>That link is not valid.</p>", false, true));
@@ -1461,8 +1462,8 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   }
   if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method ?? "") && !safeMutation(req)) return send(403, PAGE("<p>Request origin rejected.</p>", false, true));
 
-  if (passwordAttempt && failures.blocked(ip, account(passwordName))) return limited();
-  const auth = await authenticate(req);
+  if (passwordAttempt && failures.blocked(ip)) return limited();
+  const auth = passwordAttempt && failures.blocked(ip, account(passwordName)) ? basicAuthFailure() : await authenticate(req);
   if (auth.kind === "respond" && auth.status === 401 && passwordAttempt) {
     failures.failed(ip, account(passwordName));
   }

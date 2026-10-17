@@ -56,6 +56,7 @@ for (let i = 0; i < 25; i++) {
   else rotating.failed(ip, "reader", 1);
 }
 assert.equal(blocked, 5, "twenty failures across addresses throttle further guesses");
+assert.equal(rotating.blocked("new-address", undefined, 2), false, "address-only checks allow token attempts during an account attack");
 assert.equal(rotating.blocked("trusted-address", "reader", 2), false, "trusted addresses survive an account attack");
 assert.equal(rotating.blocked("trusted-address", "other-reader", 2), false);
 for (let i = 0; i < 10; i++) rotating.failed("trusted-address", "reader", 2);

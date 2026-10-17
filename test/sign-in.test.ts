@@ -37,7 +37,7 @@ try {
   syncBuiltinESMExports();
 }
 
-type Response = { status: number; headers: Record<string, string> };
+type Response = { status: number; headers: Record<string, string>; body: string };
 const request = (url = "/", headers: Record<string, string> = {}) => new Promise<Response>((resolve, reject) => {
   const req = Object.assign(Readable.from([]), {
     url, method: "GET", headers: { host: "reader.example", ...headers }, socket: { remoteAddress: "127.0.0.1" },
@@ -51,7 +51,7 @@ const request = (url = "/", headers: Record<string, string> = {}) => new Promise
       for (const [name, value] of Object.entries(values)) this.setHeader(name, value);
       return this;
     },
-    end() { resolve({ status: this.statusCode, headers: responseHeaders }); return this; },
+    end(body = "") { resolve({ status: this.statusCode, headers: responseHeaders, body }); return this; },
     destroy() { reject(new Error("response destroyed")); },
   };
   handle(req, res);
@@ -115,32 +115,58 @@ try {
   for (let i = 0; i < 25; i++) {
     assert.equal((await request("/", { authorization: basic("unknown:wrong"), ...from(`192.0.2.${i + 1}`) })).status, 401, "an unknown name never gets an account counter");
     assert.equal((await request("/login?u=unknown&t=x", from(`192.0.2.${i + 30}`))).status, 401, "unknown link names never get an account counter");
+    assert.equal((await request("/login?u=reader&t=x", { ...invalid, ...from(`192.0.2.${i + 60}`) })).status, 401, "explicit token attempts use only the address counter even with a Basic header");
   }
+  assert.equal((await request("/login?u=reader&t=", { ...valid, ...from("192.0.2.90") })).status, 401, "an empty token still takes precedence over Basic credentials");
   assert.equal((await request("/login", { ...valid, ...from("203.0.113.5") })).status, 302);
   assert.equal((await request("/", { ...valid, ...from("203.0.113.8") })).status, 200);
   assert.equal((await request(link, from("203.0.113.9"))).status, 302);
+  const deviceCookie = (await request("/login", { authorization: basic("unknown:wrong"), ...from("192.0.2.200") })).headers["set-cookie"].split(";")[0];
+  const rejected = new Map<string, Response>();
+  for (const path of ["/", "/login"]) {
+    const unknown = await request(path, { cookie: deviceCookie, authorization: basic("unknown:wrong"), ...from("192.0.2.201") });
+    assert.equal(unknown.status, 401);
+    assert.deepEqual(await request(path, { cookie: deviceCookie, ...invalid, ...from("192.0.2.202") }), unknown, "ordinary wrong passwords have the same response for known and unknown readers");
+    rejected.set(path, unknown);
+  }
   const statuses: number[] = [];
   for (let i = 0; i < 25; i++) {
-    statuses.push((await request("/login?u=reader&t=x", from(`198.51.100.${i + 10}`))).status);
+    statuses.push((await request(i % 2 ? "/login" : "/", { ...invalid, ...from(`198.51.100.${i + 10}`) })).status);
   }
-  assert.ok(statuses.every((status) => status === 401 || status === 429));
-  assert.ok(statuses.filter((status) => status === 429).length >= 5, "rotating twenty-five addresses against one reader gets throttled");
+  assert.deepEqual(statuses, Array(25).fill(401), "rotating password guesses keep the wrong-password response when account throttling starts");
   assert.equal((await request("/login", { ...valid, ...from("203.0.113.5") })).status, 302, "password login establishes trust during an account attack");
   assert.equal((await request("/", { ...valid, ...from("203.0.113.8") })).status, 200, "Basic authentication establishes trust during an account attack");
   assert.equal((await request(link, from("203.0.113.9"))).status, 302, "link login establishes trust during an account attack");
   assert.equal((await request("/", { cookie, ...from("203.0.113.10") })).status, 200, "existing sessions survive an account attack");
+  for (const authorization of [valid, invalid]) {
+    for (const path of ["/", "/login"]) {
+      assert.deepEqual(await request(path, { cookie: deviceCookie, ...authorization, ...from("203.0.113.10") }), rejected.get(path), "account throttling returns the ordinary wrong-password response for correct and incorrect passwords");
+    }
+  }
   comparisons = 0;
   crypto.timingSafeEqual = ((a, b) => { comparisons++; return compare(a, b); }) as typeof compare;
   syncBuiltinESMExports();
   try {
     for (const authorization of [valid, invalid]) {
       for (const path of ["/", "/login"]) {
-        assert.equal((await request(path, { ...authorization, ...from("203.0.113.10") })).status, 429);
+        assert.equal((await request(path, { ...authorization, ...from("203.0.113.10") })).status, 401);
       }
     }
-    assert.equal((await request(link, from("203.0.113.10"))).status, 429);
-    assert.equal((await request("/login?u=reader&t=x", from("203.0.113.10"))).status, 429);
-    assert.equal(comparisons, 0, "an account lockout returns 429 before checking credentials");
+    assert.equal(comparisons, 0, "rotating password guesses are throttled before any credential comparison");
+    assert.equal((await request(link, from("203.0.113.10"))).status, 302, "guesses from other addresses cannot lock a reader out of link sign-in on a fresh address");
+    assert.ok(comparisons > 0, "a link still verifies its signature while password guesses are throttled");
+    assert.equal((await request("/", { ...valid, ...from("203.0.113.10") })).status, 200, "successful link sign-in trusts the new address for password sign-ins");
+    assert.equal((await request(link, { ...invalid, ...from("203.0.113.11") })).status, 302, "an explicit link bypasses password throttling even with a Basic header");
+    assert.equal((await request("/login?u=reader&t=x", from("203.0.113.12"))).status, 401);
+    assert.equal((await request("/login?u=reader&t=", { ...valid, ...from("203.0.113.12") })).status, 401);
+    for (let i = 0; i < 10; i++) {
+      assert.deepEqual(await request("/", { cookie: deviceCookie, ...valid, ...from("203.0.113.13") }), rejected.get("/"));
+    }
+    comparisons = 0;
+    for (const path of ["/", "/login", link, "/login?u=reader&t=x"]) {
+      assert.equal((await request(path, { ...valid, ...from("203.0.113.13") })).status, 429, "account-throttled failures still exhaust the address counter");
+    }
+    assert.equal(comparisons, 0, "the address limit still rejects both auth paths before credential verification");
     assert.equal((await request("/", { ...valid, ...from("203.0.113.8") })).status, 200);
     assert.ok(comparisons > 0, "trusted addresses still verify credentials");
   } finally {
