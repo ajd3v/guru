@@ -1452,6 +1452,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
       if (attempt) failures.failed(ip, attemptedAccount);
       return send(401, PAGE("<p>That link is not valid.</p>", false, true));
     }
+    failures.succeeded(ip, account(user));
     res.writeHead(302, {
       location: "/",
       "set-cookie": `__Host-${profile.cookieName}=${user}.${sessionToken(user)}; Max-Age=${SESSION_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Lax`,
@@ -1471,6 +1472,7 @@ const handleRequest = async (req: IncomingMessage, res: import("node:http").Serv
   }
   const user = auth.userId;
   const guest = auth.guest === true;
+  if (passwordAttempt && !guest) failures.succeeded(ip, account(user));
   const requestPath = new URL(req.url ?? "/", "http://local").pathname;
   if (guest && requestPath === "/pdf-page" && !guestPages(ip)) {
     return send(429, PAGE("<p>Too many requests. Try again shortly.</p>", false, true));

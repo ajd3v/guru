@@ -22,22 +22,48 @@ export function requestOrigin(req: IncomingMessage, hops = TRUST_PROXY) {
 }
 
 export function signInFailures() {
-  const entries = new Map<string, { count: number; until: number }>();
-  // An unproven account name must not lock out readers on another address.
-  const keys = (ip: string, account?: string) => [`ip:${ip}`, ...(account ? [`account:${JSON.stringify([ip, account])}`] : [])];
-  const prune = (now: number) => { for (const [key, value] of entries) if (value.until <= now) entries.delete(key); };
+  const ADDRESS_LIMIT = 10;
+  const ACCOUNT_LIMIT = 20;
+  const WINDOW_MS = 15 * 60 * 1000;
+  const ADDRESS_CAPACITY = 10_000;
+  const TRUST_MS = 30 * 24 * 60 * 60 * 1000;
+  const TRUSTED_ADDRESS_LIMIT = 20;
+  type Counter = { count: number; until: number };
+  const addresses = new Map<string, Counter>();
+  // Callers pass only known readers, bounding both account maps by the reader count.
+  const accounts = new Map<string, Counter>();
+  const trusted = new Map<string, Map<string, number>>();
+  const prune = (now: number) => {
+    for (const entries of [addresses, accounts]) {
+      for (const [key, value] of entries) if (value.until <= now) entries.delete(key);
+    }
+  };
+  const increment = (entries: Map<string, Counter>, key: string, now: number, capacity = Infinity) => {
+    const value = entries.get(key);
+    if (value) value.count++;
+    else if (entries.size < capacity) entries.set(key, { count: 1, until: now + WINDOW_MS });
+  };
   return {
     failed(ip: string, account?: string, now = Date.now()) {
       prune(now);
-      for (const key of keys(ip, account)) {
-        const value = entries.get(key);
-        if (value) value.count++;
-        else if (entries.size < 10_000) entries.set(key, { count: 1, until: now + 900_000 });
-      }
+      increment(addresses, ip, now, ADDRESS_CAPACITY);
+      if (account) increment(accounts, account, now);
+    },
+    succeeded(ip: string, account?: string, now = Date.now()) {
+      if (!account) return;
+      const entries = trusted.get(account) ?? new Map<string, number>();
+      for (const [address, until] of entries) if (until <= now) entries.delete(address);
+      entries.delete(ip);
+      entries.set(ip, now + TRUST_MS);
+      if (entries.size > TRUSTED_ADDRESS_LIMIT) entries.delete(entries.keys().next().value!);
+      trusted.set(account, entries);
     },
     blocked(ip: string, account?: string, now = Date.now()) {
       prune(now);
-      return keys(ip, account).some((key) => (entries.get(key)?.count ?? 0) >= 10);
+      // During an active attack, a reader on a new device gets 429 until the window passes.
+      return (addresses.get(ip)?.count ?? 0) >= ADDRESS_LIMIT ||
+        !!account && (accounts.get(account)?.count ?? 0) >= ACCOUNT_LIMIT &&
+        (trusted.get(account)?.get(ip) ?? 0) <= now;
     },
   };
 }

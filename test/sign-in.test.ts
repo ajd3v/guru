@@ -104,10 +104,6 @@ try {
   assert.equal((await request("/login", { ...valid, ...from("203.0.113.3") })).status, 429);
   assert.equal((await request(link, from("203.0.113.3"))).status, 429);
   assert.equal((await request("/", { cookie, ...from("203.0.113.3") })).status, 200);
-  for (let i = 0; i < 10; i++) {
-    assert.equal((await request("/login?u=reader&t=x", from(`198.51.100.${i + 10}`))).status, 401);
-  }
-  assert.equal((await request("/login", { ...valid, ...from("203.0.113.5") })).status, 302, "guesses from other addresses cannot globally lock the account");
   for (let i = 0; i < 12; i++) {
     assert.equal((await request("/", { cookie: "__Host-guru=other.stale", ...from("203.0.113.4") })).status, 401);
     assert.equal((await request("/login?u=other", from("203.0.113.4"))).status, 401);
@@ -116,5 +112,40 @@ try {
   assert.equal((await request("/", { cookie, ...invalid, ...from("203.0.113.3") })).status, 429, "an explicit Basic attempt cannot use a cookie to bypass lockout");
   assert.equal((await request("/", { cookie, ...invalid, ...from("203.0.113.6") })).status, 401, "invalid Basic credentials still take precedence over cookies");
   assert.equal((await request("/login?u=reader&t=x", valid)).status, 401, "explicit link checks retain their precedence");
+  for (let i = 0; i < 25; i++) {
+    assert.equal((await request("/", { authorization: basic("unknown:wrong"), ...from(`192.0.2.${i + 1}`) })).status, 401, "an unknown name never gets an account counter");
+    assert.equal((await request("/login?u=unknown&t=x", from(`192.0.2.${i + 30}`))).status, 401, "unknown link names never get an account counter");
+  }
+  assert.equal((await request("/login", { ...valid, ...from("203.0.113.5") })).status, 302);
+  assert.equal((await request("/", { ...valid, ...from("203.0.113.8") })).status, 200);
+  assert.equal((await request(link, from("203.0.113.9"))).status, 302);
+  const statuses: number[] = [];
+  for (let i = 0; i < 25; i++) {
+    statuses.push((await request("/login?u=reader&t=x", from(`198.51.100.${i + 10}`))).status);
+  }
+  assert.ok(statuses.every((status) => status === 401 || status === 429));
+  assert.ok(statuses.filter((status) => status === 429).length >= 5, "rotating twenty-five addresses against one reader gets throttled");
+  assert.equal((await request("/login", { ...valid, ...from("203.0.113.5") })).status, 302, "password login establishes trust during an account attack");
+  assert.equal((await request("/", { ...valid, ...from("203.0.113.8") })).status, 200, "Basic authentication establishes trust during an account attack");
+  assert.equal((await request(link, from("203.0.113.9"))).status, 302, "link login establishes trust during an account attack");
+  assert.equal((await request("/", { cookie, ...from("203.0.113.10") })).status, 200, "existing sessions survive an account attack");
+  comparisons = 0;
+  crypto.timingSafeEqual = ((a, b) => { comparisons++; return compare(a, b); }) as typeof compare;
+  syncBuiltinESMExports();
+  try {
+    for (const authorization of [valid, invalid]) {
+      for (const path of ["/", "/login"]) {
+        assert.equal((await request(path, { ...authorization, ...from("203.0.113.10") })).status, 429);
+      }
+    }
+    assert.equal((await request(link, from("203.0.113.10"))).status, 429);
+    assert.equal((await request("/login?u=reader&t=x", from("203.0.113.10"))).status, 429);
+    assert.equal(comparisons, 0, "an account lockout returns 429 before checking credentials");
+    assert.equal((await request("/", { ...valid, ...from("203.0.113.8") })).status, 200);
+    assert.ok(comparisons > 0, "trusted addresses still verify credentials");
+  } finally {
+    crypto.timingSafeEqual = compare;
+    syncBuiltinESMExports();
+  }
   console.log("sign-in lockout regressions ok");
 } finally { rmSync(dir, { recursive: true, force: true }); }
