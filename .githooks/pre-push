@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# GitHub Actions is off for this account. This gate runs on every push.
+# Enable once per clone: git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/ci.sh"
