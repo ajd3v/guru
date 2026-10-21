@@ -35,7 +35,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
     "@clerk/backend": "^3.13.2",
-    "@huggingface/transformers": "^4.2.0",
+    "@huggingface/transformers": "^4.3.0",
     "better-sqlite3": "^13.0.1",
     "pdfjs-dist": "6.3.289",
     "sqlite-vec": "^0.1.9"
