@@ -1,6 +1,6 @@
 // Saves the landing page example answer from a real Ask against a running server.
 //
-//   node eval/showcase.ts "How do I stop worrying about things I can't control?"
+//   node eval/showcase.ts "What makes a good friend?"
 //
 // GURU_URL names the server (default http://localhost:8080). GURU_SHOWCASE_AUTH is a
 // user:password for a basic-auth reader, ideally an operator so the run spends no allowance.
