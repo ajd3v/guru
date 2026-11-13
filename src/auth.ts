@@ -241,12 +241,13 @@ export async function authenticate(req: IncomingMessage): Promise<Auth> {
     // first person's.
     if (!BASIC_AUTH.length) return { kind: "user", userId: SINGLE_USER };
 
-    const credential = req.headers.authorization ?? sessionCookie(req.headers.cookie);
     const user = req.headers.authorization !== undefined ? basicAuthUser(req.headers.authorization) : cookieUser(req.headers.cookie);
     if (!user) {
-      // No credential at all, and a reading room is open: the visitor is the guest. A wrong
-      // credential still 401s, so a typo never silently demotes a reader.
-      if (GUEST && credential === undefined) return { kind: "user", userId: GUEST, guest: true };
+      // No password sent, and a reading room is open: the visitor is the guest. A session
+      // cookie that no longer verifies counts as none, because every restart revokes them and
+      // a returning reader should land in the reading room rather than at a password prompt.
+      // A wrong password still 401s, so a typo never silently demotes a reader.
+      if (GUEST && req.headers.authorization === undefined) return { kind: "user", userId: GUEST, guest: true };
       return basicAuthFailure();
     }
     return { kind: "user", userId: user };

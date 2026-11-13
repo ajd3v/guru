@@ -105,7 +105,7 @@ try {
   assert.equal((await request(link, from("203.0.113.3"))).status, 429);
   assert.equal((await request("/", { cookie, ...from("203.0.113.3") })).status, 200);
   for (let i = 0; i < 12; i++) {
-    assert.equal((await request("/", { cookie: "__Host-guru=other.stale", ...from("203.0.113.4") })).status, 401);
+    assert.equal((await request("/", { cookie: "__Host-guru=other.stale", ...from("203.0.113.4") })).status, 200, "a stale session lands in the reading room, not at a password prompt");
     assert.equal((await request("/login?u=other", from("203.0.113.4"))).status, 401);
   }
   assert.equal((await request("/", { authorization: basic("other:wrong"), ...from("203.0.113.4") })).status, 401, "stale cookies and bare logins do not fill counters");
